@@ -1,6 +1,8 @@
 # CALIBER — Problems & Decisions Log
 
-Running log of every non-obvious design decision and every problem encountered during implementation. Update this file immediately when a new issue arises or a design choice is made. Entries are numbered sequentially; phase is noted in brackets.
+Running log of every non-obvious design decision and every problem encountered during implementation. Update this file immediately when a new issue arises or a design choice is made. Entries are numbered sequentially; the originating task (blueprint §15 work plan — T1.1, T1.2, …) is noted in brackets.
+
+This repository covers **Track 1** — methodology, calibration and theoretical guarantees. Track 2 (systems, data engineering, empirical validation) is partner-owned; cross-track dependencies are recorded here as *contracts*, not as work items.
 
 ---
 
@@ -39,47 +41,62 @@ Mitigation for compute and data-access constraints. Decision: begin with single-
 ### D11 — Preprint early to establish priority [Blueprint]
 Risk register flags an active competing group in conformal MRI uncertainty. Decision: release a preprint at Phase 2 rather than waiting for the full result, and differentiate explicitly on three axes — **operator** shift (not anatomical shift), coverage restoration **across acceleration factors**, and the **flow-matching** prior. Publication path: preprint → fast-turnaround Scopus-indexed signal-processing venue → extended Q1 journal version, since journal review timelines exceed the project window.
 
-### D12 — Data and weights are never committed; scripts + credentialed download instead [Phase 1, infrastructure]
+### D12 — Data and weights are never committed; scripts + credentialed download instead [infrastructure]
 fastMRI requires an approved NYU application and raw k-space volumes run 1–10 GB per file, against GitHub's 100 MB hard limit. Decision: `data/` and `checkpoints/` are gitignored; each collaborator obtains their own fastMRI credentials and runs `scripts/download_fastmri.py`. Reproducibility is carried by version-controlled configs and fixed seeds, not by committed artefacts. Alternative rejected: shared cloud drive — no versioning, links rot, not reproducible for external reviewers.
 
-### D13 — `Project/` is the git repository; blueprints stay outside it [Phase 1, infrastructure]
+### D13 — `Project/` is the git repository; blueprints stay outside it [infrastructure]
 Matches the layout used in MIRAGE, Vestige and Argus: the outer folder holds the blueprint `.docx`/`.pdf` and background PDFs and is *not* version-controlled; the inner `Project/` is the repo that gets pushed to `github.com/Ganglet/CALIBER.git`. Reason: blueprints are binary, revised in Word, and not source.
 
 ---
 
-## Open Questions (to be resolved before or during Phase 1)
+## Open Questions
 
-### Q1 — "Operator distance" is not yet defined [OPEN, blocking Phase 3]
-The coverage-gap-vs-operator-distance plot is the paper's central figure, and the x-axis of that figure is currently undefined. The blueprint gestures at two candidates — how much the sampling masks differ, and how much larger the null space becomes — without committing. This choice determines the weighting scheme (D4) *and* the form of the bound (D5), so it cannot be deferred past early Phase 2. Candidates to evaluate: symmetric difference of mask supports; a subspace distance between null spaces (e.g. principal angles / projector distance ‖P₁ − P₂‖); a divergence between the induced score distributions. Requirement: whatever is chosen must be *computable without ground truth* and must be monotone in something a radiographer would recognise as "a bigger change to the scan."
+### Q1 — "Operator distance" is not yet defined [OPEN, owned by T1.2/T1.3]
+The coverage-gap-vs-operator-distance plot is the paper's central figure, and the x-axis of that figure is currently undefined. The blueprint gestures at two candidates — how much the sampling masks differ, and how much larger the null space becomes — without committing. This choice determines the weighting scheme (D4) *and* the form of the bound (D5), so it cannot be deferred to T1.3. Candidates to evaluate: symmetric difference of mask supports; a subspace distance between null spaces (e.g. principal angles / projector distance ‖P₁ − P₂‖); a divergence between the induced score distributions. Requirement: whatever is chosen must be *computable without ground truth* and monotone in something a radiographer would recognise as "a bigger change to the scan." The T1.1 projector utilities (WI-2 there) are the substrate for the subspace-distance candidates.
 
-### Q2 — Region definition for the flags [OPEN]
+### Q2 — Region definition for the flags [OPEN, owned by T1.1]
 "Per-region" is used throughout the blueprint without fixing what a region is — pixel, patch, superpixel, or annotated anatomical/pathological structure. It determines the multiplicity correction, the flag-area metric, and how fastMRI+ annotations are matched to flags. Note the tension: fastMRI+ labels are lesion-level bounding boxes, so evaluation naturally lives at that scale even if calibration runs on patches.
 
-### Q3 — How many posterior samples per reconstruction [OPEN, cost-driving]
-The score combines null-space structure with cross-sample disagreement, so it needs several solver draws per measurement set. Each draw is a full diffusion/flow solve. Sample count × calibration-set size × number of operator regimes is the dominant compute cost of the whole project and should be budgeted in Phase 1, not discovered in Phase 3.
+### Q3 — How many solver draws per reconstruction [OPEN, cost-driving, owned by T1.1]
+The score combines null-space structure with cross-sample disagreement, so it needs several solver draws per measurement set. Each draw is a full diffusion/flow solve. Draws × calibration-set size × number of operator regimes is the dominant compute cost of the whole project and should be budgeted during T1.1, not discovered during T1.5.
 
 ---
 
-## Phase 1 Log
+## Track 1 Task Log
 
-See `01_track1_score_design.md` and `01_track2_data_operator_pipeline.md` for the full Phase 1 record.
+Per-task records live in `T1.<n>_*.md`. Decisions and problems arising during a task are logged below as `T1.<n>-D<k>`.
+
+### T1.1 — Operator-aware score design
+See `T1.1_score_design.md`. Branch `T1.1`.
 
 _No entries yet — implementation not started._
 
----
+### T1.2 — Shift-robust calibration
+_Not started._
 
-## Phase 2 Log
+### T1.3 — Coverage-gap analysis
+_Not started._
 
+### T1.4 — Experimental design
+_Not started._
+
+### T1.5 — Analysis and iteration
+_Not started._
+
+### T1.6 — Technical authoring
 _Not started._
 
 ---
 
-## Phase 3 Log
+## Cross-Track Contracts
 
-_Not started._
+Track 2 is partner-owned. Anything Track 1 needs from it is recorded here so the interface is explicit and dated, rather than discovered at integration.
 
----
+| # | Track 1 needs | From | Status |
+|---|---|---|---|
+| **C1** | Operator pipeline: masks by family × acceleration factor × noise, seeded and reproducible, with the regime label carried through to calibration | T2.2 | Open |
+| **C2** | Pretrained solver back-end behind a uniform interface — given measurements + operator, return N draws | T2.3 | Open |
+| **C3** | Evaluation harness: coverage, flag area, region-level detection, automated logging | T2.4 | Open |
+| **C4** | fastMRI+ annotations mapped onto the region definition agreed in Q2 | T2.2 | Open |
 
-## Phase 4 Log
-
-_Not started._
+**Why C1's last clause matters:** group-conditional calibration (D3) groups *by operator*, so the regime label has to survive from the data loader all the way to the calibrator. If that is discovered late it means touching every stage of the partner's pipeline.
