@@ -65,7 +65,7 @@ Project/
 ├── caliber/              # audit layer — operator decomposition, scoring, calibration
 ├── scripts/              # download, preprocessing, experiment entrypoints
 ├── configs/              # version-controlled experiment configs (all runs are config-driven)
-├── Documentation/        # phase/track records + problems_and_decisions.md
+├── Documentation/        # per-task records (T1.n_*.md) + problems_and_decisions.md
 ├── data/                 # gitignored — fastMRI, downloaded locally by each user
 ├── checkpoints/          # gitignored — pretrained priors
 ├── results/              # gitignored — logged metrics and tables
@@ -75,28 +75,39 @@ Project/
 
 ---
 
-## Status
+## Work plan
 
-Pre-development. Phase 1 commencing.
+The blueprint (§15) splits the work into two concurrent, interdependent tracks. **This repository covers Track 1.** Track 2 is partner-owned; what Track 1 depends on from it is recorded as explicit contracts in `Documentation/problems_and_decisions.md`.
 
-| Phase | Focus | Checkpoint | Status |
-|-------|-------|------------|--------|
-| 1 | Setup, survey, baseline reproduction | Topic approval and feasibility | **In progress** |
-| 2 | Empirical gap + guaranteed backbone | Midterm review | Not started |
-| 3 | Primary contribution and analysis | Interim results | Not started |
-| 4 | Consolidation and dissemination | Final presentation and viva | Not started |
+### Track 1 — Methodology, Calibration and Theoretical Guarantees
 
-Phases are risk-ordered deliberately: a valid, demonstrable result (the coverage failure plus the group-conditional fix) must exist by Phase 2, before the higher-risk weighted recalibration and coverage-gap bound are attempted.
+| Task | Deliverable | Status |
+|------|-------------|--------|
+| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **In progress** |
+| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | Not started |
+| **T1.3** Coverage-gap analysis | Operator-distance coverage-gap treatment and its validation in the known-operator regime | Not started |
+| **T1.4** Experimental design | Protocol, ablation matrix, and statistical-validation methodology | Not started |
+| **T1.5** Analysis and iteration | Interpretation of results and refinement of score and calibration | Not started |
+| **T1.6** Technical authoring | Methodology and analysis sections of the manuscript and report | Not started |
 
-### Tracks
+Each task gets a branch (`T1.1`, `T1.2`, …) and a record in `Documentation/T1.<n>_*.md`, merged to `main`.
 
-Two concurrent tracks, integrating at checkpoints.
+### Track 2 — Systems, Data Engineering and Empirical Validation *(partner-owned)*
 
-**Track 1 — Methodology, Calibration and Theoretical Guarantees**
-Operator-aware score design, shift-robust calibration, coverage-gap analysis, experimental design, technical authoring.
+T2.1 literature and method survey · T2.2 data and operator pipeline · T2.3 baseline reproduction · T2.4 evaluation harness · T2.5 experiment execution · T2.6 figures and packaging.
 
-**Track 2 — Systems, Data Engineering and Empirical Validation**
-Literature survey, fastMRI + operator pipeline, baseline reproduction, evaluation harness, experiment execution, figures and packaging.
+---
+
+## Timeline
+
+Blueprint §16 groups the tasks into four term phases, sequenced so a valid, demonstrable result exists early and higher-risk elements come later — the coverage failure plus the group-conditional fix must be in hand by the midterm, before the weighted recalibration and coverage-gap bound are attempted.
+
+| Phase | Focus | Checkpoint |
+|-------|-------|------------|
+| 1 | Setup, survey, baseline reproduction | Topic approval and feasibility |
+| 2 | Empirical gap + guaranteed backbone | Midterm review |
+| 3 | Primary contribution and analysis | Interim results |
+| 4 | Consolidation and dissemination | Final presentation and viva |
 
 ---
 
