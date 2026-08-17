@@ -1,0 +1,37 @@
+# CT smoke test on real LoDoPaB data with the reference sampler.
+#
+# Proves the CT half of the pipeline — loader, projector, decomposition,
+# scoring, score bank — against real data before any solver is wired. Runs the
+# same code path as w07_ct_onboarding.yaml, just with a solver that needs no
+# checkpoint, so it can be run today.
+#
+#   python -m zipfile -e data/ground_truth_validation.zip data/raw/lodopab/
+#   caliber configs/experiments/w07_ct_smoke.yaml
+#
+# Not reportable: the sampler is a reference.
+
+include: base
+
+experiment:
+  name: w07_ct_smoke
+  solver:
+    name: reference_nullspace
+    hallucination_scale: 0.18
+  n_posterior: 6
+  operators:
+    - modality: ct
+      n_views: [180, 90, 45]
+      angular_range_deg: 180.0
+
+data:
+  image_shape: [128, 128]
+  dataset:
+    name: lodopab
+    root: data/raw/lodopab
+    split: validation
+    image_shape: [128, 128]
+    slices_per_file: 8
+
+run:
+  limit: 8
+  cache_reconstructions: 2

@@ -1,0 +1,38 @@
+# CT operator grid (Week 7-8). Three axes, exactly as Blueprint Sec. 6 names
+# them: view count, angular range, and dose.
+#
+# The structural point of Front II: an MRI mask and a CT projection geometry are
+# different kinds of object, yet a single operator-distance measure must predict
+# coverage loss for both. Keeping the grid axes explicit here is what lets the
+# Week 9 curve-collapse test compare like with like.
+
+operator_grids:
+  ct_full:
+    - modality: ct
+      n_views: [180, 120, 90, 60, 45, 30]
+      angular_range_deg: 180.0
+      photon_count: null
+
+    - modality: ct
+      n_views: 180
+      angular_range_deg: [180.0, 150.0, 120.0, 90.0]
+      photon_count: null
+
+  # Sparse-view only: reduce the number of projections over a full rotation.
+  ct_sparse_view:
+    - modality: ct
+      n_views: [180, 120, 90, 60, 45, 30]
+      angular_range_deg: 180.0
+
+  # Limited-angle only: keep the view count, restrict the arc. Severely
+  # ill-posed and structurally unlike anything in the MRI grid, which is
+  # precisely why it belongs in the cross-domain test.
+  ct_limited_angle:
+    - modality: ct
+      n_views: 120
+      angular_range_deg: [180.0, 150.0, 120.0, 90.0, 60.0]
+
+  ct_single:
+    - modality: ct
+      n_views: 90
+      angular_range_deg: 180.0

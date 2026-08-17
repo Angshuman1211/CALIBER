@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "caliber"
+version = "0.1.0"
+description = "Operator-shift-robust conformal hallucination flagging for generative-prior image reconstruction"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "torch>=2.2",
+    "pyyaml>=6.0",
+    "pandas>=2.0",
+    "pyarrow>=15.0",
+    "h5py>=3.10",
+    "scipy>=1.11",
+    "nibabel>=5.2",  # TotalSegmentator CT volumes and organ masks (.nii.gz)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+figures = ["matplotlib>=3.8"]
+
+[project.scripts]
+caliber = "caliber.runner:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

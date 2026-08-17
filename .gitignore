@@ -1,0 +1,42 @@
+# Data — never committed. Currently ~74 GB of CT archives live here, so this
+# must exclude the whole tree: `git add data` will otherwise try to hash a
+# 30 GB zip and hang. See docs/data_access.md for provenance and layout.
+data/*
+!data/README.md
+
+*.h5
+*.hdf5
+*.mat
+*.ismrmrd
+*.zip
+
+# Score banks and run outputs — regenerated from configs + seeds.
+runs/
+outputs/
+score_banks/
+*.parquet
+!tests/fixtures/*.parquet
+
+# Model checkpoints
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

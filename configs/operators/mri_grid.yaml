@@ -1,0 +1,42 @@
+# MRI operator grid (Blueprint Sec. 16: traverse the operator space).
+#
+# Two axes, matching the Blueprint's description of how MRI acquisitions vary:
+# acceleration factor and mask family. List-valued entries expand into the
+# Cartesian product, so this block is the operator grid.
+#
+# R=2 is the calibration operator in the coverage-failure experiments; the rest
+# are deployment operators at increasing distance from it.
+
+operator_grids:
+  mri_full:
+    - modality: mri
+      family: [random1d, equispaced1d, variable_density2d]
+      acceleration: [2, 3, 4, 6, 8, 10]
+      center_fraction: 0.08
+      mask_seed: 0
+      noise_sigma: 0.0
+
+  # Week 3 runs a single operator setting end to end before the grid opens up.
+  mri_single:
+    - modality: mri
+      family: random1d
+      acceleration: 4
+      center_fraction: 0.08
+      mask_seed: 0
+
+  # One family, one axis — the cleanest curve for the Week 4 failure demo.
+  mri_acceleration_sweep:
+    - modality: mri
+      family: random1d
+      acceleration: [2, 3, 4, 6, 8, 10]
+      center_fraction: 0.08
+      mask_seed: 0
+
+  # Mask-family shift at fixed acceleration: same undersampling budget, different
+  # null space. Isolates *direction* of operator change from *severity*.
+  mri_mask_family_shift:
+    - modality: mri
+      family: [random1d, equispaced1d, variable_density2d]
+      acceleration: 4
+      center_fraction: 0.08
+      mask_seed: [0, 1, 2]

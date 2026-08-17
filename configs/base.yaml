@@ -1,0 +1,32 @@
+# Defaults shared by every experiment. Experiment configs `include: base`
+# and override only what they change, so a diff between two runs is readable.
+
+run:
+  seed: 0
+  output_root: runs
+  limit: null                # null = use the whole dataset split
+  cache_reconstructions: 0   # number of items to cache as float16 npz, for figures
+
+data:
+  # Working resolution. Sec. 17 compute profile: 2-D single slice, reduced
+  # resolution. Raise only after measuring wall-clock on the target GPU.
+  image_shape: [128, 128]
+  dataset:
+    name: phantom
+
+regions:
+  # The unit at which flags are issued and region-level risk is controlled.
+  # Must be identical in MRI and CT for the cross-modality claim to mean anything.
+  size: 16
+
+calibration:
+  # Consumed by the CPU-side analysis, not by the runner.
+  alpha: 0.10                # target region-level false-negative (miss) rate
+  nominal_coverage: 0.90
+  group_column: calib_group
+
+distance:
+  # Primary operator-distance measure. Locked in Week 3 (T1.3); until then this
+  # is the working default and any change goes in docs/decision_log.md.
+  measure: null_space_projection
+  normalise: ambient
