@@ -23,6 +23,7 @@ h5py = pytest.importorskip("h5py")
 
 from caliber.data import DATASETS, build_dataset  # noqa: E402
 from caliber.data.fastmri import (  # noqa: E402
+    ANNOTATION_GRID,
     FastMRIDataset,
     M4RawDataset,
     boxes_to_mask,
@@ -118,7 +119,7 @@ def test_annotations_parse_and_strip_label_whitespace(tmp_path):
 def test_boxes_are_rasterised_then_cropped_with_the_image(tmp_path):
     """The crop must match the image crop exactly or every region is misplaced."""
     mask = boxes_to_mask(
-        [{"x": 30, "y": 30, "width": 4, "height": 4}], raw_shape=(64, 64), out_shape=(32, 32)
+        [{"x": 30, "y": 30, "width": 4, "height": 4}], grid_shape=(64, 64), out_shape=(32, 32)
     )
     assert mask.shape == (32, 32)
     assert mask.sum() == 16  # box is central, so it survives the crop intact
@@ -134,12 +135,57 @@ def test_annotation_reaches_the_item_on_the_image_grid(tmp_path):
         encoding="utf-8",
     )
     item = FastMRIDataset(
-        root=tmp_path, image_shape=(32, 32), annotations_csv=csv_path
+        root=tmp_path,
+        image_shape=(32, 32),
+        annotations_csv=csv_path,
+        annotation_grid=(64, 64),
     )[0]
     assert item.slice_idx == 2  # centre slice of a 4-slice volume
     assert item.annotation is not None
     assert item.annotation.shape == item.image.shape
     assert item.annotation.any()
+
+
+def test_boxes_are_placed_on_the_annotation_grid_not_the_kspace_grid(tmp_path):
+    """The bug this guards against misplaces every fastMRI+ box, silently.
+
+    Knee k-space inverts to 640x368; the fastMRI+ boxes are drawn on the
+    320x320 ``reconstruction_esc`` reference. Rasterising on the k-space grid
+    produced a valid-looking mask in the wrong place — and for a real box near
+    the top of the annotation grid, an *empty* mask after the centre crop.
+    """
+    write_volume(tmp_path / "file1000000.h5", n_slices=20, shape=(640, 368))
+    csv_path = tmp_path / "ann.csv"
+    # A real row from knee.csv, on the 320x320 grid.
+    csv_path.write_text(
+        "file,slice,study_level,x,y,width,height,label\n"
+        "file1000000,10,No,99,64,57,81,Meniscus Tear\n",
+        encoding="utf-8",
+    )
+    item = FastMRIDataset(
+        root=tmp_path, image_shape=(256, 256), annotations_csv=csv_path
+    )[0]
+    assert item.annotation is not None
+    # On the 320x320 grid the box is well inside a 256 centre crop; on the
+    # k-space grid it falls entirely outside it and the mask comes out empty.
+    assert item.annotation.sum() == 57 * 81
+
+
+def test_real_fastmri_plus_boxes_all_fit_the_declared_annotation_grid(repo_root):
+    """Evidence for ANNOTATION_GRID, checked against the shipped file if present.
+
+    Skips until fastMRI+ is fetched, so it is a check rather than a blocker.
+    """
+    csv_path = repo_root / "data" / "annotations" / "fastmri_plus" / "knee.csv"
+    if not csv_path.exists():
+        pytest.skip("fastMRI+ annotations not fetched")
+    boxes = [b for v in load_annotations(csv_path).values() for b in v]
+    assert boxes, "annotation file parsed to nothing"
+    height, width = ANNOTATION_GRID
+    assert max(b["x"] + b["width"] for b in boxes) <= width
+    assert max(b["y"] + b["height"] for b in boxes) <= height
+    # And they genuinely fill it — otherwise a larger grid would fit too.
+    assert max(b["y"] + b["height"] for b in boxes) > height - 8
 
 
 # -- the M4Raw stopgap (D-015) ---------------------------------------------------

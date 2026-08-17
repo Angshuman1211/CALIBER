@@ -447,6 +447,49 @@ results.
 
 ---
 
+## D-019 · fastMRI+ boxes live on the 320x320 reference grid, not on k-space
+**Date:** Week 1 · **Status:** ACCEPTED — fixed · **Found by:** Track 2
+
+Rasterising the fastMRI+ bounding boxes on the inverse-FFT grid put **every
+annotation in the wrong place**. Knee k-space inverts to 640x368; the boxes are
+drawn on fastMRI's 320x320 `reconstruction_esc` reference image.
+
+Measured across the shipped file — 16,154 boxes, 969 volumes:
+
+| assumed grid | boxes surviving a 256 centre crop |
+|---|---|
+| 320x320 reference | **100.0%** |
+| 640x368 k-space | 25.5% |
+
+`max(x + width) = 319` and `max(y + height) = 320` exactly, which fixes the
+grid at 320x320 and leaves no room for a different reading.
+
+*Why it had no symptom.* A misplaced mask is still a valid mask: right dtype,
+right shape, plausible area. The first real box tested rasterised to **zero
+pixels** after the crop, and nothing downstream would have objected — regions
+would simply have been scored against annotations describing different
+anatomy. This is exactly the failure `data_access.md` §2 warns about, and the
+loader was committing it.
+
+*Fix.* The image is cropped to the annotation grid first, then image and mask
+take an identical second crop to the working resolution, so the two agree by
+construction rather than by coincidence. The grid is read from
+`reconstruction_esc` / `reconstruction_rss` in the volume when present, since
+it differs between fastMRI splits, and falls back to `ANNOTATION_GRID` when
+absent. Guarded by `test_boxes_are_placed_on_the_annotation_grid_not_the_kspace_grid`
+and by a check against the real file.
+
+*Consequence for the working resolution.* At 256x256 all boxes survive the
+crop; at 128x128 only 76.7% do. The Sec. 17 compute profile prefers 128, and
+the annotation-restricted evaluation (Sec. 14) wants boxes. **Whoever sets the
+MRI working resolution is trading region FDR/power sample size against GPU
+time**, and should do so knowingly — the CT smoke run uses 128, the MRI configs
+use 256.
+
+*Affects:* O2, T2.1, T2.4, Sec. 14, Sec. 17, Weeks 3-5.
+
+---
+
 ## Template
 
 ```

@@ -127,9 +127,16 @@ data/annotations/fastmri_plus/brain.csv
 ```
 
 These provide the region-level labels that let a flag be judged on whether it
-fires **where it matters** (Sec. 14) rather than merely somewhere. Boxes are
-rasterised and centre-cropped onto the same grid as the image; the crop must
-match the image crop exactly or every annotated region is silently misplaced.
+fires **where it matters** (Sec. 14) rather than merely somewhere.
+
+**The boxes are drawn on fastMRI's 320x320 `reconstruction_esc` grid, not on
+k-space.** Knee k-space inverts to 640x368, so rasterising there misplaces
+every box — silently, because a misplaced mask is still a valid mask. The
+loader crops the image to the annotation grid first and then applies one
+identical crop to both. See **D-019**, which has the measurements.
+
+One consequence worth knowing before setting the working resolution: at
+256x256 every box survives the centre crop; at 128x128 only 76.7% do.
 
 ## 3. LoDoPaB-CT — cross-domain substrate
 

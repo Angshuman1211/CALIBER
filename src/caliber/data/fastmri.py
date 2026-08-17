@@ -85,18 +85,37 @@ def load_annotations(csv_path: str | Path) -> dict[str, list[dict]]:
     return dict(by_file)
 
 
+#: Grid the fastMRI+ boxes are defined on — fastMRI's standard ``reconstruction_esc``
+#: reference image, not the raw k-space grid. Used only when a volume ships no
+#: reference reconstruction to read the shape from.
+ANNOTATION_GRID = (320, 320)
+
+
 def boxes_to_mask(
     boxes: list[dict],
-    raw_shape: tuple[int, int],
+    grid_shape: tuple[int, int],
     out_shape: tuple[int, int],
 ) -> Tensor:
-    """Rasterise bounding boxes, then centre-crop to the working resolution."""
-    mask = torch.zeros(*raw_shape, dtype=torch.bool)
+    """Rasterise bounding boxes on their own grid, then crop to the working resolution.
+
+    ``grid_shape`` is **the grid the annotations were drawn on**, which is not
+    the raw k-space grid. fastMRI+ boxes are defined against fastMRI's 320x320
+    ``reconstruction_esc`` reference image; knee k-space inverts to 640x368.
+    Rasterising on the k-space grid puts every box in the wrong place — and
+    wrong in a way nothing downstream can detect, since a misplaced mask is
+    still a perfectly valid mask. Measured on the real annotation file, boxes
+    span exactly ``x+width <= 319`` and ``y+height <= 320``, which is what
+    fixes the grid at 320x320.
+
+    The caller crops the *image* to the same ``grid_shape`` first, so the two
+    reach ``out_shape`` through an identical centre crop.
+    """
+    mask = torch.zeros(*grid_shape, dtype=torch.bool)
     for box in boxes:
         y0 = max(0, box["y"])
         x0 = max(0, box["x"])
-        y1 = min(raw_shape[0], y0 + box["height"])
-        x1 = min(raw_shape[1], x0 + box["width"])
+        y1 = min(grid_shape[0], y0 + box["height"])
+        x1 = min(grid_shape[1], x0 + box["width"])
         if y1 > y0 and x1 > x0:
             mask[y0:y1, x0:x1] = True
     return center_crop(mask.float(), out_shape) > 0.5
@@ -117,12 +136,14 @@ class FastMRIDataset(SliceDataset):
         annotations_csv: str | Path | None = None,
         normalisation: str = "p99",
         limit_volumes: int | None = None,
+        annotation_grid: tuple[int, int] = ANNOTATION_GRID,
     ):
         self.root = Path(root)
         self.split = split
         self.image_shape = tuple(image_shape)
         self.slices_per_volume = int(slices_per_volume)
         self.normalisation = normalisation
+        self.annotation_grid = tuple(annotation_grid)
         if not self.root.is_dir():
             raise FileNotFoundError(
                 f"fastMRI directory not found: {self.root}. See docs/data_access.md - "
@@ -161,6 +182,14 @@ class FastMRIDataset(SliceDataset):
             mid = n_slices // 2
             slice_idx = min(max(0, mid + slice_offset - self.slices_per_volume // 2), n_slices - 1)
             raw = torch.as_tensor(kspace[slice_idx])
+            # The reference reconstruction defines the grid the annotations were
+            # drawn on. Reading it from the file beats assuming it, because the
+            # value differs between fastMRI splits.
+            grid_shape = self.annotation_grid
+            for key in ("reconstruction_esc", "reconstruction_rss"):
+                if key in fh:
+                    grid_shape = tuple(fh[key].shape[-2:])
+                    break
 
         if raw.dim() == 3:  # multi-coil (coils, H, W) -> root sum of squares
             coil_images = torch.fft.ifft2(raw, norm="ortho")
@@ -169,6 +198,12 @@ class FastMRIDataset(SliceDataset):
             image = torch.fft.ifft2(raw, norm="ortho").abs()
 
         raw_shape = tuple(image.shape[-2:])
+        # Two crops, deliberately. The image lands on the annotation grid first,
+        # then both image and mask take the *same* second crop to the working
+        # resolution. Cropping the image straight to image_shape would give the
+        # same pixels here, but it leaves the two grids agreeing by coincidence
+        # rather than by construction — and a misplaced mask has no symptom.
+        image = center_crop(image, grid_shape)
         image = normalise(center_crop(image, self.image_shape), self.normalisation)
 
         annotation = None
@@ -176,7 +211,7 @@ class FastMRIDataset(SliceDataset):
             b for b in self.annotations.get(path.stem, []) if b["slice"] == slice_idx
         ]
         if boxes:
-            annotation = boxes_to_mask(boxes, raw_shape, self.image_shape)
+            annotation = boxes_to_mask(boxes, grid_shape, self.image_shape)
 
         return Item(
             dataset=self.name,
