@@ -97,6 +97,17 @@ null-space dimension *and spectral decay*; if the decay term cannot be
 estimated at this scale, L2 either rests on `null_space_dim` alone or must
 declare its spectral term an estimate of unestablished accuracy.
 
+**D-020 → Track 1, needed for the Week 2 O2 decision.** The v0 criterion
+`err_free > 0.10` labels **100% of regions hallucinated** on real MRI k-space,
+making region FDR identically zero and the flag vacuous. The projector is not
+at fault here — MRI's `err_free`/`err_total` ratio is 0.97, within what an
+orthogonal projection allows, unlike CT's 1.33. The threshold is simply
+calibrated to phantoms, and real anatomy carries far more null-space content.
+D-012 showed the constant does not transfer across modalities; this shows it
+does not transfer across substrates within one modality. **The Week 2 criterion
+cannot be an absolute constant** — it needs to be relative, or defined so the
+positive rate is controlled rather than observed.
+
 **D-012 → blocks Week 7, fix owned by Track 2.** The FBP-based CT null
 projector amplifies (`‖P_N x‖/‖x‖` = 1.74 at 30 views, where an orthogonal
 projection can never exceed 1), and it degrades **monotonically in the same
@@ -117,7 +128,7 @@ free component is supposed to satisfy.
 | Retrospective-undersampling pipeline | done — 3 MRI mask families, CT sparse-view and limited-angle, registry, health checks |
 | fastMRI+ annotations | downloaded (969 files, 16,154 boxes) and parsed by the loader |
 | fastMRI raw k-space | links obtained, download under way off-machine (D-017) |
-| M4Raw stopgap | wired as a first-class dataset and marked unreportable; download resuming |
+| M4Raw stopgap | done — 240 volumes, pipeline verified end to end on real k-space |
 | Solver back-ends | **Week 2** — DPS, DDNM, FlowDPS all raise `NotImplementedError`; interface is fixed |
 
 **Week 2 entry condition:** nothing above blocks it. Solver wiring (T2.2) can

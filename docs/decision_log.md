@@ -490,6 +490,58 @@ use 256.
 
 ---
 
+## D-020 · The v0 label threshold is substrate-dependent, not just modality-dependent
+**Date:** Week 1 · **Status:** OPEN — needs the Week 2 O2 decision · **Raised by:** Track 2
+
+First run of the MRI pipeline on real raw k-space (`w02_m4raw_smoke`, M4Raw,
+128x128, 6 operators, 4,608 region rows). At the v0 criterion `err_free > 0.10`,
+**100% of MRI regions label as hallucinated** — region FDR is identically zero
+and the flag is vacuous.
+
+That is the same symptom D-012 reports for CT, but it has a different cause,
+and the difference matters.
+
+| substrate | median `err_free` | p1 | ratio `err_free`/`err_total` | frac > 0.10 |
+|---|---|---|---|---|
+| phantom (MRI) | 0.104 | 0.030 | 0.78 | 52.5% |
+| M4Raw (MRI) | 0.206 | 0.116 | **0.97** | 100% |
+| LoDoPaB (CT) | 0.664 | — | **1.33** | 100% |
+
+**The MRI decomposition is sound.** Its ratio is 0.97, i.e. `≤ 1` as an
+orthogonal projection requires, and all six operators passed the contraction
+check. CT's 1.33 is the D-012 defect; MRI has no equivalent. This is useful
+evidence *for* D-012 being a CT-specific artefact of filtered backprojection
+rather than something wrong with the free component in general.
+
+**What is wrong here is the threshold, not the projector.** Real brain anatomy
+carries far more null-space content than a smooth phantom, so the whole
+`err_free` distribution shifts up — the 1st percentile on M4Raw (0.116) already
+clears a threshold set at 0.10. The v0 constant was implicitly calibrated to
+phantoms.
+
+*So the criterion cannot be a shared absolute constant.* D-012 established that
+the threshold does not transfer across modalities; this establishes it does not
+transfer across substrates *within* one modality. Anything the Week 2 O2
+decision picks has to be relative — a quantile of the error distribution, a
+per-item normalisation, or a criterion defined so the positive rate is a
+controlled quantity rather than an outcome.
+
+*The pipeline itself is fine.* At `err_free > 0.25` (17.8% positives) the
+central phenomenon reproduces on real k-space for the first time: naive
+transfer holds 0.944 coverage at the calibration operator and collapses to
+0.217 at R=4 and 0.014 at R=8, monotonicity rho = +0.829 against operator
+distance. Not reportable — M4Raw plus a reference sampler, doubly so under
+D-018 — but it is the first evidence the claim survives contact with real
+measurements rather than phantoms.
+
+*Needs:* Track 1 to fix the criterion in Week 2 (O2), knowing that a constant
+will not do. Interacts with **D-003** (which error the criterion uses) and
+**D-009** (region definition).
+
+*Affects:* O2, T1.1, T1.2, T2.3, T2.4, D-003, D-009, D-012, Weeks 2-3.
+
+---
+
 ## Template
 
 ```

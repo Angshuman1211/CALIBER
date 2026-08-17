@@ -143,8 +143,14 @@ result, and the code says so rather than trusting anyone to remember: substrates
 and samplers that are development-only are marked in code, and every manifest
 records whether its bank is reportable (D-018).
 
-**Two findings from Week 1 that need a decision, both in
+**Three findings from Week 1 that need a decision, all in
 [docs/decision_log.md](docs/decision_log.md):**
+
+- **D-020 — the v0 label threshold is calibrated to phantoms.** On real MRI
+  k-space, `err_free > 0.10` labels 100% of regions hallucinated, so region FDR
+  is identically zero and the flag says nothing. MRI's own decomposition is
+  sound (ratio 0.97, against CT's 1.33), so this is the threshold, not the
+  projector. The Week 2 criterion cannot be an absolute constant.
 
 - **D-012 — the CT null projector amplifies.** FBP is not the pseudo-inverse,
   so `‖P_N x‖/‖x‖` reaches 1.74 at 30 views when an orthogonal projection can

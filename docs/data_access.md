@@ -18,7 +18,7 @@ Everything scriptable is fetched by `python scripts/fetch_data.py --all`
 |---|---|---|---|---|
 | fastMRI raw k-space | [28] | **Week 3** | Application + approval | ☑ links obtained · ⏳ downloading off-machine, D-017 |
 | fastMRI+ pathology annotations | [29] | Week 3 | Public GitHub | ☑ downloaded (969 files, 16,154 boxes) |
-| M4Raw open raw k-space | — | Weeks 2-3 | Open (Zenodo, CC-BY) | ⏳ resuming — was truncated, see below · stopgap, D-015 |
+| M4Raw open raw k-space | — | Weeks 2-3 | Open (Zenodo, CC-BY) | ☑ downloaded ☑ extracted (240 volumes) ☑ pipeline verified · D-015 |
 | DDPM natural-image prior | — | Week 2, 10 | Open (HF, Apache-2.0) | ☑ downloaded, verified |
 | Medical score priors | [27] | Week 2 | Google Drive, manual | ☐ — see D-016 |
 | LoDoPaB-CT ground truth (val + test) | [30] | Week 7 | Open (Zenodo) | ☑ downloaded ☑ extracted |

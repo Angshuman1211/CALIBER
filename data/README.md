@@ -23,8 +23,8 @@ data/
     totalsegmentator/          ✅ first 100 of 1228 subjects extracted
       s0000/ct.nii.gz                   CT volume, 1.5 mm isotropic
       s0000/segmentations/*.nii.gz      117 aligned organ masks
-    m4raw/                     ⏳ open MRI k-space stopgap (D-015)
-      multicoil_val/*.h5              240 volumes, ISMRMRD, fastMRI-compatible
+    m4raw/                     ✅ open MRI k-space stopgap (D-015)
+      multicoil_val/*.h5              240 volumes, kspace (18, 4, 256, 256)
     fastmri/                   ⏳ downloading off-machine (D-017)
       singlecoil_val/*.h5             keep splits in separate directories
   annotations/
@@ -47,6 +47,11 @@ layout, but 0.3 T brain instead of 3 T knee and **no pathology annotations**.
 It is wired as the `m4raw` dataset and marked unreportable in code, so a bank
 built from it announces itself as such (D-018). See D-015 for exactly what it
 can and cannot carry.
+
+D-015's compatibility claim is confirmed: each volume ships `kspace`
+`(18, 4, 256, 256)` complex64 plus `reconstruction_rss`, so the fastMRI reader
+runs unchanged. Volume attrs also carry `patient_id`, which is what D-014's
+split-by-patient rule needs.
 
 ```bash
 python scripts/fetch_data.py m4raw_val --extract
