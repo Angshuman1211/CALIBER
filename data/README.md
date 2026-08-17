@@ -65,20 +65,24 @@ python scripts/fetch_data.py --verify    # checks every archive on disk
 
 ## Archive inventory
 
+Sizes below are measured, not estimated (`--verify` reports them).
+
 | Archive | Zip | Extracted | Status |
 |---|---|---|---|
-| `ground_truth_validation.zip` | 1.6 GB | 1.8 GB | ✅ extracted |
-| `ground_truth_test.zip` | 1.6 GB | 1.8 GB | ✅ extracted |
-| `Totalsegmentator_dataset_v201.zip` | 23.6 GB | 30.1 GB | ✅ 100/1228 subjects (2.6 GB) |
-| `ground_truth_train.zip` | 15.9 GB | 18.1 GB | ⛔ not needed — D-013 |
-| `observation_train.zip` | 29.9 GB | — | ⛔ not needed — D-005 |
-| `observation_test.zip` | 3.0 GB | — | ⛔ not needed — D-005 |
-| `observation_challenge.zip` | 3.1 GB | — | ⛔ not needed — D-005 |
+| `ground_truth_validation.zip` | 1.57 GB | 1.8 GB | ✅ extracted |
+| `ground_truth_test.zip` | 1.58 GB | 1.8 GB | ✅ extracted |
+| `Totalsegmentator_dataset_v201.zip` | 23.58 GB | 30.1 GB | ✅ 100/1228 subjects (2.6 GB) |
+| `M4RawV1.1_multicoil_val.zip` | 2.81 GB | 2.7 GB | ⏳ downloading — D-015 |
+| `ground_truth_train.zip` | 15.94 GB | 18.1 GB | ⛔ not needed — D-013 |
+| `observation_train.zip` | 29.94 GB | — | ⛔ not needed — D-005 |
+| `observation_challenge.zip` | 3.13 GB | — | ⛔ not needed — D-005 |
+| `observation_test.zip` | 3.00 GB | — | ⛔ not needed — D-005 |
+| `observation_validation.zip` | 2.94 GB | — | ⛔ not needed — D-005 |
 
-**~49 GB of archives are recoverable** (`ground_truth_train` +
-`observation_*`). Disk is the binding constraint: 27 GB free, and a full
-TotalSegmentator extraction needs 30.1 GB. Deleting the three `observation_*`
-zips alone frees 36 GB and unblocks it.
+**~55 GB of archives are recoverable** (`ground_truth_train` 15.94 GB +
+`observation_*` 39.01 GB). Disk is the binding constraint: ~30 GB free, a full
+TotalSegmentator extraction needs 30.1 GB, and fastMRI adds ~7 GB on arrival.
+Deleting the four `observation_*` zips alone frees 39 GB and unblocks both.
 
 Nothing has been deleted — those were slow downloads and the call is yours.
 

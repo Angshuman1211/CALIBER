@@ -186,25 +186,34 @@ def curl(url: str, out: Path) -> bool:
     return subprocess.run(cmd, check=False).returncode == 0
 
 
-def verify_zip(path: Path) -> str | None:
+def verify_zip(path: Path, deep: bool = False) -> str | None:
     """Return a human-readable problem with ``path``, or None if it is sound.
 
     A truncated download is the failure mode that costs the most time, because
     it does not look like a failure: the file is present, it is large, and its
     first bytes are a valid zip header. Only the central directory at the *end*
-    is missing, so nothing notices until an extraction is attempted — possibly
+    is missing, so nothing notices until an extraction is attempted - possibly
     weeks later. This is exactly what happened to the M4Raw archive, which sat
     recorded as fetched at 0.8 GB of 2.8 GB.
+
+    Opening the archive is enough to catch that, and costs one seek: the
+    central directory is the part a truncated file has lost. ``deep`` adds a
+    CRC check of every member, which catches corruption rather than truncation
+    but has to decompress the whole archive - minutes per archive here, since
+    these run to 23 GB. Not the default for that reason.
     """
     if not path.exists():
         return "missing"
     try:
         with zipfile.ZipFile(path) as zf:
-            broken = zf.testzip()
-        return f"corrupt member: {broken}" if broken else None
+            if deep:
+                broken = zf.testzip()
+                if broken:
+                    return f"corrupt member: {broken}"
+        return None
     except zipfile.BadZipFile:
         return (
-            f"not a readable zip ({path.stat().st_size / 1e9:.2f} GB present) — "
+            f"not a readable zip ({path.stat().st_size / 1e9:.2f} GB present) - "
             "almost certainly a truncated download; re-run to resume"
         )
 
@@ -261,12 +270,16 @@ def main() -> int:
         "--verify", action="store_true",
         help="check every archive already on disk for truncation, then exit",
     )
+    ap.add_argument(
+        "--deep", action="store_true",
+        help="with --verify, also CRC-check every member (slow: decompresses everything)",
+    )
     args = ap.parse_args()
 
     if args.verify:
         problems = 0
         for archive in sorted((REPO / "data" / "archives").rglob("*.zip")):
-            problem = verify_zip(archive)
+            problem = verify_zip(archive, deep=args.deep)
             rel = archive.relative_to(REPO)
             size = archive.stat().st_size / 1e9
             if problem:

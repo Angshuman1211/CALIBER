@@ -223,7 +223,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="caliber",
-        description="Operator-shift-robust conformal hallucination flagging — experiment runner",
+        description="Operator-shift-robust conformal hallucination flagging - experiment runner",
     )
     parser.add_argument("config", help="path to an experiment config under configs/")
     parser.add_argument(

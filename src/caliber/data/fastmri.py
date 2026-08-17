@@ -173,7 +173,7 @@ class FastMRIDataset(SliceDataset):
                 # to fully-sampled k-space, not inferred from a finished image.
                 raise KeyError(
                     f"{path.name} has no 'kspace' dataset (found: {sorted(fh.keys())}). "
-                    "Raw k-space is required — see docs/data_access.md §1."
+                    "Raw k-space is required - see docs/data_access.md section 1."
                 )
             kspace = fh["kspace"]
             n_slices = kspace.shape[0]

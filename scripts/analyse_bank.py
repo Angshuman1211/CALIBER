@@ -63,7 +63,7 @@ def main() -> int:
     prov = manifest.get("provenance") or {}
     if prov and not prov.get("reportable", True):
         print(
-            f"[analyse] NOT REPORTABLE — dataset={prov.get('dataset')}, "
+            f"[analyse] NOT REPORTABLE - dataset={prov.get('dataset')}, "
             f"solver_family={prov.get('solver_family')}. Numbers below exercise the "
             "pipeline; none of them may appear in the write-up."
         )
