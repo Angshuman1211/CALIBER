@@ -62,3 +62,6 @@ venv/
 # Figures hand-made for the manuscript belong in Paper/ or are force-added.
 figures/*.png
 figures/*.pdf
+
+# blueprint docs — binary, revised in Word, not source (see D13)
+*.docx
