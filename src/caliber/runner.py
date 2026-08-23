@@ -1,0 +1,261 @@
+"""Config-driven experiment runner (Blueprint Sec. 17, Week 1 deliverable).
+
+One command produces one score bank:
+
+    caliber configs/experiments/w01_smoke_phantom.yaml
+    caliber configs/experiments/w03_mri_fixed_operator.yaml --set run.limit=4
+
+Every run is fully determined by its config plus its seed, and the resolved
+config, its hash, and the environment are written into the bank's manifest.
+
+Structure of a run, mirroring the five stages of Sec. 10:
+
+    for each item, for each operator in the grid:
+        y      = A x + noise              measurements  (retrospective)
+        x_hat  = solver.sample(y, A)      Stage 1
+        P_R/P_N split                     Stage 2   (inside scoring)
+        scores = free / disagree / residual   Stage 3
+        truth  = per-region error magnitudes
+        -> one row per region in the score bank
+
+Calibration (Stage 4) and gap analysis (Stage 5) deliberately do *not* run
+here. They read the bank afterwards, on CPU. That separation is what makes the
+scope affordable.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+import torch
+
+from .config import ConfigError, load_config
+from .data import build_dataset
+from .operators.registry import OperatorRegistry
+from .scorebank.io import ScoreBankWriter, save_reconstructions
+from .scoring.labels import CRITERION_VERSION, compute_region_truth
+from .scoring.regions import RegionGrid
+from .scoring.score import SCORE_VERSION, compute_score_components
+from .solvers import build_solver
+
+
+def add_measurement_noise(y: torch.Tensor, sigma: float, seed: int) -> torch.Tensor:
+    """Additive complex or real Gaussian noise at the operator's declared level."""
+    if sigma <= 0:
+        return y
+    gen = torch.Generator().manual_seed(seed)
+    if y.is_complex():
+        real = torch.randn(y.shape, generator=gen)
+        imag = torch.randn(y.shape, generator=gen)
+        return y + sigma * (real + 1j * imag) / (2**0.5)
+    return y + sigma * torch.randn(y.shape, generator=gen)
+
+
+def calibration_group(operator) -> str:
+    """The group used by group-conditional calibration (Tool 1).
+
+    One group per acquisition regime. Defaulting to modality plus family plus
+    the primary severity axis keeps groups coarse enough to hold calibration
+    data while still separating regimes that genuinely differ.
+    """
+    desc = operator.descriptor()
+    params = desc.params
+    if desc.modality == "mri":
+        return f"mri/{params['family']}/R{params['acceleration']:g}"
+    if desc.modality == "ct":
+        return f"ct/{desc.family}/v{params['n_views']}"
+    return f"{desc.modality}/{desc.family}"
+
+
+def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
+    """Execute one experiment and return the score-bank directory."""
+    experiment = cfg["experiment"]
+    run_cfg = cfg.get("run", {})
+    image_shape = tuple(cfg["data"]["image_shape"])
+
+    # Dataset construction is deferred until after the health check, so that
+    # --dry-run validates operators on a machine where the data has not landed
+    # yet. That is the common case for the CT grid before Week 7.
+    registry = OperatorRegistry.from_specs(experiment["operators"], image_shape)
+    solver = build_solver(experiment["solver"])
+    grid = RegionGrid(image_shape=image_shape, region_size=int(cfg["regions"]["size"]))
+
+    run_id = run_cfg.get("id") or f"{experiment['name']}-{cfg['_meta']['config_hash']}"
+    out_root = Path(run_cfg.get("output_root", "runs")) / run_id
+
+    print(f"[caliber] run_id           {run_id}")
+    print(f"[caliber] config_hash      {cfg['_meta']['config_hash']}")
+    print(f"[caliber] solver           {solver.info().solver_id}  ({solver.family})")
+    print(f"[caliber] operators        {len(registry)}")
+    print(f"[caliber] regions          {grid.n_regions} of {grid.region_size}px")
+    print(f"[caliber] output           {out_root}")
+
+    health = registry.check_health()
+    bad = [h for h in health if not h["adjoint_ok"] or not h["projector_ok"]]
+    if bad:
+        for h in bad:
+            print(
+                f"[caliber] OPERATOR CHECK FAILED  {h['operator_id']}  "
+                f"adjoint={h['adjoint_rel_error']:.2e}  idem={h['idempotence_rel_error']:.2e}",
+                file=sys.stderr,
+            )
+        raise ConfigError(
+            "operator health check failed; a wrong projector corrupts every score in the bank"
+        )
+    print(f"[caliber] operator check   {len(health)} operators passed")
+    amplifying = [h for h in health if not h["contraction_ok"]]
+    if amplifying:
+        worst = max(h["null_projection_gain"] for h in amplifying)
+        print(
+            f"[caliber] WARNING          {len(amplifying)}/{len(health)} operators have an "
+            f"amplifying null projector (worst gain {worst:.2f}); free-component scores "
+            f"are not comparable across modalities. See decision log D-012."
+        )
+
+    if dry_run:
+        registry.write_manifest(out_root / "operator_registry.json")
+        print(f"[caliber] dry run - wrote {out_root / 'operator_registry.json'}, stopping")
+        return out_root
+
+    dataset = build_dataset(cfg["data"]["dataset"])
+    print(f"[caliber] dataset          {dataset.name}  ({len(dataset)} items available)")
+
+    # Two independent ways a run can be development-only: a substrate that is
+    # not the real thing (phantoms, the M4Raw stopgap) or a sampler that is not
+    # a generative prior. Either one makes the resulting bank unreportable, and
+    # a bank carries no visible mark of either, so both are announced here and
+    # recorded in the manifest.
+    reportable = bool(getattr(dataset, "reportable", True)) and solver.family != "reference"
+    if not reportable:
+        why = []
+        if not getattr(dataset, "reportable", True):
+            why.append(f"substrate {dataset.name!r} is for development only")
+        if solver.family == "reference":
+            why.append("solver is a reference, not a generative prior")
+        print(f"[caliber] NOT REPORTABLE   {'; '.join(why)}")
+
+    items = dataset.take(run_cfg.get("limit"))
+    n_posterior = int(experiment.get("n_posterior", 8))
+    seed = int(run_cfg.get("seed", 0))
+    cache_recons = int(run_cfg.get("cache_reconstructions", 0))
+    region_rows = grid.table()
+
+    writer = ScoreBankWriter(
+        out_root,
+        run_id=run_id,
+        config=cfg,
+        provenance={
+            "dataset": dataset.name,
+            "modality": dataset.modality,
+            "solver_family": solver.family,
+            "reportable": reportable,
+        },
+    )
+    started = time.time()
+    n_done, n_total = 0, len(items) * len(registry)
+
+    for item in items:
+        for op in registry:
+            desc = op.descriptor()
+            item_seed = seed + abs(hash((item.sample_id, item.slice_idx, desc.operator_id))) % 10**6
+
+            sigma = float(desc.params.get("noise_sigma", 0.0) or 0.0)
+            y = add_measurement_noise(op.forward(item.image), sigma, item_seed)
+
+            samples = solver.sample(y, op, n_samples=n_posterior, seed=item_seed)
+            components = compute_score_components(samples, y, op, grid)
+            truth = compute_region_truth(
+                samples, item.image, op, grid, item.annotation, components.ref_intensity
+            )
+
+            writer.add_item(
+                base={
+                    "config_hash": cfg["_meta"]["config_hash"],
+                    "dataset": item.dataset,
+                    "split": item.split,
+                    "sample_id": item.sample_id,
+                    "slice_idx": item.slice_idx,
+                    "operator_id": desc.operator_id,
+                    "modality": desc.modality,
+                    "operator_family": desc.family,
+                    "calib_group": calibration_group(op),
+                    **solver.info().to_row(),
+                    "n_posterior": n_posterior,
+                    "seed": item_seed,
+                    "score_version": SCORE_VERSION,
+                    "criterion_version": CRITERION_VERSION,
+                    "ref_intensity": components.ref_intensity,
+                },
+                region_rows=region_rows,
+                arrays={
+                    "s_free": components.s_free.tolist(),
+                    "s_disagree": components.s_disagree.tolist(),
+                    "s_residual": components.s_residual.tolist(),
+                    "err_total": truth.err_total.tolist(),
+                    "err_free": truth.err_free.tolist(),
+                    "ann_coverage": truth.ann_coverage.tolist(),
+                },
+            )
+
+            if n_done < cache_recons:
+                save_reconstructions(
+                    out_root, f"{item.sample_id}_{item.slice_idx}_{desc.operator_id}",
+                    samples.numpy(), item.image.numpy(),
+                )
+
+            n_done += 1
+            if n_done % max(1, n_total // 20) == 0 or n_done == n_total:
+                rate = n_done / max(1e-9, time.time() - started)
+                print(f"[caliber] {n_done}/{n_total} items  ({rate:.1f}/s)")
+
+    registry.write_manifest(out_root / "operator_registry.json")
+    writer.flush(registry_descriptors=registry.descriptors())
+    print(f"[caliber] wrote {len(writer)} rows to {out_root / 'scores.parquet'}")
+    print(f"[caliber] elapsed {time.time() - started:.1f}s")
+    return out_root
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="caliber",
+        description="Operator-shift-robust conformal hallucination flagging - experiment runner",
+    )
+    parser.add_argument("config", help="path to an experiment config under configs/")
+    parser.add_argument(
+        "--set", action="append", default=[], metavar="KEY=VALUE",
+        help="override a config value, e.g. --set run.limit=4",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="resolve config, build operators, run health checks, then stop",
+    )
+    parser.add_argument(
+        "--print-config", action="store_true", help="print the resolved config and exit"
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        cfg = load_config(args.config, args.set)
+    except ConfigError as exc:
+        print(f"[caliber] config error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.print_config:
+        print(json.dumps(cfg, indent=2, default=str))
+        return 0
+
+    try:
+        run(cfg, dry_run=args.dry_run)
+    except (ConfigError, NotImplementedError, FileNotFoundError) as exc:
+        print(f"[caliber] {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

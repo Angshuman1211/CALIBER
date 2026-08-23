@@ -1,23 +1,18 @@
 # CALIBER
-**Calibrated Audit of Learned Image reconstruction Beyond Exchangeable Regimes**
 
 Operator-shift-robust conformal hallucination flagging for generative-prior image reconstruction. Distribution-free reliability certificates that stay valid when the acquisition changes between calibration and deployment.
 
----
+> Existing conformal reliability certificates for image reconstruction assume
+> the acquisition operator is fixed. This project shows the guarantee breaks
+> when the operator shifts between calibration and deployment, restores
+> validity through group-conditional calibration and operator-distance-aware
+> recalibration, demonstrates the result across two imaging modalities with
+> structurally different operators, and derives a coverage-gap bound expressed
+> in quantities computable from the operators themselves.
 
-## What this is
-
-Generative priors (diffusion, flow-matching) produce sharp accelerated-MRI reconstructions, but they invent detail that looks plausible and is not supported by the measurements — hallucination. PSNR and SSIM cannot reveal it: they are global, and they need the ground truth you do not have at deployment.
-
-Conformal prediction can wrap any reconstruction model and emit per-region reliability flags with a provable error rate — but every existing conformal method for imaging assumes the **acquisition operator is fixed** between calibration and deployment. It is not. Change the sampling mask, the acceleration factor R, or the noise level, and exchangeability breaks: the method still reports 90% reliability while delivering less.
-
-CALIBER shows that failure, fixes it, and measures what is left:
-
-| | Role |
-|---|---|
-| **Group-conditional (Mondrian) calibration** | Guaranteed backbone — exact when the deployment operator is one of a known finite set |
-| **Operator-distance-aware weighted recalibration** | Primary novel contribution — weights are *known*, since retrospective masks are chosen |
-| **Operator-distance coverage-gap bound** | Theoretical stretch result, adapting non-exchangeable conformal prediction |
+This repository is **Track 2 — Systems, Data Engineering and Cross-Domain
+Validation** (Blueprint Sec. 18; Track B in the weekly cards). It owns the
+reconstruction and evaluation infrastructure that Tracks 1 and 3 build on.
 
 The framework is a **solver-agnostic audit layer over pretrained priors** — it audits reconstruction models rather than training them, which is what makes it feasible on a single GPU.
 
@@ -37,34 +32,39 @@ Precise scope-limiting is part of the contribution. The method assumes **known**
 
 ---
 
-## Setup
+## Quick start
 
 ```bash
-conda create -n caliber python=3.11
-conda activate caliber
-pip install -r requirements.txt
+pip install -e ".[dev]"
+pytest -q
+
+# End-to-end on synthetic phantoms — no dataset access, no checkpoint needed
+caliber configs/experiments/w01_smoke_phantom.yaml
+
+# CPU-only analysis of the resulting bank
+python scripts/analyse_bank.py runs/<run_id> \
+    --calibration-operator mri.random1d.R2.c0.08.s0
 ```
 
-Single modern GPU. No prior training required — all generative priors are pretrained and downloaded from upstream releases.
+The smoke run reproduces the project's central phenomenon in miniature. A
+threshold calibrated at R=2 and transferred to more aggressive accelerations
+loses coverage monotonically with operator distance, and group-conditional
+calibration restores it:
 
----
+| method | R=2 | R=4 | R=8 |
+|---|---|---|---|
+| naive transferred | 0.90 | 0.59 | 0.41 |
+| matched per operator | 0.90 | 0.90 | 0.90 |
+| group-conditional | 0.90 | 0.90 | 0.90 |
 
-## Data
+*(nominal 0.90; synthetic phantoms and a reference sampler — an interface
+smoke test, not a result.)*
 
-fastMRI is **not stored in this repository** and requires credentialed access — apply at [fastmri.med.nyu.edu](https://fastmri.med.nyu.edu/), then:
+Note the price of restoration: flag area rises from 0.44 to 0.83. Valid but
+over-conservative flags are of little practical use, which is exactly why
+Sec. 15.2 makes flag area a reported metric alongside coverage.
 
-```bash
-# fastMRI knee/brain raw k-space (after credentials are granted)
-python scripts/download_fastmri.py
-
-# fastMRI+ pathology annotations — region-level labels for flag evaluation
-python scripts/download_fastmri_plus.py
-
-# pretrained priors (FlowDPS primary; DPS / DDNM fallback and baselines)
-python scripts/download_priors.py
-```
-
-Downloaded data lives in `data/` and pretrained weights in `checkpoints/`, both gitignored. Raw k-space is what makes this project possible: it allows the acquisition operator to be varied retrospectively in a controlled way.
+## Layout
 
 The Front II substrate (Phase 3, Track 2) is a low-dose / sparse-view CT benchmark exposing **projection data** — LoDoPaB-CT — for the same reason: raw projections permit angle subsampling, angular-range restriction, and dose reduction to be applied retrospectively. Region-level ground truth there comes from anatomical segmentation (TotalSegmentator, AbdomenCT-1K).
 
@@ -73,16 +73,24 @@ The Front II substrate (Phase 3, Track 2) is a low-dose / sparse-view CT benchma
 ## Structure
 
 ```
-Project/
-├── caliber/              # audit layer — operator decomposition, scoring, calibration
-├── scripts/              # download, preprocessing, experiment entrypoints
-├── configs/              # version-controlled experiment configs (all runs are config-driven)
-├── Documentation/        # per-task records (T1.n_*.md) + problems_and_decisions.md
-├── data/                 # gitignored — fastMRI, downloaded locally by each user
-├── checkpoints/          # gitignored — pretrained priors
-├── results/              # gitignored — logged metrics and tables
-├── figures/              # output figures
-└── Paper/                # gitignored — reference papers
+src/caliber/
+  operators/    the known acquisition operator A, its range/null-space split,
+                the shared operator registry, distance measures     Stage 2
+  solvers/      pretrained diffusion and flow-matching back-ends behind one
+                black-box posterior-sampler interface               Stage 1
+  scoring/      region definition, operator-aware scoring, and the
+                ground-truth hallucination criterion                Stage 3
+  scorebank/    the cached, shared data format all three tracks read
+  calibration/  group-conditional and weighted recalibration        Stage 4
+                (Track 1 owns this module)
+  evaluation/   coverage, efficiency, detection, gap-vs-distance    Stage 5
+  data/         dataset access and preprocessing
+
+configs/        version-controlled experiment definitions
+docs/           interface specs, data access, cross-track decision log,
+                Track 2 problems log
+scripts/        CPU-only analysis entry points
+tests/          correctness gates
 ```
 
 ---

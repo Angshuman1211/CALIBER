@@ -1,0 +1,37 @@
+# Week 4 — the coverage-failure experiment. Expand the score bank across the
+# MRI grid so that "calibrate here, deploy there" can be measured (O3).
+#
+# The solver is fixed and the operator is the only quantity that varies, which
+# is the controlled comparison of Sec. 13. The config loader rejects a list of
+# solvers here for exactly that reason.
+#
+# This is the run whose output produces the project's first headline figure:
+# nominal coverage against actual coverage as the deployment operator moves.
+
+include: base
+
+experiment:
+  name: w04_mri_operator_grid
+  solver:
+    name: dps
+    n_steps: 200
+  n_posterior: 8
+  operators:
+    - modality: mri
+      family: [random1d, equispaced1d, variable_density2d]
+      acceleration: [2, 3, 4, 6, 8, 10]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [256, 256]
+  dataset:
+    name: fastmri
+    root: data/raw/fastmri/singlecoil_val
+    annotations_csv: data/annotations/fastmri_plus/knee.csv
+    split: calib
+    image_shape: [256, 256]
+
+run:
+  limit: 200
+  cache_reconstructions: 12
