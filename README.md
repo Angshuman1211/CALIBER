@@ -1,9 +1,6 @@
 # CALIBER
 
-**Operator-shift-robust conformal hallucination flagging**
-Distribution-free reliability certificates for generative-prior image
-reconstruction that remain valid when the acquisition changes between
-calibration and deployment.
+Operator-shift-robust conformal hallucination flagging for generative-prior image reconstruction. Distribution-free reliability certificates that stay valid when the acquisition changes between calibration and deployment.
 
 > Existing conformal reliability certificates for image reconstruction assume
 > the acquisition operator is fixed. This project shows the guarantee breaks
@@ -17,10 +14,21 @@ This repository is **Track 2 — Systems, Data Engineering and Cross-Domain
 Validation** (Blueprint Sec. 18; Track B in the weekly cards). It owns the
 reconstruction and evaluation infrastructure that Tracks 1 and 3 build on.
 
-Track 1 (methodology, calibration, theoretical guarantees) lives alongside it
-in [Documentation/](Documentation/) - see
-[Documentation/problems_and_decisions.md](Documentation/problems_and_decisions.md)
-for the Track 1 decision log and the cross-track contracts it depends on.
+The framework is a **solver-agnostic audit layer over pretrained priors** — it audits reconstruction models rather than training them, which is what makes it feasible on a single GPU.
+
+### Three fronts, one claim (blueprint §8)
+
+The investigation is one central claim supported on three fronts, not three separate problems. None can be removed without weakening the others.
+
+| Front | Question it answers | Track |
+|---|---|---|
+| **I — Empirical core** (accelerated MRI) | Does the conformal guarantee actually fail under operator shift, and can it be restored? | 1 + 2 |
+| **II — Cross-domain** (sparse-view and limited-angle CT) | Is the failure a property of the acquisition in general, or an artefact of one modality? | 2 |
+| **III — Theory** (operator-distance coverage bound) | How much reliability must be lost, as a function of how far the operator has moved? | 3 |
+
+### Scope, stated honestly
+
+Precise scope-limiting is part of the contribution. The method assumes **known** linear/affine forward operators (true for retrospective MRI undersampling and for CT projection geometries, where the mask or view set is chosen). The guarantee is **exact** only in the discrete known-operator regime handled by group-conditional calibration; for continuous operator change the target is an explicit coverage-*gap bound*, not exact coverage. Operator shift changes the measurement process itself, so it is **not** a standard covariate shift — no new exact finite-sample guarantee is claimed for arbitrary shift. See `Documentation/problems_and_decisions.md` (D3, D6).
 
 ---
 
@@ -58,7 +66,11 @@ Sec. 15.2 makes flag area a reported metric alongside coverage.
 
 ## Layout
 
-The package mirrors the five-stage method pipeline of Blueprint Sec. 10.
+The Front II substrate (Phase 3, Track 2) is a low-dose / sparse-view CT benchmark exposing **projection data** — LoDoPaB-CT — for the same reason: raw projections permit angle subsampling, angular-range restriction, and dose reduction to be applied retrospectively. Region-level ground truth there comes from anatomical segmentation (TotalSegmentator, AbdomenCT-1K).
+
+---
+
+## Structure
 
 ```
 src/caliber/
@@ -81,103 +93,72 @@ scripts/        CPU-only analysis entry points
 tests/          correctness gates
 ```
 
-## The two ideas the codebase is built around
+---
 
-**1. Compute once, analyse forever.** Reconstructions and scores are produced
-once on a GPU and cached as a *score bank*. Every subsequent calibration
-experiment, coverage curve, ablation, and numerical check reads the cache and
-needs no GPU at all (Sec. 17). This is what makes the scope affordable on a
-6 GB laptop GPU, and what lets all three tracks work in parallel rather than in
-series. See [docs/score_bank_spec.md](docs/score_bank_spec.md).
+## Work plan
 
-**2. One definition of every operator.** Operators and the distance between
-them are defined in a single registry used identically in MRI, CT, and the
-theoretical derivations (Sec. 19). Week 9 audits this explicitly. See
-[docs/operator_registry_spec.md](docs/operator_registry_spec.md).
+Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent tracks. **This repository covers Track 1.** Tracks 2 and 3 are partner-owned; what Track 1 depends on from them, and what it owes them, is recorded as explicit contracts in `Documentation/problems_and_decisions.md`.
 
-## Invariants the code enforces
+> **Changed in v3.0.** The blueprint went from two tracks to three, and the coverage-gap bound moved **out of Track 1 into Track 3**. Track 1's T1.3 is consequently no longer "coverage-gap analysis" but the **operator-distance formulation** that Track 3 derives against. Commits and branches predating 2026-08-04 use the v2 numbering. See D14 in the decisions log.
 
-These are structural, not conventions — each is enforced in code and covered by
-a test.
+### Track 1 — Methodology, Calibration and Scientific Direction
 
-- **The solver is held fixed within a coverage curve** (Sec. 13). A config
-  listing multiple solvers is rejected, and any score bank whose `run_id` spans
-  more than one solver fails validation. The Week 10 solver ablation runs one
-  experiment per solver and merges afterwards.
-- **Operators pass a health check before any production run.** A wrong adjoint
-  or a non-idempotent projector corrupts every score in the bank while leaving
-  the numbers looking plausible, so both are gated on every run.
-- **Ground truth never reaches the score.** Score components are functions of
-  the measurements alone; the true image enters only through the `err_*`
-  evaluation columns. The method must work without it — that is the premise
-  (Sec. 4.1).
-- **Approximations are recorded as data, not comments.** `exact_pinv: false`
-  and `null_space_dim_method: dimension_count` travel with every CT operator,
-  so the caveats reach the manifest and the write-up.
-
-## Track 2 tasks
+Owns the central claim, the design of the method, and the decisions that set direction at each stage.
 
 | Task | Deliverable | Status |
-|---|---|---|
-| T2.1 Data & operator pipeline | Dataset access, preprocessing, reproducible operator generation | operators done; fastMRI downloading (D-017) |
-| T2.2 Solver integration | Pretrained back-ends behind the common interface | interface fixed; back-ends Week 2 |
-| T2.3 Score-bank production | Cached reconstructions and scores across the grid | schema v0 done |
-| T2.4 Evaluation harness | Coverage, efficiency, region-level detection | metrics done |
-| T2.5 Cross-domain experiments | Protocol in CT plus appendix domain | CT operators done; data Week 7 |
-| T2.6 Baseline reproduction | Published comparators under the shared protocol | Weeks 3-6 |
-| T2.7 Figures & packaging | Visualisations and reproducibility package | Weeks 10-11 |
+|------|-------------|--------|
+| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **In progress** |
+| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | Not started |
+| **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities (resolves Q1) | Not started |
+| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | Not started |
+| **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | Not started |
+| **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | Not started |
+| **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | Not started |
 
-## Where things stand
+Each task gets a branch (`T1.1`, `T1.2`, …) and a record in `Documentation/T1.<n>_*.md`, merged to `main`.
 
-**Done.** Operator layer for both modalities with exact adjoints and health
-checks; all five candidate distance measures; score-bank schema, writer, and
-validator; region grid and operator-aware scoring; evaluation harness; config
-system with the controlled-comparison guard; runner; synthetic and open-data
-development substrates; 66 tests. The CT path runs end to end on real LoDoPaB
-data (`configs/experiments/w07_ct_smoke.yaml`).
+### Track 2 — Systems, Data Engineering and Cross-Domain Validation *(partner-owned)*
 
-**Data.** All CT data is local and structured. fastMRI+ annotations and an
-open-licensed diffusion prior are fetched. fastMRI raw k-space is downloading
-off-machine (D-017), with one licensing check still open there.
-`python scripts/fetch_data.py --list` shows the full inventory,
-`--verify` checks what is already on disk for truncation.
+T2.1 data and operator pipeline · T2.2 solver integration · T2.3 score-bank production · T2.4 evaluation harness · T2.5 cross-domain experiments · T2.6 baseline reproduction · T2.7 figures and packaging.
 
-**Development substrate.** M4Raw (open, CC-BY, same `.h5` layout) carries MRI
-pipeline work while fastMRI lands — wired as the `m4raw` dataset, with the one
-gap that it has no pathology annotations (D-015). It cannot carry a reported
-result, and the code says so rather than trusting anyone to remember: substrates
-and samplers that are development-only are marked in code, and every manifest
-records whether its bank is reportable (D-018).
+### Track 3 — Analytical Foundations and Numerical Verification *(partner-owned)*
 
-**Three findings from Week 1 that need a decision, all in
-[docs/decision_log.md](docs/decision_log.md):**
+T3.1 formal review of the setting · T3.2 operator-distance candidates · T3.3 stability result (L1) · T3.4 ill-posedness scaling (L2) · T3.5 numerical verification · T3.6 bound-versus-measurement study · T3.7 analytical authoring.
 
-- **D-020 — the v0 label threshold is calibrated to phantoms.** On real MRI
-  k-space, `err_free > 0.10` labels 100% of regions hallucinated, so region FDR
-  is identically zero and the flag says nothing. MRI's own decomposition is
-  sound (ratio 0.97, against CT's 1.33), so this is the threshold, not the
-  projector. The Week 2 criterion cannot be an absolute constant.
+---
 
-- **D-012 — the CT null projector amplifies.** FBP is not the pseudo-inverse,
-  so `‖P_N x‖/‖x‖` reaches 1.74 at 30 views when an orthogonal projection can
-  never exceed 1. Worse, it degrades monotonically *in the same direction as
-  operator distance*, so a CT coverage curve could look monotone because our
-  decomposition degrades, not because reliability does. Needs a
-  conjugate-gradient pseudo-inverse before any CT coverage curve is reported.
-- **D-011 — randomised spectral estimation barely separates CT operators.**
-  The decay exponent moves 1.688 → 1.676 between 180 and 20 views. L2 leans on
-  spectral decay; Track 3 should know this before Week 6.
+## Timeline
 
-**Next.** Wire DPS and FlowDPS behind the existing interface (Week 2, T2.2);
-run the Week 1 kickoff from [docs/week1_kickoff.md](docs/week1_kickoff.md),
-which collects every question needing a cross-track answer — the eight spec
-sign-off items, D-013's blocking choice of CT substrate, and the referral of
-D-011 and D-012 to Tracks 3 and 1.
+Blueprint §20 groups the tasks into four term phases, sequenced so a valid, demonstrable result exists early and higher-risk elements come later — the coverage failure plus the group-conditional fix must be in hand by the midterm, before the weighted recalibration, the second modality, and the coverage-gap bound are attempted.
 
-## References
+| Phase | Focus | Key artefacts | Checkpoint |
+|-------|-------|---------------|------------|
+| 1 | Setup, infrastructure and baselines | Operator pipeline and score bank in MRI; reproduced baselines; formal review of the analytical setting | Topic approval and feasibility |
+| 2 | Empirical core and guaranteed backbone | Operator-aware score; demonstrated coverage failure; group-conditional remedy; first analytical result; preprint draft | Midterm review |
+| 3 | Generalisation and primary contribution | Second-modality score bank and results; weighted recalibration; coverage-gap-against-distance curves in both modalities; ill-posedness scaling | Interim results |
+| 4 | Consolidation and dissemination | Bound-versus-measurement study; ablations; manuscript submission; open-source release; final report | Final presentation and viva |
 
-Blueprint v3.0 (July 2026); Computer Vision Weekly Cards MASTER.
-Datasets: fastMRI [28], fastMRI+ [29], LoDoPaB-CT [30], TotalSegmentator [31].
-Solvers: DPS [23], DDNM [25], FlowDPS [26].
-Conformal: [1-10], with non-exchangeable conformal [3] underpinning the
-theoretical programme.
+---
+
+## Evaluation
+
+Blueprint §15.
+
+| Metric | What it measures |
+|---|---|
+| Empirical coverage vs nominal level | Whether the promised reliability actually holds |
+| Flag area at fixed reliability | Efficiency — a valid but over-conservative flag is useless |
+| Region-level FDR and power | Quality of hallucination detection where annotations exist |
+| **Coverage gap vs operator distance** | The headline relationship, reported in both modalities |
+| Effective sample size under weighting | Honest accounting of the statistical cost of reweighting |
+| Agreement between measured gap and derived bound | Whether the Track 3 result predicts observed behaviour |
+
+Baselines: naive conformal transferred across operators (the failure) · conformal matched to each operator (upper-bound reference) · Mondrian (the backbone) · operator-distance weighted recalibration (the primary method) · doubly-robust and adaptive calibration (fallbacks) · posterior-sample dispersion and published hallucination indices (non-conformal context).
+
+Headline experiment: calibrate at R = 4, deploy at R = 8 (plus intermediate factors), repeated across mask families and noise levels.
+
+---
+
+## Deliverables
+
+Blueprint §22. Open-source audit package · reproducible **cross-modality** operator benchmark released with cached score banks · coverage-gap-vs-distance result in both modalities · operator-distance coverage bound verified against measurement · public preprint · paper at a fast-turnaround Scopus-indexed venue · extended Q1 journal version · final institutional report.

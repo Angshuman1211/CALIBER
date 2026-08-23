@@ -76,3 +76,5 @@ Thumbs.db
 # Course/planning docs kept locally, not in the repo.
 Capstone_Blueprint_v3.docx
 Computer_Vision_Weekly_Cards_MASTER.docx
+# blueprint docs — binary, revised in Word, not source (see D13)
+*.docx
