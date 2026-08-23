@@ -1,130 +1,182 @@
 # CALIBER
-**Calibrated Audit of Learned Image reconstruction Beyond Exchangeable Regimes**
 
-Operator-shift-robust conformal hallucination flagging for accelerated-MRI reconstruction. Distribution-free reliability certificates that stay valid when the acquisition changes between calibration and deployment.
+**Operator-shift-robust conformal hallucination flagging**
+Distribution-free reliability certificates for generative-prior image
+reconstruction that remain valid when the acquisition changes between
+calibration and deployment.
 
----
+> Existing conformal reliability certificates for image reconstruction assume
+> the acquisition operator is fixed. This project shows the guarantee breaks
+> when the operator shifts between calibration and deployment, restores
+> validity through group-conditional calibration and operator-distance-aware
+> recalibration, demonstrates the result across two imaging modalities with
+> structurally different operators, and derives a coverage-gap bound expressed
+> in quantities computable from the operators themselves.
 
-## What this is
+This repository is **Track 2 — Systems, Data Engineering and Cross-Domain
+Validation** (Blueprint Sec. 18; Track B in the weekly cards). It owns the
+reconstruction and evaluation infrastructure that Tracks 1 and 3 build on.
 
-Generative priors (diffusion, flow-matching) produce sharp accelerated-MRI reconstructions, but they invent detail that looks plausible and is not supported by the measurements — hallucination. PSNR and SSIM cannot reveal it: they are global, and they need the ground truth you do not have at deployment.
-
-Conformal prediction can wrap any reconstruction model and emit per-region reliability flags with a provable error rate — but every existing conformal method for imaging assumes the **acquisition operator is fixed** between calibration and deployment. It is not. Change the sampling mask, the acceleration factor R, or the noise level, and exchangeability breaks: the method still reports 90% reliability while delivering less.
-
-CALIBER shows that failure, fixes it, and measures what is left:
-
-| | Role |
-|---|---|
-| **Group-conditional (Mondrian) calibration** | Guaranteed backbone — exact when the deployment operator is one of a known finite set |
-| **Operator-distance-aware weighted recalibration** | Primary novel contribution — weights are *known*, since retrospective masks are chosen |
-| **Operator-distance coverage-gap bound** | Theoretical stretch result, adapting non-exchangeable conformal prediction |
-
-The framework is a **solver-agnostic audit layer over pretrained priors** — it audits reconstruction models rather than training them, which is what makes it feasible on a single GPU.
-
-### Scope, stated honestly
-
-Precise scope-limiting is part of the contribution. The method assumes **known** linear/affine forward operators (true for retrospective MRI undersampling, where the mask is chosen). The guarantee is **exact** only in the discrete known-operator regime handled by group-conditional calibration; for continuous operator change the target is an explicit coverage-*gap bound*, not exact coverage. Operator shift changes the measurement process itself, so it is **not** a standard covariate shift — no new exact finite-sample guarantee is claimed for arbitrary shift. See `Documentation/problems_and_decisions.md` (D3, D6).
+Track 1 (methodology, calibration, theoretical guarantees) lives alongside it
+in [Documentation/](Documentation/) - see
+[Documentation/problems_and_decisions.md](Documentation/problems_and_decisions.md)
+for the Track 1 decision log and the cross-track contracts it depends on.
 
 ---
 
-## Setup
+## Quick start
 
 ```bash
-conda create -n caliber python=3.11
-conda activate caliber
-pip install -r requirements.txt
+pip install -e ".[dev]"
+pytest -q
+
+# End-to-end on synthetic phantoms — no dataset access, no checkpoint needed
+caliber configs/experiments/w01_smoke_phantom.yaml
+
+# CPU-only analysis of the resulting bank
+python scripts/analyse_bank.py runs/<run_id> \
+    --calibration-operator mri.random1d.R2.c0.08.s0
 ```
 
-Single modern GPU. No prior training required — all generative priors are pretrained and downloaded from upstream releases.
+The smoke run reproduces the project's central phenomenon in miniature. A
+threshold calibrated at R=2 and transferred to more aggressive accelerations
+loses coverage monotonically with operator distance, and group-conditional
+calibration restores it:
 
----
+| method | R=2 | R=4 | R=8 |
+|---|---|---|---|
+| naive transferred | 0.90 | 0.59 | 0.41 |
+| matched per operator | 0.90 | 0.90 | 0.90 |
+| group-conditional | 0.90 | 0.90 | 0.90 |
 
-## Data
+*(nominal 0.90; synthetic phantoms and a reference sampler — an interface
+smoke test, not a result.)*
 
-fastMRI is **not stored in this repository** and requires credentialed access — apply at [fastmri.med.nyu.edu](https://fastmri.med.nyu.edu/), then:
+Note the price of restoration: flag area rises from 0.44 to 0.83. Valid but
+over-conservative flags are of little practical use, which is exactly why
+Sec. 15.2 makes flag area a reported metric alongside coverage.
 
-```bash
-# fastMRI knee/brain raw k-space (after credentials are granted)
-python scripts/download_fastmri.py
+## Layout
 
-# fastMRI+ pathology annotations — region-level labels for flag evaluation
-python scripts/download_fastmri_plus.py
-
-# pretrained priors (FlowDPS primary; DPS / DDNM fallback and baselines)
-python scripts/download_priors.py
-```
-
-Downloaded data lives in `data/` and pretrained weights in `checkpoints/`, both gitignored. Raw k-space is what makes this project possible: it allows the acquisition operator to be varied retrospectively in a controlled way.
-
----
-
-## Structure
+The package mirrors the five-stage method pipeline of Blueprint Sec. 10.
 
 ```
-Project/
-├── caliber/              # audit layer — operator decomposition, scoring, calibration
-├── scripts/              # download, preprocessing, experiment entrypoints
-├── configs/              # version-controlled experiment configs (all runs are config-driven)
-├── Documentation/        # per-task records (T1.n_*.md) + problems_and_decisions.md
-├── data/                 # gitignored — fastMRI, downloaded locally by each user
-├── checkpoints/          # gitignored — pretrained priors
-├── results/              # gitignored — logged metrics and tables
-├── figures/              # output figures
-└── Paper/                # gitignored — reference papers
+src/caliber/
+  operators/    the known acquisition operator A, its range/null-space split,
+                the shared operator registry, distance measures     Stage 2
+  solvers/      pretrained diffusion and flow-matching back-ends behind one
+                black-box posterior-sampler interface               Stage 1
+  scoring/      region definition, operator-aware scoring, and the
+                ground-truth hallucination criterion                Stage 3
+  scorebank/    the cached, shared data format all three tracks read
+  calibration/  group-conditional and weighted recalibration        Stage 4
+                (Track 1 owns this module)
+  evaluation/   coverage, efficiency, detection, gap-vs-distance    Stage 5
+  data/         dataset access and preprocessing
+
+configs/        version-controlled experiment definitions
+docs/           interface specs, data access, cross-track decision log
+scripts/        CPU-only analysis entry points
+tests/          correctness gates
 ```
 
----
+## The two ideas the codebase is built around
 
-## Work plan
+**1. Compute once, analyse forever.** Reconstructions and scores are produced
+once on a GPU and cached as a *score bank*. Every subsequent calibration
+experiment, coverage curve, ablation, and numerical check reads the cache and
+needs no GPU at all (Sec. 17). This is what makes the scope affordable on a
+6 GB laptop GPU, and what lets all three tracks work in parallel rather than in
+series. See [docs/score_bank_spec.md](docs/score_bank_spec.md).
 
-The blueprint (§15) splits the work into two concurrent, interdependent tracks. **This repository covers Track 1.** Track 2 is partner-owned; what Track 1 depends on from it is recorded as explicit contracts in `Documentation/problems_and_decisions.md`.
+**2. One definition of every operator.** Operators and the distance between
+them are defined in a single registry used identically in MRI, CT, and the
+theoretical derivations (Sec. 19). Week 9 audits this explicitly. See
+[docs/operator_registry_spec.md](docs/operator_registry_spec.md).
 
-### Track 1 — Methodology, Calibration and Theoretical Guarantees
+## Invariants the code enforces
+
+These are structural, not conventions — each is enforced in code and covered by
+a test.
+
+- **The solver is held fixed within a coverage curve** (Sec. 13). A config
+  listing multiple solvers is rejected, and any score bank whose `run_id` spans
+  more than one solver fails validation. The Week 10 solver ablation runs one
+  experiment per solver and merges afterwards.
+- **Operators pass a health check before any production run.** A wrong adjoint
+  or a non-idempotent projector corrupts every score in the bank while leaving
+  the numbers looking plausible, so both are gated on every run.
+- **Ground truth never reaches the score.** Score components are functions of
+  the measurements alone; the true image enters only through the `err_*`
+  evaluation columns. The method must work without it — that is the premise
+  (Sec. 4.1).
+- **Approximations are recorded as data, not comments.** `exact_pinv: false`
+  and `null_space_dim_method: dimension_count` travel with every CT operator,
+  so the caveats reach the manifest and the write-up.
+
+## Track 2 tasks
 
 | Task | Deliverable | Status |
-|------|-------------|--------|
-| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **In progress** |
-| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | Not started |
-| **T1.3** Coverage-gap analysis | Operator-distance coverage-gap treatment and its validation in the known-operator regime | Not started |
-| **T1.4** Experimental design | Protocol, ablation matrix, and statistical-validation methodology | Not started |
-| **T1.5** Analysis and iteration | Interpretation of results and refinement of score and calibration | Not started |
-| **T1.6** Technical authoring | Methodology and analysis sections of the manuscript and report | Not started |
+|---|---|---|
+| T2.1 Data & operator pipeline | Dataset access, preprocessing, reproducible operator generation | operators done; fastMRI downloading (D-017) |
+| T2.2 Solver integration | Pretrained back-ends behind the common interface | interface fixed; back-ends Week 2 |
+| T2.3 Score-bank production | Cached reconstructions and scores across the grid | schema v0 done |
+| T2.4 Evaluation harness | Coverage, efficiency, region-level detection | metrics done |
+| T2.5 Cross-domain experiments | Protocol in CT plus appendix domain | CT operators done; data Week 7 |
+| T2.6 Baseline reproduction | Published comparators under the shared protocol | Weeks 3-6 |
+| T2.7 Figures & packaging | Visualisations and reproducibility package | Weeks 10-11 |
 
-Each task gets a branch (`T1.1`, `T1.2`, …) and a record in `Documentation/T1.<n>_*.md`, merged to `main`.
+## Where things stand
 
-### Track 2 — Systems, Data Engineering and Empirical Validation *(partner-owned)*
+**Done.** Operator layer for both modalities with exact adjoints and health
+checks; all five candidate distance measures; score-bank schema, writer, and
+validator; region grid and operator-aware scoring; evaluation harness; config
+system with the controlled-comparison guard; runner; synthetic and open-data
+development substrates; 66 tests. The CT path runs end to end on real LoDoPaB
+data (`configs/experiments/w07_ct_smoke.yaml`).
 
-T2.1 literature and method survey · T2.2 data and operator pipeline · T2.3 baseline reproduction · T2.4 evaluation harness · T2.5 experiment execution · T2.6 figures and packaging.
+**Data.** All CT data is local and structured. fastMRI+ annotations and an
+open-licensed diffusion prior are fetched. fastMRI raw k-space is downloading
+off-machine (D-017), with one licensing check still open there.
+`python scripts/fetch_data.py --list` shows the full inventory,
+`--verify` checks what is already on disk for truncation.
 
----
+**Development substrate.** M4Raw (open, CC-BY, same `.h5` layout) carries MRI
+pipeline work while fastMRI lands — wired as the `m4raw` dataset, with the one
+gap that it has no pathology annotations (D-015). It cannot carry a reported
+result, and the code says so rather than trusting anyone to remember: substrates
+and samplers that are development-only are marked in code, and every manifest
+records whether its bank is reportable (D-018).
 
-## Timeline
+**Three findings from Week 1 that need a decision, all in
+[docs/decision_log.md](docs/decision_log.md):**
 
-Blueprint §16 groups the tasks into four term phases, sequenced so a valid, demonstrable result exists early and higher-risk elements come later — the coverage failure plus the group-conditional fix must be in hand by the midterm, before the weighted recalibration and coverage-gap bound are attempted.
+- **D-020 — the v0 label threshold is calibrated to phantoms.** On real MRI
+  k-space, `err_free > 0.10` labels 100% of regions hallucinated, so region FDR
+  is identically zero and the flag says nothing. MRI's own decomposition is
+  sound (ratio 0.97, against CT's 1.33), so this is the threshold, not the
+  projector. The Week 2 criterion cannot be an absolute constant.
 
-| Phase | Focus | Checkpoint |
-|-------|-------|------------|
-| 1 | Setup, survey, baseline reproduction | Topic approval and feasibility |
-| 2 | Empirical gap + guaranteed backbone | Midterm review |
-| 3 | Primary contribution and analysis | Interim results |
-| 4 | Consolidation and dissemination | Final presentation and viva |
+- **D-012 — the CT null projector amplifies.** FBP is not the pseudo-inverse,
+  so `‖P_N x‖/‖x‖` reaches 1.74 at 30 views when an orthogonal projection can
+  never exceed 1. Worse, it degrades monotonically *in the same direction as
+  operator distance*, so a CT coverage curve could look monotone because our
+  decomposition degrades, not because reliability does. Needs a
+  conjugate-gradient pseudo-inverse before any CT coverage curve is reported.
+- **D-011 — randomised spectral estimation barely separates CT operators.**
+  The decay exponent moves 1.688 → 1.676 between 180 and 20 views. L2 leans on
+  spectral decay; Track 3 should know this before Week 6.
 
----
+**Next.** Wire DPS and FlowDPS behind the existing interface (Week 2, T2.2);
+run the Week 1 kickoff from [docs/week1_kickoff.md](docs/week1_kickoff.md),
+which collects every question needing a cross-track answer — the eight spec
+sign-off items, D-013's blocking choice of CT substrate, and the referral of
+D-011 and D-012 to Tracks 3 and 1.
 
-## Evaluation
+## References
 
-| Metric | What it measures |
-|---|---|
-| Empirical coverage vs nominal level | Whether the promised reliability actually holds |
-| Prediction-set size / flag area | Efficiency — a valid but over-conservative flag is useless |
-| Flag FDR and power | Region-level quality of hallucination detection |
-| **Coverage gap vs operator distance** | The headline relationship — reliability lost as the acquisition moves |
-| Effective sample size under weighting | Honest accounting of the cost of reweighting |
-
-Headline experiment: calibrate at R = 4, deploy at R = 8 (plus intermediate factors), repeated across mask families and noise levels.
-
----
-
-## Deliverables
-
-Open-source audit package · reproducible fastMRI operator benchmark · coverage-gap-vs-distance result · public preprint · paper at a fast-turnaround Scopus-indexed venue · extended Q1 journal version · final institutional report.
+Blueprint v3.0 (July 2026); Computer Vision Weekly Cards MASTER.
+Datasets: fastMRI [28], fastMRI+ [29], LoDoPaB-CT [30], TotalSegmentator [31].
+Solvers: DPS [23], DDNM [25], FlowDPS [26].
+Conformal: [1-10], with non-exchangeable conformal [3] underpinning the
+theoretical programme.

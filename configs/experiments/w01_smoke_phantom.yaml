@@ -1,0 +1,37 @@
+# Week 1 smoke test — the whole pipeline end to end on synthetic phantoms.
+#
+# Needs no dataset access and no checkpoint, so it runs on day one. Its purpose
+# is to prove the interfaces fit together and to hand Track 1 a real score bank
+# to develop calibration against while fastMRI access is still pending.
+#
+#   caliber configs/experiments/w01_smoke_phantom.yaml
+#
+# Results from this config are never reportable: the sampler is a reference,
+# not a generative prior.
+
+include: base
+
+experiment:
+  name: w01_smoke_phantom
+  solver:
+    name: reference_nullspace
+    hallucination_scale: 0.18
+  n_posterior: 8
+  operators:
+    - modality: mri
+      family: random1d
+      acceleration: [2, 4, 8]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [128, 128]
+  dataset:
+    name: phantom
+    n_items: 24
+    image_shape: [128, 128]
+    split: calib
+
+run:
+  limit: 24
+  cache_reconstructions: 2

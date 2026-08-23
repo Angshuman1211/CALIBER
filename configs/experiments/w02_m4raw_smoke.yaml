@@ -1,0 +1,42 @@
+# MRI smoke test on real raw k-space, while fastMRI access is pending (D-015).
+#
+# This is the MRI counterpart of w07_ct_smoke.yaml: real measurements, real
+# retrospective undersampling, reference sampler. It closes the gap the Week 1
+# board had — every MRI number so far came from synthetic phantoms, so nothing
+# had yet proved the loader, the FFT conventions, or the mask families against
+# an actual scanner file.
+#
+#   python scripts/fetch_data.py m4raw_val --extract
+#   caliber configs/experiments/w02_m4raw_smoke.yaml
+#
+# Not reportable, twice over: M4Raw is a development substrate (0.3 T brain,
+# no pathology annotations) and the sampler is a reference. The runner says so
+# and the manifest records it.
+
+include: base
+
+experiment:
+  name: w02_m4raw_smoke
+  solver:
+    name: reference_nullspace
+    hallucination_scale: 0.18
+  n_posterior: 6
+  operators:
+    - modality: mri
+      family: [random1d, equispaced1d]
+      acceleration: [2, 4, 8]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [128, 128]
+  dataset:
+    name: m4raw
+    root: data/raw/m4raw
+    split: calib
+    image_shape: [128, 128]
+    slices_per_volume: 2
+
+run:
+  limit: 12
+  cache_reconstructions: 2

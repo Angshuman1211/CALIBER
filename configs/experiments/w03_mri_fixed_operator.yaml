@@ -1,0 +1,42 @@
+# Week 3 — first MRI score bank at one fixed acceleration factor.
+#
+# Deliverable (Week 3 card): "End-to-end pipeline runs on one operator setting,
+# solver held fixed." One operator, one solver, real data. The grid opens up in
+# Week 4; this config exists to get the full path from raw k-space to a
+# validated score bank working on a single setting first.
+#
+# Requires fastMRI access — see docs/data_access.md.
+
+include: base
+
+experiment:
+  name: w03_mri_fixed_operator
+  solver:
+    name: dps            # Week 2 deliverable; reference_nullspace until wired
+    n_steps: 200
+  n_posterior: 8
+  operators:
+    - modality: mri
+      family: random1d
+      acceleration: 4
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [256, 256]
+  dataset:
+    name: fastmri
+    # The .h5 search is recursive, so this may point at the directory the
+    # archive was unpacked into rather than the exact one holding the files.
+    # It stays split-specific on purpose: pointing it at data/raw/fastmri would
+    # sweep up train and val together and put the same volume on both sides of
+    # the calibration/test split (the D-014 hazard, in its fastMRI form).
+    root: data/raw/fastmri/singlecoil_val
+    annotations_csv: data/annotations/fastmri_plus/knee.csv
+    split: calib
+    image_shape: [256, 256]
+    slices_per_volume: 1
+
+run:
+  limit: 100
+  cache_reconstructions: 8
