@@ -75,7 +75,8 @@ src/caliber/
   data/         dataset access and preprocessing
 
 configs/        version-controlled experiment definitions
-docs/           interface specs, data access, cross-track decision log
+docs/           interface specs, data access, cross-track decision log,
+                Track 2 problems log
 scripts/        CPU-only analysis entry points
 tests/          correctness gates
 ```
