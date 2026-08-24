@@ -17,35 +17,6 @@ can still cost someone a week.
 
 ## Still open
 
-### P-01 - The CT null projector amplifies instead of projecting
-
-**Blocks:** any reported CT coverage curve - **See:** D-012, D-006
-
-CT `pinv` is filtered backprojection, not the Moore-Penrose inverse, so
-`P_N = I - A+A` is not a contraction. Measured on real LoDoPaB data, median
-`err_free / err_total` is 1.33; for a genuine orthogonal projection that ratio
-cannot exceed 1.
-
-The damaging part is not the constant, it is the trend. `||P_N x|| / ||x||`
-climbs from 0.667 at 180 views to 1.738 at 30 views - the projector degrades
-monotonically *in the same direction as operator distance*. So a CT
-coverage-gap-vs-distance curve could come out monotone because our own
-decomposition is falling apart, not because reliability is. The two effects are
-confounded, and the Week 9 curve-collapse test cannot separate them.
-
-**Where it stands:** detected, not fixed. `null_projection_gain()` and the
-`contraction_ok` health field surface it as a runner warning rather than a hard
-gate, so CT development is not blocked. The fix is conjugate gradient on the
-normal equations for the *decomposition* (FBP can stay as the display
-reconstruction), scheduled for Week 7. Until it lands, CT numbers are plumbing
-only.
-
-**Lesson:** an approximation that looked like it would only loosen constants
-(D-006) turned out to invert the inequality the free component is supposed to
-satisfy. "Approximate" was not a safe thing to wave through.
-
----
-
 ### P-02 - The v0 label threshold marks everything as hallucinated
 
 **Blocks:** region FDR / power on any real substrate - **See:** D-020, D-003, D-009
@@ -163,6 +134,77 @@ or earlier if CT moves up).
 ---
 
 ## Resolved
+
+### P-01 - The CT null projector amplifies instead of projecting
+
+**Fixed** - **See:** D-012, D-006
+
+CT `pinv` (filtered backprojection) is not the Moore-Penrose inverse, so
+`P_N = I - A+A` built from it was not a contraction. Measured on real LoDoPaB
+data, median `err_free / err_total` was 1.33; for a genuine orthogonal
+projection that ratio cannot exceed 1. Worse than the constant was the trend:
+`||P_N x|| / ||x||` climbed from 0.667 at 180 views to 1.738 at 30 views - the
+projector degraded monotonically *in the same direction as operator distance*,
+which could have made a CT coverage-gap-vs-distance curve come out monotone
+for the wrong reason.
+
+**Fix:** `CTProjectionOperator.pinv_cg` - conjugate gradient on the normal
+equations `AᵀA x = Aᵀy`. Started from `x0 = 0`, CG never leaves
+`row-space(A)` (both `AᵀA` and `b = Aᵀy` live there), so it heads within row
+space towards the minimum-norm least-squares solution, `A⁺y`.
+
+FBP stays exactly where it was, as the fast *display* reconstruction returned
+by `pinv()` - solvers and score-bank baselines are unaffected. Only the
+decomposition (`project_range` / `project_null`, and therefore `err_free` and
+`s_free`) is repointed at CG, through a new `ForwardOperator.decomposition_pinv`
+hook.
+
+**Scoped deliberately to contraction, not idempotence.** Measured across the
+Sec. 16 operator grid, `null_projection_gain()` clears `<= 1` reliably, often
+from just 5-10 CG iterations - that gain, not idempotence, is what D-012 was
+about, and `contraction_ok` is now a hard gate in the runner rather than a
+warning. `projection_idempotence_error()` is a different, stricter property
+that settles in the low tens-of-percent range at best and does not simply
+improve with more iterations (applying a partially-converged solve twice, as
+the idempotence test does, compounds error in a way the first solve's
+iteration count doesn't control) - `exact_pinv` correctly stays False for CT
+and the registry's idempotence gate stays bypassed for it, unchanged.
+
+**A real numerical hazard, found and closed while building this.**
+Unregularized CG on this rank-deficient system is not just slow past the
+point of diminishing returns, it is unsafe: an early version of the fix
+diverged by 6+ orders of magnitude beyond ~500 iterations on a 16-view
+operator, once the Krylov recurrence exhausted the well-determined subspace
+and further steps amplified rounding error in near-null directions instead of
+signal. Fixed by tracking the best iterate by residual norm and stopping
+outright on the first upward turn, rather than trusting a configured iteration
+count to be safe. Iteration count and tolerance are now `cg_iterations` /
+`cg_tol` constructor params (default 20 / 1e-6 - the contraction fix
+saturates by ~20 iterations, and idempotence keeps wobbling non-monotonically
+well past that point, so more iterations is cost without reliable benefit) -
+recorded per-operator for
+reproducibility, and deliberately excluded from `operator_id`.
+
+**Re-measured on the real data the defect was found on.** Re-ran
+`w07_ct_smoke.yaml` (real LoDoPaB validation slices, 128x128, 180/90/45 views,
+1536 region rows) after the fix: median `err_free`/`err_total` is now
+0.024-0.065 per operator (against the original 1.33), and zero of 1536 rows
+violate `err_free <= err_total`. Also confirmed the CG iteration tuning
+mattered in practice, not just on synthetic grids: the same run took 345s at
+`cg_iterations=50` and 162s after tuning the default to 20, for the same
+result. Refreshing P-02's specific numbers under the new decomposition is the
+next CT item - that's Track 1's O2 threshold decision, not a pipeline fix.
+
+**Lesson:** an approximation that looked like it would only loosen constants
+(D-006) turned out to invert the inequality the free component is supposed to
+satisfy. "Approximate" was not a safe thing to wave through - and the fix for
+a *display* approximation did not require touching the display path at all,
+once the decomposition was given its own inverse to call. A second lesson
+showed up inside the fix itself: replacing an approximate method with an
+iterative one traded a silent bias for a different failure mode (numerical
+divergence) that needed its own guard.
+
+---
 
 ### P-07 - fastMRI+ boxes were rasterised on the wrong grid
 

@@ -96,26 +96,23 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     print(f"[caliber] output           {out_root}")
 
     health = registry.check_health()
-    bad = [h for h in health if not h["adjoint_ok"] or not h["projector_ok"]]
+    bad = [
+        h for h in health
+        if not h["adjoint_ok"] or not h["projector_ok"] or not h["contraction_ok"]
+    ]
     if bad:
         for h in bad:
             print(
                 f"[caliber] OPERATOR CHECK FAILED  {h['operator_id']}  "
-                f"adjoint={h['adjoint_rel_error']:.2e}  idem={h['idempotence_rel_error']:.2e}",
+                f"adjoint={h['adjoint_rel_error']:.2e}  idem={h['idempotence_rel_error']:.2e}  "
+                f"null_gain={h['null_projection_gain']:.3f}",
                 file=sys.stderr,
             )
         raise ConfigError(
-            "operator health check failed; a wrong projector corrupts every score in the bank"
+            "operator health check failed; a wrong or amplifying projector corrupts "
+            "every score in the bank. See decision log D-012."
         )
     print(f"[caliber] operator check   {len(health)} operators passed")
-    amplifying = [h for h in health if not h["contraction_ok"]]
-    if amplifying:
-        worst = max(h["null_projection_gain"] for h in amplifying)
-        print(
-            f"[caliber] WARNING          {len(amplifying)}/{len(health)} operators have an "
-            f"amplifying null projector (worst gain {worst:.2f}); free-component scores "
-            f"are not comparable across modalities. See decision log D-012."
-        )
 
     if dry_run:
         registry.write_manifest(out_root / "operator_registry.json")

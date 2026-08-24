@@ -8,10 +8,25 @@ forward operator ``A``. Every reconstruction splits into
 where ``P_R x`` is pinned down by the measurements and ``P_N x`` is the free
 component the operator cannot see, and where hallucination concentrates.
 
-Whether ``P_R`` is an exact orthogonal projection depends on whether ``pinv``
-is the true Moore-Penrose pseudo-inverse. It is exact for mask-based MRI and
-only approximate for the filtered-backprojection CT inverse, so operators
-declare ``exact_pinv`` and downstream code is expected to honour it.
+Whether ``P_R`` is an exact orthogonal projection depends on whether the
+inverse used to *build* it is the true Moore-Penrose pseudo-inverse — which is
+not necessarily ``pinv``. ``pinv`` is the fast, non-iterative inverse used for
+display reconstruction, and ``exact_pinv`` describes only that: it is exact
+for mask-based MRI, and only approximate for the filtered-backprojection CT
+inverse.
+
+The decomposition itself goes through :meth:`ForwardOperator.decomposition_pinv`,
+which defaults to ``pinv`` but can be overridden with a different inverse when
+``pinv`` is not good enough to build a *contraction* from (CT's CG fix,
+D-012). That fix is deliberately scoped to the contraction property alone —
+``null_projection_gain() <= 1`` — not to idempotence: CG on CT's normal
+equations is iterative and, at any iteration budget cheap enough to run per
+item, converges to project_range being *approximately* idempotent, not
+exactly. Chasing tighter idempotence there is not simply a matter of running
+more iterations either — see the caveat on ``CTProjectionOperator.pinv_cg``.
+So the idempotence gate below stays keyed on ``exact_pinv``, unchanged, and
+does not apply to CT before or after D-012; the contraction gate in
+``OperatorRegistry.check_health`` (``contraction_ok``) is the one D-012 fixes.
 """
 
 from __future__ import annotations
@@ -89,7 +104,12 @@ class ForwardOperator(ABC):
 
     @abstractmethod
     def pinv(self, y: Tensor) -> Tensor:
-        """Apply ``A^+`` (or the best available inverse): measurements -> image."""
+        """Apply ``A^+`` (or the best available inverse): measurements -> image.
+
+        This is the *display* reconstruction — fast and non-iterative. It is
+        not necessarily what the range/null-space decomposition uses; see
+        :meth:`decomposition_pinv`.
+        """
 
     @abstractmethod
     def descriptor(self) -> OperatorDescriptor:
@@ -97,9 +117,20 @@ class ForwardOperator(ABC):
 
     # -- Stage 2: operator decomposition ------------------------------------
 
+    def decomposition_pinv(self, y: Tensor) -> Tensor:
+        """Inverse used to build ``P_R = A^+ A`` for the decomposition.
+
+        Defaults to :meth:`pinv`. Override this — not ``project_range``
+        directly — when ``pinv`` is not a genuine pseudo-inverse and a
+        better one is available for the decomposition specifically (CT's CG
+        fix, D-012). Keeping ``pinv`` itself unchanged means the display
+        reconstruction it returns elsewhere in the pipeline is unaffected.
+        """
+        return self.pinv(y)
+
     def project_range(self, x: Tensor) -> Tensor:
         """Measured component ``A^+ A x`` — constrained by the data."""
-        return self.pinv(self.forward(x))
+        return self.decomposition_pinv(self.forward(x))
 
     def project_null(self, x: Tensor) -> Tensor:
         """Free component ``(I - A^+ A) x`` — invisible to the measurements."""
@@ -151,11 +182,11 @@ class ForwardOperator(ABC):
         """Worst-case ``||P_N x|| / ||x||``. An orthogonal projection gives <= 1.
 
         A value above 1 means ``P_N`` *amplifies* rather than projects, which
-        happens when ``pinv`` is an approximate inverse rather than the true
-        pseudo-inverse. It matters directly: the free-component score and the
-        ``err_free`` label both then measure reconstruction error of the
-        inverse, not invented structure, and are not comparable across
-        modalities. See decision log D-012.
+        happens when ``decomposition_pinv`` is an approximate inverse rather
+        than the true pseudo-inverse. It matters directly: the free-component
+        score and the ``err_free`` label both then measure reconstruction
+        error of the inverse, not invented structure, and are not comparable
+        across modalities. See decision log D-012 (fixed for CT via CG).
         """
         gen = torch.Generator().manual_seed(seed)
         worst = 0.0

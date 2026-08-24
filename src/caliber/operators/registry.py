@@ -125,11 +125,18 @@ class OperatorRegistry:
                     "exact_pinv": desc.exact_pinv,
                     "adjoint_ok": adj_err < adjoint_atol,
                     # Only exact-pinv operators are required to be idempotent
-                    # projectors; FBP-based CT is expected to miss.
+                    # projectors. This is unchanged by D-012: CT's decomposition
+                    # is CG-based now, not FBP-based, but CG is iterative and
+                    # only approximately idempotent at any iteration budget
+                    # cheap enough to run per item — see
+                    # CTProjectionOperator.pinv_cg. What D-012 fixes is
+                    # contraction (below), not idempotence.
                     "projector_ok": (not desc.exact_pinv) or idem_err < adjoint_atol,
-                    # Reported, not gated. An amplifying P_N is a known defect
-                    # of the FBP-based CT inverse (D-012) that Week 7 must fix;
-                    # failing the run today would block CT development.
+                    # Gated (not merely reported) since D-012's CG fix: an
+                    # amplifying P_N meant the free-component score and
+                    # err_free label were measuring FBP reconstruction error,
+                    # not invented structure, and this is now expected to
+                    # hold for every registered operator, MRI and CT alike.
                     "contraction_ok": gain <= 1.0 + 1e-3,
                 }
             )

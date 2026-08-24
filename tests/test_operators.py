@@ -81,6 +81,7 @@ def test_ct_adjoint_is_exact(ct_op):
 
 
 def test_ct_pinv_is_declared_approximate(ct_op):
+    """``pinv`` (FBP) stays the fast display reconstruction and stays approximate."""
     assert ct_op.descriptor().exact_pinv is False
 
 
@@ -89,22 +90,42 @@ def test_mri_null_projector_is_a_contraction(mri_op):
     assert mri_op.null_projection_gain() <= 1.0 + 1e-4
 
 
-def test_ct_null_projector_amplifies_and_is_detected(ct_op):
+def test_ct_null_projector_is_a_contraction(ct_op):
     """Regression guard for D-012.
 
-    FBP is not the pseudo-inverse, so CT's ``P_N`` amplifies. This is a known
-    defect scheduled for a conjugate-gradient fix in Week 7. The test asserts
-    the *detector* works, so that when the fix lands this test fails and forces
-    both it and D-012 to be updated together.
+    FBP is not the pseudo-inverse, so the ``P_N`` it built amplified rather
+    than projected (measured gain up to 1.74 at 30 views on real LoDoPaB
+    data). The decomposition now goes through CG on the normal equations
+    (``decomposition_pinv`` / ``pinv_cg``), a genuine pseudo-inverse in the
+    least-squares sense, so ``P_N`` is a contraction like MRI's — this holds
+    from just a handful of CG iterations, well before idempotence does (see
+    ``pinv_cg``'s docstring on what the fix does and does not cover).
     """
-    assert ct_op.null_projection_gain() > 1.0
-    from caliber.operators import OperatorRegistry
+    assert ct_op.null_projection_gain() <= 1.0 + 1e-3
 
+
+def test_ct_idempotence_is_still_not_gated(ct_op):
+    """D-012 fixed contraction, not idempotence — CT is not held to MRI's bar.
+
+    CG is iterative and only approximately idempotent at any iteration budget
+    cheap enough to run per item; ``exact_pinv`` correctly stays False and the
+    registry's idempotence gate is bypassed for CT, unchanged by the fix.
+    """
     reg = OperatorRegistry(SHAPE)
     reg.add(ct_op)
     report = reg.check_health()[0]
-    assert report["contraction_ok"] is False
-    assert report["adjoint_ok"] is True  # the adjoint is still exact
+    assert report["exact_pinv"] is False
+    assert report["projector_ok"] is True  # bypassed, not actually idempotent
+    assert report["idempotence_rel_error"] > 1e-3  # would fail MRI's bar
+
+
+def test_ct_health_check_gates_on_contraction(ct_op):
+    """``contraction_ok`` is now enforced (D-012), not merely reported."""
+    reg = OperatorRegistry(SHAPE)
+    reg.add(ct_op)
+    report = reg.check_health()[0]
+    assert report["adjoint_ok"] is True
+    assert report["contraction_ok"] is True
 
 
 def test_ct_fbp_recovers_structure(ct_op):

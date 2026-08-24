@@ -202,7 +202,7 @@ tail estimator, or dropping the spectral term from the headline statement.
 ---
 
 ## D-012 · The FBP-based CT null projector amplifies; it must be replaced
-**Date:** Week 1 · **Status:** OPEN · **Raised by:** Track 2 · **Blocks:** Week 7
+**Date:** Week 1 · **Status:** RESOLVED — fixed · **Raised by:** Track 2 · **Fixed:** Week 7 (ahead of schedule)
 
 Measured on real LoDoPaB validation data (`w07_ct_smoke`, 128x128, 24 items):
 
@@ -253,16 +253,94 @@ confounded, and the Week 9 curve-collapse test cannot distinguish them.
 **This must be fixed before any CT coverage curve is reported**, not merely
 before publication. Until it is, CT numbers are for plumbing only.
 
-*Fix (Week 7, Track 2).* Replace FBP with a genuine pseudo-inverse for the
-**decomposition** — conjugate gradient on the normal equations `AᵀA x = Aᵀ y`,
-which converges to `A⁺y` in the least-squares sense and is a contraction. FBP
-can remain the display reconstruction. Cost is a handful of matvecs per item,
-which the score bank amortises anyway.
+### Fix, landed — scoped to the contraction property, not idempotence
 
-*Detection.* `ForwardOperator.null_projection_gain()` and the
-`contraction_ok` field in `OperatorRegistry.check_health()`. Reported as a
-runner warning rather than gated, so CT development is not blocked before the
-fix lands.
+FBP is replaced with a genuine pseudo-inverse for the **decomposition**:
+conjugate gradient on the normal equations `AᵀA x = Aᵀy`
+(`CTProjectionOperator.pinv_cg`). Starting from `x0 = 0`, every CG iterate
+stays in the Krylov subspace of `AᵀA` and `b = Aᵀy`, which lives entirely in
+`row-space(A)` — so CG never touches `null-space(A)` and heads, within row
+space, towards the minimum-norm least-squares solution, `A⁺y`.
+
+**FBP stays the display reconstruction**, exactly as planned — `pinv()` is
+unchanged and still what solvers and score-bank baselines read. Only the
+decomposition (`project_range` / `project_null`, everything `err_free` and
+`s_free` are built from) is repointed, through a new
+`ForwardOperator.decomposition_pinv` hook that defaults to `pinv` and that CT
+overrides.
+
+**What this fixes: contraction.** Measured across the Sec. 16 operator grid
+(64x64 to 256x256, 8 to 180 views, sparse-view and limited-angle),
+`null_projection_gain()` clears `≤ 1` robustly — often from as few as 5-10 CG
+iterations. `exact_pinv` is unchanged (still False for CT) and
+`OperatorRegistry.check_health()`'s idempotence gate (`projector_ok`) stays
+keyed on it, so it stays bypassed for CT exactly as before — that gate was
+never what D-012 was about. What *is* now gated, promoted from a runner
+warning to a hard failure, is `contraction_ok`.
+
+**What this does not fix, and was never going to: idempotence.**
+`projection_idempotence_error()` settles in the low tens-of-percent range at
+best, and is *not* monotone in CG iteration count — applying an
+incompletely-converged solve twice, as the idempotence test does, compounds
+approximation error in a way more iterations of the first solve doesn't
+simply undo. CT's decomposition is a cheap iterative approximation, not an
+exact projector, before or after this fix; only its worst-case behaviour
+(amplification) has changed.
+
+**Why iterations are capped, not driven toward convergence.** More CG
+iterations do not reliably help (see above) and are not free: measured
+several seconds per single decomposition call on CPU at 256x256 with 100+
+views, past which returns visibly diminish. Worse, unregularized CG on a
+rank-deficient system is not merely slow past the point where it has
+extracted the recoverable signal — it is numerically unsafe: an early,
+undamped version of this fix diverged by 6+ orders of magnitude beyond ~500
+iterations on a 16-view operator, because once the Krylov recurrence exhausts
+`row-space(A)`'s well-determined part, further iterations amplify rounding
+error in near-null directions instead of resolving anything. `pinv_cg` now
+tracks the best iterate by residual norm and stops outright once the residual
+turns upward, rather than trusting whatever iteration count is configured to
+be safe. Iteration count and tolerance are exposed as `cg_iterations` /
+`cg_tol` constructor params (default 20 / 1e-6 — chosen because the
+contraction property saturates by ~20 iterations while idempotence keeps
+wobbling non-monotonically well past it, so more is cost without reliable
+benefit), recorded in the operator's
+`params` for reproducibility, tunable per experiment, and deliberately
+excluded from `operator_id` (decomposition numerics, not physical identity —
+same treatment as `null_space_dim_method`).
+
+*Verified — including on the real data the original defect was found on.*
+`null_projection_gain() ≤ 1` at the `test_operators.py` fixture scale (64x64,
+32 views, 180°) and spot-checked across the wider grid above. Re-running
+`w07_ct_smoke.yaml` (real LoDoPaB validation slices, 128x128, 180/90/45 views,
+1536 region rows) end to end after the fix:
+
+| operator | median `err_free`/`err_total` | max row-level ratio | rows with ratio > 1 |
+|---|---|---|---|
+| v180 | 0.024 | 0.79 | 0 / 512 |
+| v90 | 0.038 | 0.76 | 0 / 512 |
+| v45 | 0.065 | 0.70 | 0 / 512 |
+
+Against D-012's original measurement of a **1.33** median ratio (`err_free`
+exceeding `err_total`, which a genuine decomposition cannot produce), every
+one of 1536 real-data region rows across all three operators now has
+`err_free` a small, bounded fraction of `err_total`, with zero violations of
+`err_free ≤ err_total`. This is the direct empirical resolution of D-012 on
+the substrate the defect was originally found on. Refreshing P-02's specific
+numbers under the new decomposition — the O2 threshold decision Track 1 owns
+— is the follow-up.
+
+*Performance, measured on the same run.* `w07_ct_smoke.yaml` end to end
+(24 item×operator pairs, 128x128): 345s at the initial `cg_iterations=50`
+attempt, 162s after tuning the default down to 20 — confirms the "more
+iterations, no reliable benefit" finding above wasn't just a synthetic-grid
+artefact. Measured on CPU; expect substantially faster on the project's
+target GPU.
+
+*Detection, promoted from a warning to a gate.*
+`ForwardOperator.null_projection_gain()` and `contraction_ok` in
+`OperatorRegistry.check_health()` now fail the run (`runner.py`) rather than
+merely warn — expected to read ≤ 1 for every registered operator, MRI and CT
+alike, and a run should stop if that regresses.
 
 *Affects:* O1, O2, L1, L2, D-006, T2.1, T2.5, T3.3, Sec. 13, Weeks 7-9.
 
