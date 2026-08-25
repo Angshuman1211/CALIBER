@@ -82,7 +82,7 @@ def test_multicoil_volume_is_reduced_by_root_sum_of_squares(tmp_path):
 
 
 def test_a_volume_without_kspace_fails_loudly(tmp_path):
-    """A dataset of finished images cannot support this project (docs/data_access.md §1)."""
+    """A dataset of finished images cannot support this project (Documentation/data_access.md §1)."""
     path = tmp_path / "images_only.h5"
     with h5py.File(path, "w") as fh:
         fh.create_dataset("reconstruction_rss", data=np.zeros((2, 32, 32), dtype=np.float32))
