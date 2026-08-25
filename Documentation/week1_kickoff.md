@@ -136,15 +136,35 @@ start against the natural-image prior per D-016, then move to medical weights.
 
 ---
 
-## G. Decision record — fill in at the meeting
+## G. Decision record
+
+**Track 1 signed off on all six of its items.** Full reasoning for each is in
+`Documentation/problems_and_decisions.md` (D19–D24); cross-track entries updated in
+`decision_log.md`. Note the two logs number differently — `D-0NN` here, `DNN` there.
 
 | Item | Decision | Owner | Logged as |
 |---|---|---|---|
-| B1 region definition | | Track 1 | D-009 |
-| B2/C2 `calib_group` | | Track 1 | — |
-| B3 split assignment | | Track 1 + 2 | — |
-| B4 multi-coil RSS | | Track 2 | D-008 |
-| C1 primary distance | | Track 1 | D-010 |
-| C3 mask seeds | | Track 1 | — |
-| C4 spectral budget | | Track 3 | D-007, D-011 |
-| D-013 CT substrate | | Track 2 | D-013 |
+| B1 region definition | **Confirmed as proposed** — patch grid is the risk unit; annotations are an evaluation overlay, never the region definition. `region_area` stays constant. Region size is a T1.4 ablation axis. | Track 1 | D-009 / **D20** |
+| B2/C2 `calib_group` | **Confirmed as proposed** — granularity unchanged; definition moves into the operator registry. Noise is *not* a group axis in v1. | Track 1 | **D-021** / **D22** |
+| B3 split assignment | **Confirmed, with an added requirement** — per `sample_id`, patient-level, in the registry. Must also be **operator-independent**: same patient, same side, every regime, or coverage differences are confounded with anatomy. | Track 1 + 2 | **D-022** / **D23** |
+| B4 multi-coil RSS | Confirmed; Track 1 concurs — state the single-coil narrowing in Experimental Setup rather than leaving a reader to find it. | Track 2 | D-008 |
+| C1 primary distance | **Locked: `null_space_projection` (Frobenius) / `ambient`.** Verified non-saturating and monotone. Ill-posedness normalisation deliberately kept *out* of the distance. Two actions follow — distance-even operator grids, and the `operator_norm` naming collision. | Track 1 | D-010 / **D19** |
+| C3 mask seeds | **Confirmed as proposed** — one group per (family, acceleration); seeds are members. Defines the Week 4 axes, and makes seed variation the noise floor a real shift must clear. | Track 1 | **D-023** / **D24** |
+| C4 spectral budget | Still Track 3's; unblocked by C1 being locked. | Track 3 | D-007, D-011 |
+| D-013 CT substrate | Track 2's call; Track 1 does not object to Option A. D20 makes annotations an overlay rather than the region definition, which removes the region-definition coupling from this choice. | Track 2 | D-013 |
+
+### Referred item D-020 — answered, with the diagnosis revised
+
+**The threshold is not the problem, so do not re-tune it.** With `reference_nullspace`,
+`err_free` structurally measures the *ground truth's own* null-space content rather
+than anything the reconstruction invented — reproduced on synthetic images at r = 0.95.
+The criterion's **form** is locked now (`err_free / free_content > τ`); **τ is set only
+after a real prior lands (T2.2)**, and its positive rate is then reported, not targeted.
+One cheap ask back: nullable bank column `free_content` (no schema bump). See **D21**.
+
+### Still open after this sign-off
+
+Track 1's remaining critical-path item is **the score combination rule** (T1.1 WI-3) —
+`scoring/score.py` is still `v0-placeholder`, and nothing is reportable until it is real.
+T3.3 §5 constrains it: the null-space-energy and disagreement terms likely need to be
+*designed* Lipschitz in the D19 distance rather than checked afterwards.
