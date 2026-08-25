@@ -63,7 +63,7 @@ class LoDoPaBDataset(SliceDataset):
         self.pattern = pattern or f"ground_truth_{split}_*.hdf5"
         if not self.root.is_dir():
             raise FileNotFoundError(
-                f"LoDoPaB directory not found: {self.root}. See docs/data_access.md - "
+                f"LoDoPaB directory not found: {self.root}. See Documentation/data_access.md - "
                 "the dataset is openly available on Zenodo and can be fetched before Week 7."
             )
         self.files = sorted(self.root.glob(self.pattern))
