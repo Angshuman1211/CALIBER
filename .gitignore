@@ -78,3 +78,9 @@ Capstone_Blueprint_v3.docx
 Computer_Vision_Weekly_Cards_MASTER.docx
 # blueprint docs — binary, revised in Word, not source (see D13)
 *.docx
+
+# Local machine-migration notes and transfer bundle — personal, not source,
+# never pushed (see MOVE_TO_COLLEGE_PC.md itself for why).
+MOVE_TO_COLLEGE_PC.md
+caliber-repo.bundle
+*.bundle
