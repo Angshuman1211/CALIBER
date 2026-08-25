@@ -10,19 +10,44 @@ Week 3 card specify:
 * **measurement residual** — evidence from ``A x - y`` that a region is not
   data-consistent.
 
-Ownership: the *definition* of the final score is Track 1's (T1.1, finalised
-Week 3). Track 2 owns making it computable, cacheable, and identical across
-modalities. The design decision that matters for that division of labour is
-that the three components are **stored separately** in the score bank. Track 1
-can then re-weight, re-combine, and re-threshold from cached values with no GPU
-time at all, which is the whole point of Sec. 17.
+Ownership: the *definition* of the final score is Track 1's (T1.1). Track 2 owns
+making it computable, cacheable, and identical across modalities. The design
+decision that matters for that division of labour is that the three components
+are **stored separately** in the score bank. Track 1 can then re-weight,
+re-combine, and re-threshold from cached values with no GPU time at all, which
+is the whole point of Sec. 17.
 
-``combine`` below is therefore a v0 placeholder, and is marked as such in the
-score bank via ``score_version``.
+T1.1 (WI-3) ratifies the three component definitions unchanged and replaces the
+v0 placeholder combination with a **standardised non-negative affine** rule. Four
+decisions, recorded as D25-D28 in ``Documentation/problems_and_decisions.md``:
+
+1. **Affine, not a ratio or a gate.** Any non-negative weighted sum of Lipschitz
+   components is Lipschitz with ``L = sum(w_i * L_i)``, which is exactly what
+   T3.3's L1 bound needs (``T3.3_stability_result_L1.md`` §3, assumption ii). A
+   ratio such as ``s_disagree / s_free`` is *not* Lipschitz — it diverges as the
+   denominator vanishes, i.e. in empty background regions. The combination form
+   is therefore constrained by the theory track, deliberately.
+2. **Standardise first.** The raw components differ by an order of magnitude, so
+   the v0 default of ``1,1,1`` was in practice "score = s_free". Each component
+   is divided by a fixed reference scale before weighting, so the weights mean
+   what they say.
+3. **Scales come from the calibration operator and never move.** Re-estimating
+   them per deployment operator would pull the score distributions back towards
+   each other and shrink the very coverage gap this project exists to measure.
+4. **Weights are selected on a design split**, disjoint from calibration and
+   test, then frozen. Conformal calibration picks a *threshold*, not the weights;
+   fitting weights on calibration data would leak.
+
+``SCORE_VERSION`` bumps to mark the components as ratified. Their arithmetic is
+**unchanged** from ``v0-placeholder``, so existing banks are numerically identical
+and need no regeneration — only the label differs. ``COMBINATION_VERSION`` is
+tracked separately because the combination is applied at analysis time, from
+cache, and will be revised more often than the components are.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import torch
@@ -31,7 +56,8 @@ from torch import Tensor
 from ..operators.base import ForwardOperator
 from .regions import RegionGrid
 
-SCORE_VERSION = "v0-placeholder"
+SCORE_VERSION = "v1-components-ratified"
+COMBINATION_VERSION = "v1-standardised-affine"
 
 
 @dataclass(frozen=True)
@@ -43,9 +69,130 @@ class ScoreComponents:
     s_residual: Tensor
     ref_intensity: float
 
-    def combine(self, w_free: float = 1.0, w_disagree: float = 1.0, w_residual: float = 1.0):
-        """Weighted sum of the three components — a T1.1 decision, not a fixed truth."""
-        return w_free * self.s_free + w_disagree * self.s_disagree + w_residual * self.s_residual
+    def stack(self) -> Tensor:
+        """The three components as ``(3, n_regions)``, in canonical order."""
+        return torch.stack([self.s_free, self.s_disagree, self.s_residual], dim=0)
+
+    def combine(self, weights: ScoreWeights, scales: ScoreScales) -> Tensor:
+        """The T1.1 non-conformity score, one value per region.
+
+        Both arguments are required and neither has a default. A default would
+        invite exactly the failure the v0 placeholder had: an unstandardised
+        ``1,1,1`` sum that silently reduces to whichever component happens to be
+        largest. Build ``scales`` once from the calibration operator
+        (:meth:`ScoreScales.from_components`) and reuse it everywhere.
+        """
+        return combine_components(self, weights, scales)
+
+
+@dataclass(frozen=True)
+class ScoreScales:
+    """Fixed per-component reference scales, estimated once and then frozen.
+
+    **These must come from the calibration operator and must not be
+    re-estimated at deployment** (D27). Re-standardising per deployment operator
+    would map each operator's score distribution onto a common spread, which is
+    precisely the difference the coverage-gap experiment is trying to measure.
+    Doing so would make the naive-transfer baseline look artificially healthy and
+    destroy the headline result.
+    """
+
+    free: float
+    disagree: float
+    residual: float
+
+    @classmethod
+    def from_components(
+        cls,
+        components: ScoreComponents | Sequence[ScoreComponents],
+        quantile: float = 0.75,
+        floor: float = 1e-8,
+    ) -> ScoreScales:
+        """Robust scales, pooled over all regions of the design items.
+
+        The quantile defaults to 0.75 rather than the median because medical
+        images are background-heavy: a large fraction of regions is near-empty,
+        which drags the median of every component towards zero and makes the
+        standardisation numerically unstable. A mid-high quantile stays inside
+        the anatomy while remaining insensitive to the extreme tail.
+
+        ``floor`` guards the degenerate case where a component is identically
+        zero — a single-draw run has no disagreement at all, and dividing by it
+        would produce NaNs that propagate silently into the bank.
+        """
+        items = [components] if isinstance(components, ScoreComponents) else list(components)
+        if not items:
+            raise ValueError("need at least one ScoreComponents to estimate scales")
+        if not 0.0 < quantile <= 1.0:
+            raise ValueError(f"quantile must be in (0, 1], got {quantile}")
+
+        def scale_of(index: int) -> float:
+            pooled = torch.cat([item.stack()[index].flatten() for item in items]).double()
+            return max(float(torch.quantile(pooled.abs(), quantile)), floor)
+
+        return cls(free=scale_of(0), disagree=scale_of(1), residual=scale_of(2))
+
+    def as_tensor(self) -> Tensor:
+        return torch.tensor([self.free, self.disagree, self.residual], dtype=torch.float64)
+
+
+@dataclass(frozen=True)
+class ScoreWeights:
+    """Non-negative weights on the standardised components, summing to one.
+
+    Non-negativity is not cosmetic. It keeps the score **monotone** in each piece
+    of evidence — more unexplained free-component structure can never lower the
+    score — and it is what makes the Lipschitz constant of the combination the
+    plain weighted sum of the component constants (D25). A negative weight would
+    break both, and would let two kinds of evidence cancel into a confident-looking
+    zero.
+
+    Summing to one fixes the score's overall scale so that thresholds are
+    comparable across weight choices during the ablation.
+    """
+
+    free: float = 1 / 3
+    disagree: float = 1 / 3
+    residual: float = 1 / 3
+
+    def __post_init__(self) -> None:
+        values = (self.free, self.disagree, self.residual)
+        if any(w < 0 for w in values):
+            raise ValueError(f"weights must be non-negative, got {values}")
+        total = sum(values)
+        if total <= 0:
+            raise ValueError("weights must not all be zero")
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f"weights must sum to 1, got {total}")
+
+    @classmethod
+    def only(cls, component: str) -> ScoreWeights:
+        """Single-component weights, for the T1.4 ablation that isolates each term."""
+        fields = {"free", "disagree", "residual"}
+        if component not in fields:
+            raise ValueError(f"unknown component {component!r}; expected one of {sorted(fields)}")
+        return cls(**{name: 1.0 if name == component else 0.0 for name in fields})
+
+    def as_tensor(self) -> Tensor:
+        return torch.tensor([self.free, self.disagree, self.residual], dtype=torch.float64)
+
+
+def combine_components(
+    components: ScoreComponents,
+    weights: ScoreWeights,
+    scales: ScoreScales,
+) -> Tensor:
+    """Standardise, weight, and sum — the T1.1 non-conformity score.
+
+    ``score(r) = sum_i w_i * (s_i(r) / scale_i)`` over the three components.
+
+    Affine by design, so that a Lipschitz constant for the score follows from
+    Lipschitz constants for the components (T3.3 §3). Larger means *more likely
+    to contain invented structure*; conformal calibration then places a threshold
+    on this quantity, and nothing here consults ground truth.
+    """
+    standardised = components.stack().double() / scales.as_tensor().unsqueeze(-1)
+    return (weights.as_tensor().unsqueeze(-1) * standardised).sum(dim=0).to(torch.float32)
 
 
 def compute_score_components(
