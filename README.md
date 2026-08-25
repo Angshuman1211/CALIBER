@@ -10,9 +10,7 @@ Operator-shift-robust conformal hallucination flagging for generative-prior imag
 > structurally different operators, and derives a coverage-gap bound expressed
 > in quantities computable from the operators themselves.
 
-This repository is **Track 2 — Systems, Data Engineering and Cross-Domain
-Validation** (Blueprint Sec. 18; Track B in the weekly cards). It owns the
-reconstruction and evaluation infrastructure that Tracks 1 and 3 build on.
+This is the **shared repository for all three tracks** (blueprint v3.0 §18). Track 1 owns methodology, calibration and scientific direction; Track 2 owns systems, data engineering and cross-domain validation; Track 3 owns the analytical foundations. Task branches (`T1.1`, `T2.1`, `T3.1`, …) merge to `main`.
 
 The framework is a **solver-agnostic audit layer over pretrained priors** — it audits reconstruction models rather than training them, which is what makes it feasible on a single GPU.
 
@@ -64,9 +62,11 @@ Note the price of restoration: flag area rises from 0.44 to 0.83. Valid but
 over-conservative flags are of little practical use, which is exactly why
 Sec. 15.2 makes flag area a reported metric alongside coverage.
 
-## Layout
+## Data
 
-The Front II substrate (Phase 3, Track 2) is a low-dose / sparse-view CT benchmark exposing **projection data** — LoDoPaB-CT — for the same reason: raw projections permit angle subsampling, angular-range restriction, and dose reduction to be applied retrospectively. Region-level ground truth there comes from anatomical segmentation (TotalSegmentator, AbdomenCT-1K).
+The Front I substrate is accelerated MRI with raw k-space (fastMRI; M4Raw as an open stopgap while access clears), with fastMRI+ pathology annotations for region-level evaluation. The Front II substrate (Phase 3) is a low-dose / sparse-view CT benchmark exposing **projection data** — LoDoPaB-CT — for the same reason: raw measurements permit angle subsampling, angular-range restriction, and dose reduction to be applied retrospectively. Region-level ground truth there comes from anatomical segmentation (TotalSegmentator, AbdomenCT-1K).
+
+Nothing is committed. See [Documentation/data_access.md](Documentation/data_access.md) for provenance, licensing and download.
 
 ---
 
@@ -80,6 +80,7 @@ src/caliber/
                 black-box posterior-sampler interface               Stage 1
   scoring/      region definition, operator-aware scoring, and the
                 ground-truth hallucination criterion                Stage 3
+                (Track 1 owns the score definition)
   scorebank/    the cached, shared data format all three tracks read
   calibration/  group-conditional and weighted recalibration        Stage 4
                 (Track 1 owns this module)
@@ -87,17 +88,33 @@ src/caliber/
   data/         dataset access and preprocessing
 
 configs/        version-controlled experiment definitions
-docs/           interface specs, data access, cross-track decision log,
-                Track 2 problems log
+Documentation/  all project documentation — see below
 scripts/        CPU-only analysis entry points
 tests/          correctness gates
 ```
+
+### Documentation
+
+One directory, all three tracks. Per-task records are prefixed with the blueprint §18 task ID.
+
+| File | Owner | What |
+|---|---|---|
+| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D24`, open questions, cross-track contracts |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-023` |
+| `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
+| `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
+| `data_access.md` | Track 2 | Dataset provenance, licensing, download |
+| `T1.1_score_design.md` | Track 1 | Operator-aware score design |
+| `T2_problems.md` | Track 2 | Track 2's problems log |
+| `T3.1`–`T3.3` | Track 3 | Formal review, distance candidates, L1 stability result |
+
+> **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.
 
 ---
 
 ## Work plan
 
-Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent tracks. **This repository covers Track 1.** Tracks 2 and 3 are partner-owned; what Track 1 depends on from them, and what it owes them, is recorded as explicit contracts in `Documentation/problems_and_decisions.md`.
+Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent tracks, all working in this repository. Cross-track dependencies are recorded as explicit contracts in `Documentation/problems_and_decisions.md`.
 
 > **Changed in v3.0.** The blueprint went from two tracks to three, and the coverage-gap bound moved **out of Track 1 into Track 3**. Track 1's T1.3 is consequently no longer "coverage-gap analysis" but the **operator-distance formulation** that Track 3 derives against. Commits and branches predating 2026-08-04 use the v2 numbering. See D14 in the decisions log.
 
@@ -109,9 +126,9 @@ Owns the central claim, the design of the method, and the decisions that set dir
 |------|-------------|--------|
 | **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **In progress** |
 | **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | Not started |
-| **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities (resolves Q1) | Not started |
+| **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19 |
 | **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | Not started |
-| **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | Not started |
+| **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | Week 1 sign-off **delivered** (D19–D24); standing |
 | **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | Not started |
 | **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | Not started |
 
