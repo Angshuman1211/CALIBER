@@ -234,6 +234,37 @@ Following D30: "conformal + distribution-free hallucination localisation" (CHEM)
 
 ---
 
+## T1.2 — Shift-Robust Calibration (September 2026)
+
+Full record in `T1.2_shift_robust_calibration.md`.
+
+### D32 — Control the region-level miss rate; floor the quantile; refuse thin groups [T1.2]
+**Ruling.** The controlled quantity is the **region-level miss rate** — among genuinely hallucinated regions, the fraction the flag fails to raise. Risk control (D9), not marginal coverage. A region is flagged when `score >= tau`, and calibration takes the `k`-th smallest score among that group's hallucinated calibration regions with **`k = floor(alpha*(n+1))`**.
+
+**Why flooring, not ceiling.** For exchangeable scores the new positive's rank is uniform on `1..n+1`, so `P(miss) = k/(n+1) <= alpha` exactly. Rounding *up* breaks this on thin groups: at `n=1, alpha=0.1` a ceiling gives `k=1`, so `tau` is that single score and the true miss rate is **1/2 by symmetry** — five times the promise, reported as certified. Measured at 0.5 in `test_a_ceiling_rule_would_over_promise_on_one_positive`.
+
+**Thin groups refuse rather than certify.** With `n` positives the smallest achievable bound is `1/(n+1)`, so level `alpha` needs `n+1 >= 1/alpha` — **9 positives at `alpha=0.1`**. Below that, no threshold is valid and the calibrator returns `-inf` (flag everything: zero misses by construction, visibly useless) with `certifiable=False`. This makes D3's declared "thin groups give noisy thresholds" trade-off *checkable* rather than merely acknowledged, and `CalibrationReport.reportable` gates the whole run on it.
+
+**Every fallback path is conservative downward.** No positives, an over-heavy test atom, an unknown group at apply time — all flag everything. Under-flagging would silently assert that nothing in an uncalibrated regime is hallucinated.
+
+**Defect found in the code this supersedes — referred to Track 2 as D-026.** `calibration/__init__.py`'s reference `split_conformal_threshold` has a docstring that says the `ceil((n+1)(1-alpha))`-th smallest score while the code takes the `ceil((n+1)*alpha)`-th. The code is nearer correct, but its ceiling certifies groups it should refuse. It is marked not-for-reported-results, so nothing published is affected; it should still be fixed before someone reuses it.
+
+### D33 — Weights are an exponential kernel in operator distance, and the result is approximate [T1.2, D4's mechanism]
+**Ruling.** `w_i = exp(-d_op(A_i, A_dep) / h)` with `d_op` from D19 and `h` defaulting to the median non-zero distance. The lower-tail weighted quantile follows Tibshirani et al. (2019) with the test point contributing an atom at `-inf`.
+
+**Why a kernel and not a cut-off.** A hard radius is a Mondrian group with extra steps, and it discards the near-neighbours carrying most of the usable information about a nearby operator. The exponential decays smoothly, so a deployment operator sitting *between* two calibration regimes borrows from both — precisely the case Tool 1 structurally cannot serve, and therefore the case that justifies Tool 2 existing at all.
+
+**Why the median bandwidth.** Scale-free, and it adapts to whatever operator grid the experiment uses. A fixed `h` in absolute units would silently change the method's behaviour when the grid changes — the same confound T1.4's grids are designed to avoid. To be re-chosen on the design split once real banks exist.
+
+**Honest scope, stated at the call site.** Tibshirani's guarantee holds when the weights are the true likelihood ratio between deployment and calibration. A kernel in operator distance **is not that ratio**, and operator shift is a measurement-process change rather than a covariate shift (D6). So Tool 2 carries **no exact finite-sample guarantee**. Tool 1 holds the exact statement, Tool 2 is the reach result, and the residual gap is what T3.3's bound quantifies. ESS is reported on every weighted calibration, and gates certifiability, so the cost of reweighting is visible rather than inferred.
+
+### D34 — The naive baseline must name the operator it calibrated at [T1.2]
+**Ruling.** `calibrate_naive` takes an explicit `calibration_group`.
+
+**Why this is not an API nicety.** §16's first bullet is *calibrate at one acquisition setting and apply at others*. The first implementation calibrated on whatever rows it received; a test measured the consequence of pooling every regime instead — the miss rate on the deployment regime fell from **0.76 to 0.19**, making naive transfer look four times healthier than it is. The baseline exists to expose the coverage collapse, so understating it would have quietly weakened the paper's central empirical claim while every test still passed. Pinned by `test_pooling_every_regime_understates_the_naive_failure`.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
@@ -296,7 +327,7 @@ WI-1 **closed by D20** (patch grid is the risk unit). WI-2 **superseded** — Tr
 _Remaining: none of the WIs. T1.1 is complete pending the weight selection in D28, which needs the design split and therefore real data (C2)._
 
 ### T1.2 — Shift-robust calibration
-_Not started._ Grouping and split semantics are settled ahead of it by **D22, D23, D24**. `calibration/__init__.py` holds Track 2's reference split-conformal and Mondrian implementations, explicitly marked as superseded by T1.2 and not for reported results.
+See `T1.2_shift_robust_calibration.md`. **Implemented and verified on synthetic banks** — all three tools, thin-group refusal, ESS tracking (D32–D34). 15 gates passing, including the coverage collapse (0.76 miss at nominal 0.1) and its restoration by Mondrian. Awaiting real banks (C2) for the reported result; fallbacks [7][8][9] deferred per the risk register. Grouping and split semantics are settled ahead of it by **D22, D23, D24**. `calibration/__init__.py` holds Track 2's reference split-conformal and Mondrian implementations, explicitly marked as superseded by T1.2 and not for reported results.
 
 ### T1.3 — Operator-distance formulation
 See `T1.3_operator_distance_formulation.md`. **Delivered — D19.** `null_space_projection` (Frobenius) with `ambient` normalisation, locked for Week 3. Unblocks Track 3's T3.3, which derived contingently against "the T3.2-recommended aggregate subspace distance"; that is now the ratified choice.
