@@ -14,10 +14,19 @@ What lands here over the term:
 * Week 6  — operator-distance-weighted recalibration (Tool 2, the primary
             contribution) with effective-sample-size tracking
 
-``split_conformal_threshold`` and ``mondrian_thresholds`` below are minimal
-reference implementations, present only so the Week 4 evaluation harness has
-something to exercise before Track 1's versions land. They are marked as
-references and must not be used for reported results.
+T1.2 has landed. The real implementations are in ``conformal.py`` (threshold
+machinery) and ``calibrators.py`` (the three tools over a score bank), and are
+re-exported here.
+
+``split_conformal_threshold`` and ``mondrian_thresholds`` remain as Track 2's
+original reference implementations so the Week 4 harness keeps working. **They
+must not be used for reported results** — and note the discrepancy T1.2 found in
+them: the docstring says the ``ceil((n+1)(1-alpha))``-th smallest score while the
+code takes the ``ceil((n+1)*alpha)``-th. The code is the closer of the two, but
+rounding *up* certifies thin groups it should refuse: at ``n=1, alpha=0.1`` it
+returns the single positive score as a threshold whose true miss rate is 1/2.
+``conformal.split_threshold`` floors instead and reports such groups as
+uncertifiable. See D32.
 """
 
 from __future__ import annotations
@@ -89,4 +98,39 @@ def apply_threshold(
     return out
 
 
-__all__ = ["apply_threshold", "mondrian_thresholds", "split_conformal_threshold"]
+from .calibrators import (  # noqa: E402
+    CalibrationReport,
+    apply_flags,
+    calibrate_mondrian,
+    calibrate_naive,
+    calibrate_weighted,
+    certification_note,
+)
+from .conformal import (  # noqa: E402
+    CalibrationResult,
+    distance_weights,
+    effective_sample_size,
+    min_positives,
+    split_threshold,
+    weighted_threshold,
+)
+
+__all__ = [
+    # T1.2 — use these
+    "CalibrationReport",
+    "CalibrationResult",
+    "apply_flags",
+    "calibrate_mondrian",
+    "calibrate_naive",
+    "calibrate_weighted",
+    "certification_note",
+    "distance_weights",
+    "effective_sample_size",
+    "min_positives",
+    "split_threshold",
+    "weighted_threshold",
+    # Track 2 reference implementations — not for reported results
+    "apply_threshold",
+    "mondrian_thresholds",
+    "split_conformal_threshold",
+]
