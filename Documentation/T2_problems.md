@@ -213,7 +213,7 @@ rather than truncation.
 
 Verifying all nine archives also turned up `observation_validation.zip`, which
 the inventory had never listed - the recoverable total is ~55 GB, not ~49 GB.
-Sizes in `data/README.md` are now measured rather than estimated.
+Sizes in the inventory (`data_access.md` §6) are now measured rather than estimated.
 
 ---
 

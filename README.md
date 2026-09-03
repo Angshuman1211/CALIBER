@@ -99,12 +99,13 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 
 | File | Owner | What |
 |---|---|---|
-| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D29`, open questions, cross-track contracts |
+| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D31`, open questions, cross-track contracts |
 | `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-024` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
 | `data_access.md` | Track 2 | Dataset provenance, licensing, download |
 | `T1.1_score_design.md` | Track 1 | Operator-aware score design |
+| `T1.6_phase1_gate.md` | Track 1 | Phase 1 gate review — all three fronts against the central claim |
 | `T2_problems.md` | Track 2 | Track 2's problems log |
 | `T3.1`–`T3.3_*.md` | Track 3 | Formal review, distance candidates, L1 stability result |
 
@@ -142,7 +143,7 @@ Owns the central claim, the design of the method, and the decisions that set dir
 | **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19 |
 | **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | Not started — Phase 2 |
 | **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | **Week 1 sign-off delivered** (D19–D24); standing |
-| **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | Standing from Phase 2 |
+| **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | **Phase 1 gate delivered**; standing |
 | **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | Phase 4 |
 
 ### Track 2 — Systems, Data Engineering and Cross-Domain Validation
@@ -156,7 +157,7 @@ Owns the reconstruction and evaluation infrastructure, and carries the study int
 | **T2.3** Score-bank production | Cached reconstructions and non-conformity scores across the full operator grid | **Delivered (v0)** — schema + validator; banks produced on phantom, M4Raw and LoDoPaB |
 | **T2.4** Evaluation harness | Coverage, efficiency, and region-level detection utilities with automated logging | **Delivered** — coverage, flag area, region FDR/power, ESS, coverage gap |
 | **T2.5** Cross-domain experiments | Execution of the protocol in the second modality and the supporting appendix domain | **In progress** — CT path runs end to end; projector fix (D-012) precedes reported curves |
-| **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | Not started — needs T2.2 |
+| **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | Not started — needs T2.2; **Phase 1's last open artefact** |
 | **T2.7** Figures and packaging | Visualisations, reproducibility package, and experimental-setup write-ups | Phase 4 |
 
 ### Track 3 — Analytical Foundations and Numerical Verification
@@ -181,12 +182,12 @@ Each task gets a branch (`T1.1`, `T2.1`, `T3.1`, …) and a record in `Documenta
 
 Blueprint §20 groups the tasks into four term phases, sequenced so a valid, demonstrable result exists early and higher-risk elements come later — the coverage failure plus the group-conditional fix must be in hand by the midterm, before the weighted recalibration, the second modality, and the coverage-gap bound are attempted.
 
-| Phase | Focus | Key artefacts | Checkpoint |
-|-------|-------|---------------|------------|
-| 1 | Setup, infrastructure and baselines | Operator pipeline and score bank in MRI; reproduced baselines; formal review of the analytical setting | Topic approval and feasibility |
-| 2 | Empirical core and guaranteed backbone | Operator-aware score; demonstrated coverage failure; group-conditional remedy; first analytical result; preprint draft | Midterm review |
-| 3 | Generalisation and primary contribution | Second-modality score bank and results; weighted recalibration; coverage-gap-against-distance curves in both modalities; ill-posedness scaling | Interim results |
-| 4 | Consolidation and dissemination | Bound-versus-measurement study; ablations; manuscript submission; open-source release; final report | Final presentation and viva |
+| Phase | Focus | Key artefacts | Checkpoint | Status |
+|-------|-------|---------------|------------|--------|
+| 1 | Setup, infrastructure and baselines | Operator pipeline and score bank in MRI; reproduced baselines; formal review of the analytical setting | Topic approval and feasibility | **Complete but for baselines** — see `Documentation/T1.6_phase1_gate.md` |
+| 2 | Empirical core and guaranteed backbone | Operator-aware score; demonstrated coverage failure; group-conditional remedy; first analytical result; preprint draft | Midterm review | In progress — score and L1 delivered early |
+| 3 | Generalisation and primary contribution | Second-modality score bank and results; weighted recalibration; coverage-gap-against-distance curves in both modalities; ill-posedness scaling | Interim results | Not started |
+| 4 | Consolidation and dissemination | Bound-versus-measurement study; ablations; manuscript submission; open-source release; final report | Final presentation and viva | Not started |
 
 ---
 

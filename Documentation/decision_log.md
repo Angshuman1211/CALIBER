@@ -735,7 +735,7 @@ the test working as intended.
 
 ---
 
-## D-025 · `data/README.md` is a layout map; durable content moved to `data_access.md`
+## D-025 · `data/README.md` removed; all data documentation consolidated into `data_access.md`
 **Date:** Week 2 · **Status:** DONE · **Raised and actioned by:** Track 1 (T1.5)
 
 `data/README.md` had grown into a status board — per-archive `OK`/`downloading`
@@ -758,16 +758,22 @@ measured sizes and the ~55 GB recoverable (§6), why `observation_*` and
 `ground_truth_train` are not needed (§6), extraction commands (§6), M4Raw's
 layout and its `patient_id` attribute (§1a), LoDoPaB's `patient_ids_rand_*.csv`
 and why slice-level splits leak (§3), and the TotalSegmentator/LoDoPaB cohort
-mismatch (§4). `data/README.md` is now a layout map plus the two traps the
-layout itself encodes, pointing at `fetch_data.py --list` / `--verify` for
-anything that changes.
+mismatch (§4).
 
-No content was dropped; the volatile status markers were, deliberately.
+**Final outcome went one step further than first proposed.** The intermediate
+state was a trimmed `data/README.md` holding the layout tree; on review that was
+cut too, and `data/` now carries no README at all. One data document, not two.
+The layout tree moved into `data_access.md` §6 with it.
+
+No content was dropped; the volatile status markers were, deliberately — the
+per-archive `OK`/`downloading` flags, free-disk figures, and "downloading
+off-machine" notes. `fetch_data.py --list` / `--verify` answer those, and cannot
+go stale.
 
 *Track 2 owns both files* — flagged here rather than done silently. Say if the
 inventory should live back in `data/` and it goes back.
 
-*Affects:* T2.1, `data/README.md`, `Documentation/data_access.md`.
+*Affects:* T2.1, `data/README.md` (deleted), `Documentation/data_access.md`, `.gitignore`.
 
 ---
 

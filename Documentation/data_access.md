@@ -46,9 +46,9 @@ images, so one of them has to change role) and **D-014** (splits must be by
 patient, not by slice). See [decision_log.md](decision_log.md), and
 [week1_kickoff.md](week1_kickoff.md) for the sign-off agenda.
 
-[../data/README.md](../data/README.md) is a layout map only. Archive inventory,
-extraction commands, and what can be deleted are in §6 below — they belong with
-the provenance record rather than in a directory that is otherwise gitignored.
+`data/` carries no README of its own — this file is the single data document.
+Archive inventory, extraction commands, and what can be deleted are in §6 below.
+Layout is in §6 too, so a fresh clone with an empty `data/` has one place to look.
 
 ---
 
@@ -218,7 +218,45 @@ The score table being negligible next to the raw data is the whole point of
 Sec. 17: the expensive artefact is produced once, and the artefact everyone
 actually reads is small enough to copy around freely.
 
-## 6. Archive inventory, extraction, and what can be deleted
+## 6. Layout, archive inventory, and what can be deleted
+
+### Directory layout
+
+`data/` is gitignored in full and carries no README of its own (D-025), so this
+is the map for a fresh clone.
+
+```
+data/
+  archives/                    downloaded zips, kept for re-extraction
+    lodopab/*.zip
+    totalsegmentator/*.zip
+    m4raw/*.zip
+  raw/
+    lodopab/
+      ground_truth_validation_*.hdf5    28 shards
+      ground_truth_test_*.hdf5          28 shards
+      patient_ids_rand_*.csv            one patient ID per slice, in slice order (§3)
+    totalsegmentator/
+      s0000/ct.nii.gz                   CT volume, 1.5 mm isotropic
+      s0000/segmentations/*.nii.gz      117 aligned organ masks
+    m4raw/
+      multicoil_val/*.h5                kspace (18, 4, 256, 256) + reconstruction_rss
+    fastmri/
+      singlecoil_val/*.h5               keep each split in its own directory (§1)
+  annotations/
+    fastmri_plus/                       knee.csv, brain.csv + file lists
+  interim/                              preprocessed caches, regenerable
+
+checkpoints/                            (outside data/, also gitignored)
+```
+
+Two things the layout itself encodes, both explained above: splits live in
+separate directories so a recursive search cannot put one volume on both sides
+of a calibration/test split (§1), and `patient_ids_rand_*.csv` is required
+rather than incidental, because a slice-level split leaks a patient across
+calibration and test (§3).
+
+### Archive inventory
 
 Sizes are measured, not estimated — `python scripts/fetch_data.py --verify`
 reports them. Download state is deliberately **not** recorded here: it changes
