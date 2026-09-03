@@ -206,6 +206,34 @@ Found while building the WI-4 injection test, which failed its own premise until
 
 ---
 
+## Phase 1 Gate (August 2026)
+
+Full assessment in `T1.6_analysis_and_course_correction.md` (Phase 1 Gate section).
+
+### D30 — Scoop recheck done; the targeted gap is open, but one group is a single experiment away [T1.6, resolves Q5's current instance]
+**The gap stands.** Nothing found calibrates conformal prediction at one acquisition operator, deploys at another, and restores coverage. The §6 landscape table is still accurate.
+
+**Two adjacent results have closed in, and one changes the urgency.**
+
+*arXiv 2601.13236* (Jan 2026) applies conformalized quantile regression to accelerated MRI across **acceleration factors 2–10** and reports that predictors *calibrated per acceleration rate* hold coverage at their matching rate. That is CALIBER's matched-operator upper-bound baseline, already published, by a group that therefore has the substrate, the sweep and the conformal machinery assembled. The mismatched cell — this project's entire claim — is one experiment away for them. **D11's early preprint moves from prudent to urgent.**
+
+*CHEM* (arXiv 2512.09806, Dec 2025) is a conformal, distribution-free hallucination-localisation metric whose null-space hallucination map decomposes the reconstruction by SVD of the forward operator. It compares against ground truth, so it is an evaluation metric, not a deployment score — nearer CALIBER's `err_free` label than its `s_free` score. Independent convergence on the D21 criterion's form; cite it as corroboration.
+
+*Wen, Ahmad & Schniter, Minimax Multi-Target CP* (TMLR, Nov 2025) — adjacent, different problem. The group remains the one to monitor.
+
+**Sourcing caveat:** abstract- and HTML-level reads. CHEM's PDF exceeded the fetch limit, so its Null-HM description comes from the abstract and summary text. Verify against the method section before citing specifics.
+
+**Q5 stays standing** — repeat at write-up, per its original terms.
+
+### D31 — Novelty rests on operator shift alone; the decomposition is not a contribution [T1.6, framing constraint]
+Following D30: "conformal + distribution-free hallucination localisation" (CHEM) and "null-space/range decomposition of the forward operator" (CHEM's Null-HM, and the fundamental-limits line before it) are both **published under a fixed operator**. Neither is available to claim.
+
+**What CALIBER contributes is the operator-shift axis and nothing else on this list:** the demonstrated coverage failure under acquisition change, its restoration by group-conditional and operator-distance-weighted calibration, the cross-modality collapse, and the operator-distance bound. The operator-aware score is *machinery in service of that*, not a result.
+
+**How to apply:** in the manuscript, the score section is method, not contribution. Cite CHEM at the point the decomposition is introduced rather than after a reviewer finds it. D2 remains a correct design decision; it is simply not a novel one, and the earlier framing in D2 and `T1.1_score_design.md` reads more proprietary than the literature now permits. This is the D6/D17 discipline — claim narrowly, on the record — applied to the score.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
@@ -240,7 +268,7 @@ D3 makes Mondrian the guaranteed backbone and D4 makes operator-distance weighte
 
 The answer exists and is defensible — weighting buys what Mondrian structurally cannot: (a) **thin groups**, where per-regime calibration data is too scarce for a stable threshold, exactly the high-acceleration regimes D10 warns about; and (b) **continuous operator change**, where there is no finite group to calibrate within. But neither case is currently an explicit line in the blueprint's experimental protocol (§16), which means the paper's headline method has no experiment that demonstrates its advantage over its own baseline. T1.4 must name that experiment: sweep calibration-set size per regime down to where Mondrian's thresholds become noisy and weighting wins, and include off-grid deployment operators that no group covers. Report both, not just the coverage curve.
 
-### Q5 — Scoop recheck is overdue [OPEN, owned by T1.6, standing]
+### Q5 — Scoop recheck — **done August 2026 (D30); standing, repeat at write-up**
 The two "verified empty" cells (operator-shift-robust conformal coverage; flow-matching × conformal) were verified as of **mid-2026**, and the research documents explicitly flag that absence of evidence is not proof, naming VOILA (Fridovich-Keil), Schniter/Ahmad and Sulam as the groups to monitor monthly across cs.CV, eess.IV and stat.ME. D11 already mandates an early preprint for priority. The sweep has not been repeated since the research was written. Repeat it before further design work, and again at write-up.
 
 ### Q6 — Does `s_free` fire on detailed anatomy rather than on hallucination? [OPEN, owned by T1.1/T1.4]
@@ -271,16 +299,16 @@ _Remaining: none of the WIs. T1.1 is complete pending the weight selection in D2
 _Not started._ Grouping and split semantics are settled ahead of it by **D22, D23, D24**. `calibration/__init__.py` holds Track 2's reference split-conformal and Mondrian implementations, explicitly marked as superseded by T1.2 and not for reported results.
 
 ### T1.3 — Operator-distance formulation
-**Delivered — D19.** `null_space_projection` (Frobenius) with `ambient` normalisation, locked for Week 3. Unblocks Track 3's T3.3, which derived contingently against "the T3.2-recommended aggregate subspace distance"; that is now the ratified choice.
+See `T1.3_operator_distance_formulation.md`. **Delivered — D19.** `null_space_projection` (Frobenius) with `ambient` normalisation, locked for Week 3. Unblocks Track 3's T3.3, which derived contingently against "the T3.2-recommended aggregate subspace distance"; that is now the ratified choice.
 
 ### T1.4 — Experimental design
 _Not started. Owns Q4._ Carries four inherited instructions: operator grids spread evenly in **distance** not acceleration (D19); region size is a declared ablation axis (D20); noise becomes a group axis if the protocol varies it (D22); seed-to-seed variation is the noise floor a real shift must clear (D24).
 
 ### T1.5 — Cross-track integration
-_Week 1 sign-off delivered_ — D19–D24 close `Documentation/week1_kickoff.md` §G. Standing work: the shared interfaces (score bank, operator registry) and adjudication continue through the term.
+See `T1.5_cross_track_integration.md`. _Week 1 sign-off delivered_ — D19–D24 close `Documentation/week1_kickoff.md` §G. Standing work: the shared interfaces (score bank, operator registry) and adjudication continue through the term.
 
 ### T1.6 — Analysis and course correction
-_Not started. New in v3.0. Owns Q5._
+See `T1.6_analysis_and_course_correction.md`. **Phase 1 gate delivered** — `T1.6_analysis_and_course_correction.md`. Verdict: Phase 1 complete but for reproduced baselines (T2.6), blocked on solver integration (T2.2); feasibility demonstrated; no scope reduction warranted. Scoop recheck done (D30); novelty framing tightened (D31). Standing from here: owns Q5 and each subsequent phase gate.
 
 ### T1.7 — Technical authoring
 _Not started._
