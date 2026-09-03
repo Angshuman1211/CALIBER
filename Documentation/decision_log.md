@@ -777,6 +777,33 @@ inventory should live back in `data/` and it goes back.
 
 ---
 
+## D-026 · Reference `split_conformal_threshold` over-certifies thin groups
+**Date:** Week 2 · **Status:** OPEN · **Raised by:** Track 1 (T1.2) · **Owner:** Track 2 · **Track 1 entry:** D32
+
+Two issues in `calibration/__init__.py`, found while T1.2 superseded it.
+
+**Docstring contradicts code.** The docstring says the threshold is the
+`ceil((n+1)(1-alpha))`-th smallest score among hallucinated regions; the code
+takes the `ceil((n+1)*alpha)`-th. The code is the nearer of the two.
+
+**The ceiling certifies groups it should refuse.** For exchangeable scores the
+correct constant is `k = floor(alpha*(n+1))`, giving `P(miss) = k/(n+1) <= alpha`
+exactly. Rounding up breaks this where it matters most: at `n=1, alpha=0.1` the
+ceiling returns `k=1`, so the threshold is that single positive score and the
+true miss rate is **1/2** — five times the promise, with nothing in the return
+value indicating a problem. Measured at ~0.5 over 2,000 trials.
+
+**Impact: none published.** The function is marked not-for-reported-results and
+the Week 4 harness only exercises it. `caliber.calibration.conformal.split_threshold`
+now floors and returns `certifiable=False` for thin groups.
+
+**Suggested fix:** delegate the reference to `conformal.split_threshold`, or
+floor and fix the docstring. Worth doing before someone reuses it in good faith.
+
+*Affects:* T1.2, `calibration/__init__.py`, Week 4 harness.
+
+---
+
 ## Template
 
 ```
