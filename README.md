@@ -99,13 +99,16 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 
 | File | Owner | What |
 |---|---|---|
-| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D31`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-024` |
+| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D34`, open questions, cross-track contracts |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-026` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
 | `data_access.md` | Track 2 | Dataset provenance, licensing, download |
 | `T1.1_score_design.md` | Track 1 | Operator-aware score design |
-| `T1.6_phase1_gate.md` | Track 1 | Phase 1 gate review — all three fronts against the central claim |
+| `T1.2_shift_robust_calibration.md` | Track 1 | The three calibration tools, what they control, and what they refuse |
+| `T1.3_operator_distance_formulation.md` | Track 1 | The locked operator-distance measure and why |
+| `T1.5_cross_track_integration.md` | Track 1 | Shared interfaces, sign-off record, contracts, adjudication log |
+| `T1.6_analysis_and_course_correction.md` | Track 1 | Phase gate reviews — all three fronts against the central claim, one section per checkpoint |
 | `T2_problems.md` | Track 2 | Track 2's problems log |
 | `T3.1`–`T3.3_*.md` | Track 3 | Formal review, distance candidates, L1 stability result |
 
@@ -126,11 +129,20 @@ Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent 
 | **Acquisition operators** | Both modalities behind one registry — 3 MRI mask families × CT sparse-view and limited-angle, exact adjoints, seeded and reproducible, with health checks |
 | **Operator distance** | All five blueprint §12.1 candidates implemented; the primary measure locked and verified non-saturating across the acceleration sweep |
 | **Hallucination score** | Three-component operator-aware score, cached as separable components; validated against *constructed* data-consistent hallucinations |
+| **Calibration** | All three tools — naive baseline, group-conditional backbone, operator-distance weighted — with thin-group refusal and effective-sample-size tracking |
 | **Analytical result** | Coverage gap bounded by a single distributional distance — a checked consequence of the non-exchangeable conformal analysis — with the reduction to operator distance drafted |
 | **Substrates** | fastMRI+ annotations parsed (16,154 boxes); M4Raw verified end to end on real k-space; LoDoPaB CT running end to end |
-| **Engineering** | 65 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
+| **Engineering** | 80 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
 
 ---
+
+> **Two independent axes — don't read one as the other.** §18 (this section) is
+> *who does what*: three tracks × seven tasks, addressed `Tx.y` = **track x,
+> task y**. §20 (Timeline, below) is *when*: four phases, each ending at a
+> review checkpoint. They are orthogonal — a task can span several phases, and
+> a phase draws on tasks from all three tracks. The blueprint deliberately does
+> **not** map tasks onto phases, so the Status column here reports the state of
+> the work, never a scheduled phase.
 
 ### Track 1 — Methodology, Calibration and Scientific Direction
 
@@ -138,13 +150,13 @@ Owns the central claim, the design of the method, and the decisions that set dir
 
 | Task | Deliverable | Status |
 |------|-------------|--------|
-| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Delivered** — WI-1–WI-5; weights pending the design split |
-| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | Next — unblocked by D22–D24 |
-| **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19 |
-| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | Not started — Phase 2 |
+| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Blocked on T2.2** — WI-1–WI-5 done; weights unset, so the definition is not yet pinned |
+| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | **Implemented** — verified on synthetic banks; real banks need C2 |
+| **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19; CT cross-check pending T2.5 |
+| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | Not started |
 | **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | **Week 1 sign-off delivered** (D19–D24); standing |
 | **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | **Phase 1 gate delivered**; standing |
-| **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | Phase 4 |
+| **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | Not started |
 
 ### Track 2 — Systems, Data Engineering and Cross-Domain Validation
 
@@ -158,7 +170,7 @@ Owns the reconstruction and evaluation infrastructure, and carries the study int
 | **T2.4** Evaluation harness | Coverage, efficiency, and region-level detection utilities with automated logging | **Delivered** — coverage, flag area, region FDR/power, ESS, coverage gap |
 | **T2.5** Cross-domain experiments | Execution of the protocol in the second modality and the supporting appendix domain | **In progress** — CT path runs end to end; projector fix (D-012) precedes reported curves |
 | **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | Not started — needs T2.2; **Phase 1's last open artefact** |
-| **T2.7** Figures and packaging | Visualisations, reproducibility package, and experimental-setup write-ups | Phase 4 |
+| **T2.7** Figures and packaging | Visualisations, reproducibility package, and experimental-setup write-ups | Not started |
 
 ### Track 3 — Analytical Foundations and Numerical Verification
 
@@ -171,8 +183,8 @@ Owns the derivation of the coverage-gap bound and its verification against measu
 | **T3.3** Stability result (L1) | Derivation bounding the coverage gap by the operator distance in known quantities | **First pass** — Step 1 rigorous; Step 2 sketched with two assumptions flagged, not hidden |
 | **T3.4** Ill-posedness scaling (L2) | Extension relating the bound to null-space dimension and spectral decay | Next — picks up the two constants from T3.3 |
 | **T3.5** Numerical verification | Verification of derived results on small synthetic linear operators, requiring negligible compute | Not started — checks T3.3's flagged assumption |
-| **T3.6** Bound-versus-measurement study | Comparison of predicted and observed coverage gaps using the cached score banks | Phase 4 |
-| **T3.7** Analytical authoring | Derivations, statements of assumptions, and the theoretical sections of the manuscripts | Phase 4 |
+| **T3.6** Bound-versus-measurement study | Comparison of predicted and observed coverage gaps using the cached score banks | Not started |
+| **T3.7** Analytical authoring | Derivations, statements of assumptions, and the theoretical sections of the manuscripts | Not started |
 
 Each task gets a branch (`T1.1`, `T2.1`, `T3.1`, …) and a record in `Documentation/`, merged to `main` by pull request.
 
@@ -184,7 +196,7 @@ Blueprint §20 groups the tasks into four term phases, sequenced so a valid, dem
 
 | Phase | Focus | Key artefacts | Checkpoint | Status |
 |-------|-------|---------------|------------|--------|
-| 1 | Setup, infrastructure and baselines | Operator pipeline and score bank in MRI; reproduced baselines; formal review of the analytical setting | Topic approval and feasibility | **Complete but for baselines** — see `Documentation/T1.6_phase1_gate.md` |
+| 1 | Setup, infrastructure and baselines | Operator pipeline and score bank in MRI; reproduced baselines; formal review of the analytical setting | Topic approval and feasibility | **Complete but for baselines** — see `Documentation/T1.6_analysis_and_course_correction.md` |
 | 2 | Empirical core and guaranteed backbone | Operator-aware score; demonstrated coverage failure; group-conditional remedy; first analytical result; preprint draft | Midterm review | In progress — score and L1 delivered early |
 | 3 | Generalisation and primary contribution | Second-modality score bank and results; weighted recalibration; coverage-gap-against-distance curves in both modalities; ill-posedness scaling | Interim results | Not started |
 | 4 | Consolidation and dissemination | Bound-versus-measurement study; ablations; manuscript submission; open-source release; final report | Final presentation and viva | Not started |
