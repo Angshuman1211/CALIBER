@@ -14,7 +14,7 @@ simplification consistent with the Sec. 17 compute profile; it means the
 operator studied is single-coil Cartesian undersampling, which should be stated
 in the Experimental Setup rather than left implicit.
 
-Data access is credentialed and has lead time — see docs/data_access.md. This
+Data access is credentialed and has lead time — see Documentation/data_access.md. This
 module reads whatever is present under ``data/raw/fastmri`` and raises a clear
 error otherwise, so the pipeline can be developed against phantoms meanwhile.
 """
@@ -146,7 +146,7 @@ class FastMRIDataset(SliceDataset):
         self.annotation_grid = tuple(annotation_grid)
         if not self.root.is_dir():
             raise FileNotFoundError(
-                f"fastMRI directory not found: {self.root}. See docs/data_access.md - "
+                f"fastMRI directory not found: {self.root}. See Documentation/data_access.md - "
                 "access is credentialed and must be requested before Week 3."
             )
         self.files = find_volumes(self.root)
@@ -173,7 +173,7 @@ class FastMRIDataset(SliceDataset):
                 # to fully-sampled k-space, not inferred from a finished image.
                 raise KeyError(
                     f"{path.name} has no 'kspace' dataset (found: {sorted(fh.keys())}). "
-                    "Raw k-space is required - see docs/data_access.md section 1."
+                    "Raw k-space is required - see Documentation/data_access.md section 1."
                 )
             kspace = fh["kspace"]
             n_slices = kspace.shape[0]

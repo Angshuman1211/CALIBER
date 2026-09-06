@@ -78,9 +78,196 @@ Decision recorded as-is — family-independence is the right *risk* posture, sin
 
 ---
 
+## Week 1 Sign-Off Rulings (August 2026)
+
+These six close the blocking items in `Documentation/week1_kickoff.md` §G. Cross-track IDs in Track 2's
+`Documentation/decision_log.md` are noted per entry — **`D-0NN` there, `DNN` here; they are different logs.**
+
+### D19 — Primary operator distance is the Frobenius null-space projector distance [T1.3, resolves Q1 / S1; Track 2 D-010]
+**Ruling.** The primary measure is `null_space_projection` — $\|P_{N}(A_\text{cal}) - P_{N}(A_\text{dep})\|_F$ — with `ambient` normalisation. Locked for Week 3. Ill-posedness normalisation is **not** folded into the distance.
+
+**Why this one.** It satisfies all three Q1 requirements: computable from the two operators alone; defined identically for a k-space mask and a projection-angle set, because $P_N$ exists for any linear $A$ (D15); and interpretable — under `ambient` normalisation on Cartesian MRI it reduces to $\sqrt{\text{fraction of k-space lines whose sampled/unsampled status changed}}$, which is exactly "how much more of the scan is now unmeasured." It is also the aggregate form Track 3's T3.2 §5 recommends, so this ruling ratifies a convergence rather than choosing between the tracks.
+
+**Verified, not assumed** (128², `random1d`, calibrate at R=2): the measure is graded and monotone across R = 2, 3, 4, 6, 8, 12, 16 → 0.000, 0.405, 0.500, 0.580, 0.612, 0.644, 0.650. T3.2 §3's saturation failure does not occur, because Track 2 implemented the **Frobenius** form, not the operator-norm form that pins at 1 under dimension mismatch.
+
+**Rejected, with reasons.**
+- *Operator-norm form of family (A)* — saturates at exactly 1 whenever the null-space dimensions differ, which is the typical case across an acceleration sweep (T3.2 §3). **Not currently implemented; do not add it** under a name that invites confusion with the primary.
+- *`sampling_support`* — verified numerically **identical** to the primary in MRI (both 0.612372 at R=2→8), because MRI's operator is diagonal in the Fourier basis so the two coincide exactly (T3.2 §2). In CT it is only a heuristic. Retained as a free MRI-only diagnostic; never the headline.
+- *`chordal_subspace`* — the same number divided by $\sqrt2$. Alias, not an alternative; no separate experiment.
+- *`spectral_divergence`* — measures severity of ill-posedness, not direction of change, so it belongs to L2 (T3.2 §1); D-011 also shows it barely separates CT operators.
+
+**Two consequences that must be acted on, not just noted.**
+1. **The axis compresses.** The measure is a square root, so R=2→3 moves it 0.405 while R=8→16 moves it 0.037. The headline plot's most severe points bunch into a sliver. **T1.4 must design operator grids to spread *distance* evenly, not acceleration evenly**, and the interpretable secondary axis is $d^2$ (the plain fraction of dimensions whose measured status changed).
+2. **Naming collision.** `operator_norm` in `operators/distance.py` is $\|A-B\|_F$ — family (B) — *not* the family-(A) operator-norm T3.2 warns against. Two different things with confusable names; document at the call site.
+
+**Why ill-posedness normalisation stays out.** §11.2's collapse claim and §12.2's L2 both involve ill-posedness, and folding it into $d$ would double-count: L1's bound is gap $\le 2ML\cdot d_\text{op}$, and L2's whole job is to express $L$ and $M$ in terms of null-space dimension and spectral decay. If $d$ already absorbs that, L2's scaling becomes unidentifiable. So $d$ stays a pure geometric property of the operator pair, and ill-posedness enters at plot time as a separate, **named** factor. The Week 9 collapse test then has something to test.
+
+### D20 — The region is a fixed patch grid; annotations are an overlay, not the unit [T1.1 WI-1, resolves Q2 / S2; Track 2 D-009]
+**Ruling.** The risk unit stays the non-overlapping square patch grid, 16 px on the 320×320 reference grid. Annotations (fastMRI+ boxes, CT organ masks) are an **evaluation overlay**, never the region definition. `region_area` therefore stays constant and B1's weighted-rate problem does not arise.
+
+**Why.** Three reasons, in order of weight.
+1. **Commensurability.** §11 requires one region definition in both modalities. MRI ships lesion bounding boxes; CT ships 117 organ segmentations. Those are not the same kind of object, and no single anatomical unit spans them. A geometric grid does.
+2. **Hallucination does not respect anatomy.** Invented structure lives in the null space, which is a property of the operator, not of the organ. An annotation marks where a hallucination would *matter clinically*, not where it *is*. Conflating the two would make the risk definition itself depend on annotation availability — and CT's annotations come from a different cohort entirely (D-013).
+3. **Unweighted rates.** Equal-area regions keep every region-level rate a plain proportion. Anatomical regions would make each rate area-weighted, which changes the meaning of the controlled risk, not merely its computation.
+
+**How C4 is satisfied:** intersect flagged patches with annotation masks. `ann_coverage` already carries exactly this, and `label_hallucinated(require_annotation=True)` already implements the stricter "fires where it matters" reading. Report both readings; the annotation-restricted one is the secondary.
+
+**Open sub-item handed to T1.4:** region size (16 px) is a declared ablation axis, not a settled constant. It trades detection resolution against per-region calibration sample size, and both directions have a cost. Sweep it.
+
+### D21 — Do not recalibrate the label threshold yet; the current measurement is a solver artefact [T1.1, answers Track 2 D-020]
+**Ruling.** The Week 2 criterion is **not** a re-tuned constant, and the threshold is **not** set from the M4Raw run. Lock the criterion's *form* now; set its threshold only once a real generative prior is wired (T2.2).
+
+**Why — the 100%-positive rate is not primarily a threshold problem.** `w02_m4raw_smoke` uses `reference_nullspace`, whose draws are $A^{+}y + P_N(\text{texture})$. Because $A^{+}y$ carries **zero** null-space content by construction, $P_N(\overline{x} - x_\text{true})$ is dominated by $-P_N(x_\text{true})$. So on this sampler `err_free` is measuring **the true image's own hidden content**, not what the reconstruction invented. Real anatomy has a lot of it; a smooth phantom has little. That is the whole phantom-vs-M4Raw gap.
+
+**Verified on synthetic images alone** (128², R=4, reference sampler, 16 px grid), which reproduces Track 2's substrate split without touching M4Raw:
+
+| true image | mean `err_free` | $\|P_N x_\text{true}\|$/ref | labelled at 0.10 |
+|---|---|---|---|
+| smooth (phantom-like) | 0.0715 | 0.0771 | 14.1% |
+| textured (anatomy-like) | 0.1878 | 0.2046 | **100%** |
+
+Across regions, `err_free` vs $\|P_N x_\text{true}\|$: **r = 0.95**, mean ratio 0.92. This also explains the `err_free`/`err_total` ratio Track 2 observed moving 0.78 → 0.97: as the truth's null-space content grows, essentially *all* of a prior-free reconstruction's error becomes free-component error.
+
+**Consequence:** no constant — absolute *or* relative-to-global-intensity — can fix this while the sampler has no prior, because the quantity being thresholded is a property of the anatomy. Note `err_free` is *already* divided by `ref_intensity` in `labels.py`, so "make it relative" has in effect already been tried.
+
+**Criterion form v1 (locked now).** Normalise by the region's own free-component content rather than by global intensity:
+
+$$\text{halluc}(r) \iff \frac{\texttt{err\_free}(r)}{\texttt{free\_content}(r) + \epsilon} > \tau, \qquad \texttt{free\_content}(r) = \|P_N x_\text{true}\|_r / \texttt{ref}$$
+
+Read plainly: *what fraction of this region's hidden content did the reconstruction get wrong* — and $>1$ means it invented more than was ever there. Using $x_\text{true}$ is legitimate here; a **label** may use ground truth, only the **score** may not. This quantity is dimensionless, substrate-independent, and modality-independent by construction, which is what D-012 and D-020 jointly demand.
+
+**Ask to Track 2 (cheap, no schema bump):** add one nullable column `free_content` = $\|P_N x_\text{true}\|$ per region / `ref_intensity`. Per score-bank spec §6 an added nullable column is backwards-compatible. With it, the criterion is re-derivable from cached values forever (Rule 2), and this ruling costs zero GPU seconds.
+
+**Diagnostic value of the v1 form:** on `reference_nullspace` the ratio sits near 0.92 everywhere, i.e. it correctly reports *"this sampler does not invent — it simply fails to fill the null space."* A criterion that says something true about a stub sampler is a criterion worth trusting on a real one.
+
+**τ is set later, and its positive rate is reported, not targeted.** Once T2.2 lands, choose τ once on held-out data and report the induced positive rate per substrate as a **measured property**. Do not tune τ to hit a target rate — that would make the positive rate definitional and hollow out region-level FDR and power.
+
+### D22 — `calib_group` keeps its granularity and moves into the registry [T1.2, answers B2/C2; Track 2 D-021]
+**Ruling.** Granularity is unchanged — `mri/{family}/R{acceleration}`, `ct/{family}/v{n_views}` — and the definition **moves out of `runner.calibration_group` into the operator registry** as a field, so Track 1 can re-group without a Track 2 code change. Agreed with Track 2's recommendation on both halves.
+
+**Noise is not a group axis in v1.** Adding it multiplies the group count, and D10 already warns that high-acceleration regimes are where per-regime calibration data is scarcest — precisely where Tool 1's declared trade-off bites hardest. If T1.4's protocol varies noise as a studied axis, it *becomes* a group axis and the registry field must reflect it. Recorded here so that stays a decision rather than a silent default.
+
+### D23 — Split is fixed per patient in the registry, and must be operator-independent [T1.2, answers B3; Track 2 D-022]
+**Ruling.** Split assignment is deterministic per `sample_id`, made at **patient/volume** level (D-014), stored in the registry, and identical across every run, every operator, and both modalities. Never assigned per run.
+
+Track 2's two reasons stand: per-run splits make two banks non-mergeable and silently break the Week 10 merge, and slice-level splits leak between calibration and test through adjacent slices.
+
+**Track 1 adds a third, which is the binding one.** The split must be **operator-independent**: the same patient must fall on the same side in *every* regime. Otherwise group-conditional calibration compares different patient populations across regimes, and a coverage difference between R=4 and R=8 is confounded with anatomy rather than attributable to acquisition. That is the §13 controlled-comparison assumption applied to the split, and violating it would undermine the headline claim rather than merely inconvenience the merge.
+
+### D24 — One calibration group per (family, acceleration); seeds are members [T1.2, answers C3; Track 2 D-023]
+**Ruling.** A mask family at a fixed acceleration is **one** group. Different `mask_seed` values are members of it, not groups of their own.
+
+**Why.** Seeds drawn from the same family at the same acceleration are exchangeable draws from a single acquisition regime — and that exchangeability is exactly what licenses using them as calibration data for that regime. Splitting by seed would discard the only within-regime exchangeability the design actually has, while starving each group (D10, Tool 1's trade-off).
+
+**This also defines the Week 4 grid's axes,** which is the part that matters beyond grouping: a *mask-family shift* means changing family at fixed acceleration; an *acceleration shift* means changing R at fixed family. Both are between-group moves. Seed variation is within-group and is therefore the natural noise floor against which a real shift must be judged — **T1.4 should report it as such**, since a coverage change smaller than seed-to-seed variation is not a finding.
+
+---
+
+## T1.1 WI-3 / WI-5 — Score Combination (August 2026)
+
+### D25 — The combination is affine in the components, by requirement of the theory track [T1.1 WI-3]
+**Ruling.** `score(r) = Σᵢ wᵢ · sᵢ(r) / scaleᵢ`, with non-negative weights. Not a ratio, not a gate, not a product.
+
+**Why the form is constrained rather than chosen.** T3.3 §3's assumption (ii) needs the score to be Lipschitz in the D19 operator distance. Any non-negative weighted sum of Lipschitz components is Lipschitz with `L = Σ wᵢLᵢ` — the constant follows immediately. A ratio such as `s_disagree / s_free`, which is otherwise attractive ("what fraction of the hidden content is unstable?"), is **not** Lipschitz: it diverges as the denominator vanishes, which is exactly what happens in empty background regions. Choosing it would leave T3.3 unable to close L1 for reasons that have nothing to do with the operator.
+
+This is T3.3 §5's request acted on rather than deferred — it asked that the smoothness property be *designed in* rather than checked afterwards.
+
+**Non-negativity is load-bearing too:** it keeps the score monotone in each piece of evidence, so more unexplained free-component structure can never *lower* a score. A negative weight would let two kinds of evidence cancel into a confident-looking zero.
+
+**Handed to T3.3.** Each component is Lipschitz in `d_op` **with the reconstruction held fixed** — e.g. `‖P_N^A x̂ − P_N^B x̂‖ ≤ ‖P_N^A − P_N^B‖_F ‖x̂‖ = d_op‖x̂‖`. But `x̂` itself depends on the operator, through the solver, which is a black box (D1). So the honest statement available to L1 is Lipschitz-conditional-on-the-reconstruction; the remaining dependence flows through solver stability and cannot be bounded analytically here. T3.3's assumption (ii) should be split accordingly rather than assumed whole.
+
+### D26 — Standardise the components before weighting [T1.1 WI-3]
+**Ruling.** Each component is divided by a fixed reference scale before weighting. Scales are a robust quantile (default 0.75) pooled over regions.
+
+**Why.** The three components differ by roughly an order of magnitude, so the v0 placeholder's `1,1,1` default was in practice *"score = s_free"* — the other two contributed noise, not evidence. Standardising is what makes the weights mean what they say, and what makes the T1.4 ablation interpretable at all.
+
+**Why the 0.75 quantile and not the median:** medical images are background-heavy. A large fraction of regions is near-empty, which drags the median of every component toward zero and makes the division numerically unstable. A mid-high quantile sits inside the anatomy while staying insensitive to the extreme tail. A floor guards the degenerate single-draw case, where `s_disagree` is identically zero and would otherwise produce NaNs that propagate silently into the bank.
+
+### D27 — Scales come from the calibration operator and are never re-estimated [T1.1 WI-3, protects the headline result]
+**Ruling.** `ScoreScales` is built once, from calibration-operator data, and applied unchanged to every deployment operator.
+
+**Why this is not a detail.** Re-estimating the scales per deployment operator would map each operator's score distribution onto a common spread — which is *precisely* the difference the coverage-gap experiment exists to measure. It would make the naive-transfer baseline look artificially healthy and shrink the headline curve toward zero. The project would then be measuring its own normalisation.
+
+Pinned by a regression test (`tests/test_score_combination.py::test_scales_are_frozen_not_re_estimated_per_operator`) that asserts the frozen-scale score drift between R=2 and R=8 exceeds the re-fitted one. It is a behavioural test, not a style check.
+
+### D28 — Weights are selected on a design split and frozen before calibration [T1.1 WI-3]
+**Ruling.** Non-negative weights summing to 1, selected on a **design split disjoint from both calibration and test**, then frozen.
+
+**Why.** Conformal calibration chooses a *threshold*, not the weights. Fitting weights on calibration data would leak the calibration set into the score definition and quietly void the exchangeability the guarantee rests on. Three-way splitting is the standard remedy and costs only sample size. Until the design split exists, the default is the uninformative `1/3, 1/3, 1/3` on standardised components.
+
+### D29 — Null-space projections must stay complex; `.real` breaks data consistency [T1.1, referred to Track 2 as D-024]
+**Ruling.** Never take `.real` of a null-space projection in this codebase. Carry the complex value; take magnitudes only at the point of measurement.
+
+**Measured.** A random 1-D Cartesian mask is **not conjugate-symmetric**, so `P_N` of a real image genuinely has an imaginary part — here **33%** of its norm. Injecting the full complex `P_N·δ` leaves the measurements unchanged to 9.6e-8 relative (float noise). Injecting only its real part changes them by **4.1% relative** — the perturbation is no longer confined to the null space, and the construction stops being a hallucination by this project's own definition (D2).
+
+Found while building the WI-4 injection test, which failed its own premise until this was fixed. That failure was the test working correctly.
+
+**Referred to Track 2 (D-024):** `solvers/reference.py` applies the same `.real` cast to `P_N(texture)` in `NullSpaceNoiseSampler`. Its draws therefore perturb the *measured* component by a few percent, so it is not the "faithful caricature" its docstring describes: `s_residual` will be non-zero as a pure artefact, and any smoke number taken from it — the README table, D-020's coverage figures — carries that confound. Not urgent (nothing from that sampler is reportable, D-018), but it should be fixed before the sampler is used to characterise anything.
+
+---
+
+## Phase 1 Gate (August 2026)
+
+Full assessment in `T1.6_analysis_and_course_correction.md` (Phase 1 Gate section).
+
+### D30 — Scoop recheck done; the targeted gap is open, but one group is a single experiment away [T1.6, resolves Q5's current instance]
+**The gap stands.** Nothing found calibrates conformal prediction at one acquisition operator, deploys at another, and restores coverage. The §6 landscape table is still accurate.
+
+**Two adjacent results have closed in, and one changes the urgency.**
+
+*arXiv 2601.13236* (Jan 2026) applies conformalized quantile regression to accelerated MRI across **acceleration factors 2–10** and reports that predictors *calibrated per acceleration rate* hold coverage at their matching rate. That is CALIBER's matched-operator upper-bound baseline, already published, by a group that therefore has the substrate, the sweep and the conformal machinery assembled. The mismatched cell — this project's entire claim — is one experiment away for them. **D11's early preprint moves from prudent to urgent.**
+
+*CHEM* (arXiv 2512.09806, Dec 2025) is a conformal, distribution-free hallucination-localisation metric whose null-space hallucination map decomposes the reconstruction by SVD of the forward operator. It compares against ground truth, so it is an evaluation metric, not a deployment score — nearer CALIBER's `err_free` label than its `s_free` score. Independent convergence on the D21 criterion's form; cite it as corroboration.
+
+*Wen, Ahmad & Schniter, Minimax Multi-Target CP* (TMLR, Nov 2025) — adjacent, different problem. The group remains the one to monitor.
+
+**Sourcing caveat:** abstract- and HTML-level reads. CHEM's PDF exceeded the fetch limit, so its Null-HM description comes from the abstract and summary text. Verify against the method section before citing specifics.
+
+**Q5 stays standing** — repeat at write-up, per its original terms.
+
+### D31 — Novelty rests on operator shift alone; the decomposition is not a contribution [T1.6, framing constraint]
+Following D30: "conformal + distribution-free hallucination localisation" (CHEM) and "null-space/range decomposition of the forward operator" (CHEM's Null-HM, and the fundamental-limits line before it) are both **published under a fixed operator**. Neither is available to claim.
+
+**What CALIBER contributes is the operator-shift axis and nothing else on this list:** the demonstrated coverage failure under acquisition change, its restoration by group-conditional and operator-distance-weighted calibration, the cross-modality collapse, and the operator-distance bound. The operator-aware score is *machinery in service of that*, not a result.
+
+**How to apply:** in the manuscript, the score section is method, not contribution. Cite CHEM at the point the decomposition is introduced rather than after a reviewer finds it. D2 remains a correct design decision; it is simply not a novel one, and the earlier framing in D2 and `T1.1_score_design.md` reads more proprietary than the literature now permits. This is the D6/D17 discipline — claim narrowly, on the record — applied to the score.
+
+---
+
+## T1.2 — Shift-Robust Calibration (September 2026)
+
+Full record in `T1.2_shift_robust_calibration.md`.
+
+### D32 — Control the region-level miss rate; floor the quantile; refuse thin groups [T1.2]
+**Ruling.** The controlled quantity is the **region-level miss rate** — among genuinely hallucinated regions, the fraction the flag fails to raise. Risk control (D9), not marginal coverage. A region is flagged when `score >= tau`, and calibration takes the `k`-th smallest score among that group's hallucinated calibration regions with **`k = floor(alpha*(n+1))`**.
+
+**Why flooring, not ceiling.** For exchangeable scores the new positive's rank is uniform on `1..n+1`, so `P(miss) = k/(n+1) <= alpha` exactly. Rounding *up* breaks this on thin groups: at `n=1, alpha=0.1` a ceiling gives `k=1`, so `tau` is that single score and the true miss rate is **1/2 by symmetry** — five times the promise, reported as certified. Measured at 0.5 in `test_a_ceiling_rule_would_over_promise_on_one_positive`.
+
+**Thin groups refuse rather than certify.** With `n` positives the smallest achievable bound is `1/(n+1)`, so level `alpha` needs `n+1 >= 1/alpha` — **9 positives at `alpha=0.1`**. Below that, no threshold is valid and the calibrator returns `-inf` (flag everything: zero misses by construction, visibly useless) with `certifiable=False`. This makes D3's declared "thin groups give noisy thresholds" trade-off *checkable* rather than merely acknowledged, and `CalibrationReport.reportable` gates the whole run on it.
+
+**Every fallback path is conservative downward.** No positives, an over-heavy test atom, an unknown group at apply time — all flag everything. Under-flagging would silently assert that nothing in an uncalibrated regime is hallucinated.
+
+**Defect found in the code this supersedes — referred to Track 2 as D-026.** `calibration/__init__.py`'s reference `split_conformal_threshold` has a docstring that says the `ceil((n+1)(1-alpha))`-th smallest score while the code takes the `ceil((n+1)*alpha)`-th. The code is nearer correct, but its ceiling certifies groups it should refuse. It is marked not-for-reported-results, so nothing published is affected; it should still be fixed before someone reuses it.
+
+### D33 — Weights are an exponential kernel in operator distance, and the result is approximate [T1.2, D4's mechanism]
+**Ruling.** `w_i = exp(-d_op(A_i, A_dep) / h)` with `d_op` from D19 and `h` defaulting to the median non-zero distance. The lower-tail weighted quantile follows Tibshirani et al. (2019) with the test point contributing an atom at `-inf`.
+
+**Why a kernel and not a cut-off.** A hard radius is a Mondrian group with extra steps, and it discards the near-neighbours carrying most of the usable information about a nearby operator. The exponential decays smoothly, so a deployment operator sitting *between* two calibration regimes borrows from both — precisely the case Tool 1 structurally cannot serve, and therefore the case that justifies Tool 2 existing at all.
+
+**Why the median bandwidth.** Scale-free, and it adapts to whatever operator grid the experiment uses. A fixed `h` in absolute units would silently change the method's behaviour when the grid changes — the same confound T1.4's grids are designed to avoid. To be re-chosen on the design split once real banks exist.
+
+**Honest scope, stated at the call site.** Tibshirani's guarantee holds when the weights are the true likelihood ratio between deployment and calibration. A kernel in operator distance **is not that ratio**, and operator shift is a measurement-process change rather than a covariate shift (D6). So Tool 2 carries **no exact finite-sample guarantee**. Tool 1 holds the exact statement, Tool 2 is the reach result, and the residual gap is what T3.3's bound quantifies. ESS is reported on every weighted calibration, and gates certifiability, so the cost of reweighting is visible rather than inferred.
+
+### D34 — The naive baseline must name the operator it calibrated at [T1.2]
+**Ruling.** `calibrate_naive` takes an explicit `calibration_group`.
+
+**Why this is not an API nicety.** §16's first bullet is *calibrate at one acquisition setting and apply at others*. The first implementation calibrated on whatever rows it received; a test measured the consequence of pooling every regime instead — the miss rate on the deployment regime fell from **0.76 to 0.19**, making naive transfer look four times healthier than it is. The baseline exists to expose the coverage collapse, so understating it would have quietly weakened the paper's central empirical claim while every test still passed. Pinned by `test_pooling_every_regime_understates_the_naive_failure`.
+
+---
+
 ## Open Questions
 
-### Q1 — "Operator distance" is not yet defined [OPEN, owned by T1.3 — see D16]
+### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
 The coverage-gap-vs-operator-distance plot is the paper's central figure, and the x-axis of that figure is currently undefined. This choice determines the weighting scheme (D4) *and* the form of the bound (D5, now Track 3's), and Track 3 is blocked on it. Blueprint v3.0 §12.1 widens the candidate list to five: null-space projection distance; subspace and principal-angle distances (geodesic, chordal, projection); operator and pseudo-inverse norms; sampling-support difference; spectral divergence in singular-value decay or conditioning.
 
 Three requirements, all binding:
@@ -90,19 +277,35 @@ Three requirements, all binding:
 
 The T1.1 projector utilities (WI-2) are the substrate for the subspace-distance candidates, and following D18 they are unblocked, so this question is answerable now rather than after Track 2 delivers.
 
-### Q2 — Region definition for the flags [OPEN, owned by T1.1]
+### Q2 — Region definition for the flags — **RESOLVED by D20** (retained for the reasoning)
 "Per-region" is used throughout the blueprint without fixing what a region is — pixel, patch, superpixel, or annotated anatomical/pathological structure. It determines the multiplicity correction, the flag-area metric, and how fastMRI+ annotations are matched to flags. Note the tension: fastMRI+ labels are lesion-level bounding boxes, so evaluation naturally lives at that scale even if calibration runs on patches.
 
-### Q3 — How many solver draws per reconstruction [OPEN, cost-driving, owned by T1.1]
-The score combines null-space structure with cross-sample disagreement, so it needs several solver draws per measurement set. Each draw is a full diffusion/flow solve. Draws × calibration-set size × number of operator regimes is the dominant compute cost of the whole project and should be budgeted during T1.1, not discovered during T1.6. Following D18 the question splits: the *statistical* half (draws needed before the disagreement term stabilises) is measurable now on a mock sampler; the *cost* half (seconds per draw) waits on T2.2. Multiply at integration.
+### Q3 — How many solver draws per reconstruction — **statistical half RESOLVED (8 draws); cost half still open**
+The score combines null-space structure with cross-sample disagreement, so it needs several solver draws per measurement set. Draws x calibration-set size x number of operator regimes is the dominant compute cost of the whole project. Following D18 the question splits: the *statistical* half is measurable now on a mock sampler; the *cost* half (seconds per draw) waits on T2.2. Multiply at integration.
+
+**Statistical half, measured** (`scripts/draw_budget.py`, 128^2, R=4, injected hallucination, 5 trials, reference 256 draws). The metric is **rank** correlation against the reference, not RMS error: conformal calibration thresholds the score, so a uniformly mis-scaled score that orders regions identically produces identical flags. A reordering is what costs.
+
+| draws | 2 | 4 | 8 | 16 | 32 | 64 |
+|---|---|---|---|---|---|---|
+| mean rank corr | 0.948 | 0.949 | 0.959 | 0.958 | 0.967 | 0.970 |
+| worst trial | 0.935 | 0.934 | **0.951** | 0.944 | 0.951 | 0.958 |
+
+**Ruling: 8 draws.** It is the smallest budget whose *worst* trial clears 0.95, and 64 draws buys only +0.011 mean over it. Worst-trial rather than mean, because the budget has to hold for every item in the bank.
+
+**Two caveats, both real.** (a) This is measured against a mock with a known 10x spread contrast between hallucinating and clean regions; a real prior's contrast is unknown, so **re-measure once T2.2 lands**. (b) The first attempt at this measurement used a *spatially uniform* mock spread and produced a meaningless plateau at ~0.9 — with homogeneous noise `s_disagree` estimates the same constant in every region, carries no ranking signal, and the correlation then measures the mock rather than the score. The mock's spread must be heteroscedastic or the experiment is void. Recorded because the same trap applies to any future re-measurement.
 
 ### Q4 — What experiment shows weighted recalibration beating the Mondrian backbone? [OPEN, owned by T1.4]
 D3 makes Mondrian the guaranteed backbone and D4 makes operator-distance weighted recalibration the headline contribution. But Mondrian is *exact* in the known-finite-operator regime and weighted CP is only approximate there (D6), so a reviewer will reasonably ask why the approximate method is the contribution. The background research reached the same conclusion independently, calling group-conditional CP "a serious competitor to the whole merger, and arguably the honest primary method."
 
 The answer exists and is defensible — weighting buys what Mondrian structurally cannot: (a) **thin groups**, where per-regime calibration data is too scarce for a stable threshold, exactly the high-acceleration regimes D10 warns about; and (b) **continuous operator change**, where there is no finite group to calibrate within. But neither case is currently an explicit line in the blueprint's experimental protocol (§16), which means the paper's headline method has no experiment that demonstrates its advantage over its own baseline. T1.4 must name that experiment: sweep calibration-set size per regime down to where Mondrian's thresholds become noisy and weighting wins, and include off-grid deployment operators that no group covers. Report both, not just the coverage curve.
 
-### Q5 — Scoop recheck is overdue [OPEN, owned by T1.6, standing]
+### Q5 — Scoop recheck — **done August 2026 (D30); standing, repeat at write-up**
 The two "verified empty" cells (operator-shift-robust conformal coverage; flow-matching × conformal) were verified as of **mid-2026**, and the research documents explicitly flag that absence of evidence is not proof, naming VOILA (Fridovich-Keil), Schniter/Ahmad and Sulam as the groups to monitor monthly across cs.CV, eess.IV and stat.ME. D11 already mandates an early preprint for priority. The sweep has not been repeated since the research was written. Repeat it before further design work, and again at write-up.
+
+### Q6 — Does `s_free` fire on detailed anatomy rather than on hallucination? [OPEN, owned by T1.1/T1.4]
+`s_free` measures ‖P_N x̂‖ — the magnitude of the reconstruction's hidden content. But real anatomy *has* large null-space content whether or not the prior invented any of it, which is structurally the same trap D21 identified in the label criterion. The injection test shows `s_free` alone does detect an injection **on top of** anatomy (it is the *excess* that stands out), so the component is not useless. The open risk is region-level FDR on real data: if `s_free` is uniformly high across all textured tissue, it will flag detail rather than invention, and the weighting (D28) will have to suppress it.
+
+This cannot be settled on synthetic images — it needs the real prior plus the D21 criterion. **T1.4's ablation must report per-component FDR/power separately**, not just the combined score, or a `s_free` that is doing nothing useful will hide inside an acceptable-looking total. Note the possible outcome, flagged early: if `s_disagree` alone matches the combination's detection quality, that is an honest and publishable negative result about the operator decomposition (D2), and better found at reference-implementation scale than in Phase 3.
 
 ---
 
@@ -113,22 +316,30 @@ Per-task records live in `T1.<n>_*.md`. Decisions and problems arising during a 
 ### T1.1 — Operator-aware score design
 See `T1.1_score_design.md`. Branch `T1.1`.
 
-_No implementation entries yet. Design correction D18 (WI-2 unblocked) logged 2026-08-21._
+WI-1 **closed by D20** (patch grid is the risk unit). WI-2 **superseded** — Track 2 shipped range/null-space projectors for both modalities with exact adjoints and health checks, so build on `operators/base.py` rather than reimplementing. The Week 2 criterion question is **answered by D21**.
+
+**WI-3 delivered (D25–D28).** Components ratified unchanged; combination replaced with a standardised non-negative affine rule in `scoring/score.py`. `SCORE_VERSION` → `v1-components-ratified` (component arithmetic **unchanged**, so existing banks are numerically identical and need no regeneration — only the label differs); `COMBINATION_VERSION` tracked separately because the combination is applied from cache at analysis time and will be revised more often.
+
+**WI-4 delivered.** Reference implementation exercised end to end by `tests/test_score_combination.py` — 8 gates, all passing, including the constructed-hallucination injection test, the frozen-scales regression test protecting the headline result, the affineness check T3.3 depends on, and a structural guard that the score's signature cannot see ground truth. Building it surfaced **D29** (the `.real` cast breaking data consistency), which is referred to Track 2 as D-024.
+
+**WI-5 delivered — 8 draws** (`scripts/draw_budget.py`); see Q3 for the table and the two caveats.
+
+_Remaining: none of the WIs. T1.1 is complete pending the weight selection in D28, which needs the design split and therefore real data (C2)._
 
 ### T1.2 — Shift-robust calibration
-_Not started._
+See `T1.2_shift_robust_calibration.md`. **Implemented and verified on synthetic banks** — all three tools, thin-group refusal, ESS tracking (D32–D34). 15 gates passing, including the coverage collapse (0.76 miss at nominal 0.1) and its restoration by Mondrian. Awaiting real banks (C2) for the reported result; fallbacks [7][8][9] deferred per the risk register. Grouping and split semantics are settled ahead of it by **D22, D23, D24**. `calibration/__init__.py` holds Track 2's reference split-conformal and Mondrian implementations, explicitly marked as superseded by T1.2 and not for reported results.
 
 ### T1.3 — Operator-distance formulation
-_Not started. Owns Q1; Track 3 is blocked on it (D16)._
+See `T1.3_operator_distance_formulation.md`. **Delivered — D19.** `null_space_projection` (Frobenius) with `ambient` normalisation, locked for Week 3. Unblocks Track 3's T3.3, which derived contingently against "the T3.2-recommended aggregate subspace distance"; that is now the ratified choice.
 
 ### T1.4 — Experimental design
-_Not started. Owns Q4._
+_Not started. Owns Q4._ Carries four inherited instructions: operator grids spread evenly in **distance** not acceleration (D19); region size is a declared ablation axis (D20); noise becomes a group axis if the protocol varies it (D22); seed-to-seed variation is the noise floor a real shift must clear (D24).
 
 ### T1.5 — Cross-track integration
-_Not started. New in v3.0._
+See `T1.5_cross_track_integration.md`. _Week 1 sign-off delivered_ — D19–D24 close `Documentation/week1_kickoff.md` §G. Standing work: the shared interfaces (score bank, operator registry) and adjudication continue through the term.
 
 ### T1.6 — Analysis and course correction
-_Not started. New in v3.0. Owns Q5._
+See `T1.6_analysis_and_course_correction.md`. **Phase 1 gate delivered** — `T1.6_analysis_and_course_correction.md`. Verdict: Phase 1 complete but for reproduced baselines (T2.6), blocked on solver integration (T2.2); feasibility demonstrated; no scope reduction warranted. Scoop recheck done (D30); novelty framing tightened (D31). Standing from here: owns Q5 and each subsequent phase gate.
 
 ### T1.7 — Technical authoring
 _Not started._
@@ -160,9 +371,15 @@ A contract is a dependency on *scale, labels, or artefacts*. It is not a depende
 
 | # | Track 1 supplies | To | Status |
 |---|---|---|---|
-| **S1** | The operator-distance definition (Q1 / T1.3) — the quantity the bound must be stated in | T3.2, T3.3 | Open, blocking |
-| **S2** | The region definition (Q2 / T1.1 WI-1) — fixes the multiplicity correction, the flag-area metric, and how annotations are matched | T2.1 (C4), T2.4 | Open, blocking |
-| **S3** | Score-bank format and the non-conformity score specification | T2.3, T1.5 | Open |
-| **S4** | Experimental protocol, operator grids and ablation matrix | T2.5, T2.6, T3.6 | Open |
+| **S1** | The operator-distance definition (Q1 / T1.3) — the quantity the bound must be stated in | T3.2, T3.3 | **Delivered — D19** |
+| **S2** | The region definition (Q2 / T1.1 WI-1) — fixes the multiplicity correction, the flag-area metric, and how annotations are matched | T2.1 (C4), T2.4 | **Delivered — D20** |
+| **S3** | Score-bank format and the non-conformity score specification | T2.3, T1.5 | Partial — format signed off (D19–D24); the score *combination rule* is still `v0-placeholder` |
+| **S4** | Experimental protocol, operator grids and ablation matrix | T2.5, T2.6, T3.6 | Open — now carries four instructions from D19–D24 (distance-even grids, region-size sweep, noise-as-group-axis, seed-variation noise floor) |
 
-S1 and S2 are both **blocking for partners** and both currently open questions. They are the two things to close first.
+S1 and S2 are delivered, which unblocks Track 3's T3.3 and Track 2's Week 2. **The remaining Track 1 critical-path item is the score combination rule** (T1.1 WI-3): `scoring/score.py` still ships `SCORE_VERSION = "v0-placeholder"`, and nothing downstream can be reported until it is real. Note T3.3 §5's constraint on it — the null-space-energy and disagreement terms may need to be *designed* Lipschitz in `d_op`, not checked afterwards, or L1's bound will not close.
+
+### One ask back to Track 2
+
+| # | Track 1 asks | For | Cost |
+|---|---|---|---|
+| **A1** | One nullable bank column `free_content` = ‖P_N x_true‖ per region / `ref_intensity` | D21's criterion | Additive nullable column — backwards-compatible, no `SCHEMA_VERSION` bump (spec §6) |

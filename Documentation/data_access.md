@@ -46,8 +46,9 @@ images, so one of them has to change role) and **D-014** (splits must be by
 patient, not by slice). See [decision_log.md](decision_log.md), and
 [week1_kickoff.md](week1_kickoff.md) for the sign-off agenda.
 
-See [../data/README.md](../data/README.md) for the archive inventory,
-extraction commands, and what can be deleted.
+`data/` carries no README of its own — this file is the single data document.
+Archive inventory, extraction commands, and what can be deleted are in §6 below.
+Layout is in §6 too, so a fresh clone with an empty `data/` has one place to look.
 
 ---
 
@@ -116,6 +117,24 @@ reduced by root-sum-of-squares.
 > That is a real narrowing of scope and belongs in the Experimental Setup
 > section, not left implicit.
 
+### 1a. M4Raw — the open stopgap (D-015)
+
+Open raw k-space in fastMRI's own `.h5` layout, so the fastMRI reader runs
+unchanged. It fills the development gap while fastMRI access is pending, and
+nothing more: **0.3 T brain rather than 3 T knee, and no pathology
+annotations**, so it cannot carry any annotation-linked evaluation. It is wired
+as the `m4raw` dataset and marked unreportable in code, so a bank built from it
+announces itself as such (D-018).
+
+Each volume ships `kspace` of shape `(18, 4, 256, 256)` complex64 plus
+`reconstruction_rss`. Volume attributes also carry `patient_id`, which is what
+the split-by-patient rule (D-014, D-022) needs to be enforceable here.
+
+```bash
+python scripts/fetch_data.py m4raw_val --extract
+caliber configs/experiments/w02_m4raw_smoke.yaml   # real k-space, no checkpoint
+```
+
 ## 2. fastMRI+ — pathology annotations
 
 Public: <https://github.com/microsoft/fastmri-plus>. Bounding boxes per slice
@@ -153,6 +172,14 @@ fix the acquisition at LoDoPaB's geometry and make the operator grid
 impossible. The cost is that the CT forward model is ours, not the scanner's —
 which belongs in Assumptions and Honest Scope.
 
+**Patient IDs are shipped separately and matter for split integrity.**
+`patient_ids_rand_*.csv` gives one patient ID per slice, in slice order.
+LoDoPaB slices come from patients contributing many slices each, so a random
+slice-level calibration/test split puts the same patient on both sides. That
+inflates apparent coverage and quietly violates the exchangeability the
+conformal guarantee rests on. Split by patient, never by slice — D-014, and
+D-022 for the operator-independence requirement on top of it.
+
 ## 4. CT anatomical annotations
 
 TotalSegmentator [31] (open, ~100 structures) or AbdomenCT-1K [32]
@@ -163,6 +190,13 @@ Labels are supplied per volume and must be resampled onto the same
 centre-cropped grid as the image. An off-by-one here mislabels every CT region
 without any visible symptom, so this needs its own verification step when
 wired (Week 7).
+
+**TotalSegmentator's masks segment TotalSegmentator's own CT volumes, not
+LoDoPaB's.** They are different cohorts — LoDoPaB derives from LIDC-IDRI — so
+LoDoPaB slices cannot be annotated with them, and the two cannot simply be
+paired. This is what D-013 resolves; each TotalSegmentator subject ships
+`ct.nii.gz` plus 117 aligned organ masks, which is the same image-plus-region
+pairing MRI gets from fastMRI+.
 
 ## 5. Storage and compute budget
 
@@ -175,7 +209,8 @@ Rough budget:
 | Item | Size |
 |---|---|
 | fastMRI singlecoil_val | ~7 GB |
-| LoDoPaB ground truth | ~4 GB |
+| LoDoPaB ground truth (val + test) | ~4 GB |
+| TotalSegmentator, full extraction | 30.1 GB |
 | Score bank, full MRI grid | ~100 MB (region rows are tiny) |
 | Cached reconstructions | Only enabled for a fixed handful of items |
 
@@ -183,7 +218,93 @@ The score table being negligible next to the raw data is the whole point of
 Sec. 17: the expensive artefact is produced once, and the artefact everyone
 actually reads is small enough to copy around freely.
 
-## 6. Ethics and licensing
+## 6. Layout, archive inventory, and what can be deleted
+
+### Directory layout
+
+`data/` is gitignored in full and carries no README of its own (D-025), so this
+is the map for a fresh clone.
+
+```
+data/
+  archives/                    downloaded zips, kept for re-extraction
+    lodopab/*.zip
+    totalsegmentator/*.zip
+    m4raw/*.zip
+  raw/
+    lodopab/
+      ground_truth_validation_*.hdf5    28 shards
+      ground_truth_test_*.hdf5          28 shards
+      patient_ids_rand_*.csv            one patient ID per slice, in slice order (§3)
+    totalsegmentator/
+      s0000/ct.nii.gz                   CT volume, 1.5 mm isotropic
+      s0000/segmentations/*.nii.gz      117 aligned organ masks
+    m4raw/
+      multicoil_val/*.h5                kspace (18, 4, 256, 256) + reconstruction_rss
+    fastmri/
+      singlecoil_val/*.h5               keep each split in its own directory (§1)
+  annotations/
+    fastmri_plus/                       knee.csv, brain.csv + file lists
+  interim/                              preprocessed caches, regenerable
+
+checkpoints/                            (outside data/, also gitignored)
+```
+
+Two things the layout itself encodes, both explained above: splits live in
+separate directories so a recursive search cannot put one volume on both sides
+of a calibration/test split (§1), and `patient_ids_rand_*.csv` is required
+rather than incidental, because a slice-level split leaks a patient across
+calibration and test (§3).
+
+### Archive inventory
+
+Sizes are measured, not estimated — `python scripts/fetch_data.py --verify`
+reports them. Download state is deliberately **not** recorded here: it changes
+under you, and a status marker committed to version control is a claim that
+goes stale the moment it is true. Run `--list` for current state.
+
+| Archive | Zip | Extracted | Needed? |
+|---|---|---|---|
+| `ground_truth_validation.zip` | 1.57 GB | 1.8 GB | Yes — CT substrate |
+| `ground_truth_test.zip` | 1.58 GB | 1.8 GB | Yes — CT substrate |
+| `Totalsegmentator_dataset_v201.zip` | 23.58 GB | 30.1 GB | Yes — CT annotations (D-013) |
+| `M4RawV1.1_multicoil_val.zip` | 2.81 GB | 2.7 GB | Yes — MRI stopgap (D-015) |
+| `ground_truth_train.zip` | 15.94 GB | 18.1 GB | **No** — D-013 |
+| `observation_train.zip` | 29.94 GB | — | **No** — D-005 |
+| `observation_challenge.zip` | 3.13 GB | — | **No** — D-005 |
+| `observation_test.zip` | 3.00 GB | — | **No** — D-005 |
+| `observation_validation.zip` | 2.94 GB | — | **No** — D-005 |
+
+**~55 GB is recoverable** — `ground_truth_train` (15.94 GB) plus the four
+`observation_*` zips (39.01 GB). Disk is the binding constraint on this project:
+a full TotalSegmentator extraction alone needs 30.1 GB and fastMRI adds ~7 GB on
+arrival, so the `observation_*` zips are usually what has to go first. Nothing
+is deleted automatically; the call belongs to whoever owns the machine.
+
+**Why `observation_*` is not needed (D-005).** They hold LoDoPaB's low-dose
+sinograms at LoDoPaB's own fixed geometry. This project re-projects ground-truth
+images with its own registered `CTProjectionOperator`, because the acquisition
+operator is the variable under study and a fixed supplied geometry makes the
+operator grid impossible. See §3.
+
+**Why `ground_truth_train` is not needed (D-013).** The project audits pretrained
+priors and trains nothing (Sec. 17). The train split exists to train
+reconstruction models. Validation plus test give ~7,000 slices, far more than
+the ~200-item runs the protocol calls for.
+
+### Extraction
+
+```bash
+# remaining TotalSegmentator subjects (needs ~28 GB free)
+python -c "import zipfile; zipfile.ZipFile(
+  'data/archives/totalsegmentator/Totalsegmentator_dataset_v201.zip'
+  ).extractall('data/raw/totalsegmentator/')"
+
+# LoDoPaB train, only if more calibration data is ever needed
+python -m zipfile -e data/archives/lodopab/ground_truth_train.zip data/raw/lodopab/
+```
+
+## 7. Ethics and licensing
 
 fastMRI and LoDoPaB are de-identified, publicly released research datasets used
 under their stated terms. fastMRI's terms prohibit re-distribution, so the

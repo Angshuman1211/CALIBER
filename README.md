@@ -10,9 +10,7 @@ Operator-shift-robust conformal hallucination flagging for generative-prior imag
 > structurally different operators, and derives a coverage-gap bound expressed
 > in quantities computable from the operators themselves.
 
-This repository is **Track 2 — Systems, Data Engineering and Cross-Domain
-Validation** (Blueprint Sec. 18; Track B in the weekly cards). It owns the
-reconstruction and evaluation infrastructure that Tracks 1 and 3 build on.
+This is the **shared repository for all three tracks** (blueprint v3.0 §18). Track 1 owns methodology, calibration and scientific direction; Track 2 owns systems, data engineering and cross-domain validation; Track 3 owns the analytical foundations. Task branches (`T1.1`, `T2.1`, `T3.1`, …) merge to `main`.
 
 The framework is a **solver-agnostic audit layer over pretrained priors** — it audits reconstruction models rather than training them, which is what makes it feasible on a single GPU.
 
@@ -64,9 +62,11 @@ Note the price of restoration: flag area rises from 0.44 to 0.83. Valid but
 over-conservative flags are of little practical use, which is exactly why
 Sec. 15.2 makes flag area a reported metric alongside coverage.
 
-## Layout
+## Data
 
-The Front II substrate (Phase 3, Track 2) is a low-dose / sparse-view CT benchmark exposing **projection data** — LoDoPaB-CT — for the same reason: raw projections permit angle subsampling, angular-range restriction, and dose reduction to be applied retrospectively. Region-level ground truth there comes from anatomical segmentation (TotalSegmentator, AbdomenCT-1K).
+The Front I substrate is accelerated MRI with raw k-space (fastMRI; M4Raw as an open stopgap while access clears), with fastMRI+ pathology annotations for region-level evaluation. The Front II substrate (Phase 3) is a low-dose / sparse-view CT benchmark exposing **projection data** — LoDoPaB-CT — for the same reason: raw measurements permit angle subsampling, angular-range restriction, and dose reduction to be applied retrospectively. Region-level ground truth there comes from anatomical segmentation (TotalSegmentator, AbdomenCT-1K).
+
+Nothing is committed. See [Documentation/data_access.md](Documentation/data_access.md) for provenance, licensing and download.
 
 ---
 
@@ -80,6 +80,7 @@ src/caliber/
                 black-box posterior-sampler interface               Stage 1
   scoring/      region definition, operator-aware scoring, and the
                 ground-truth hallucination criterion                Stage 3
+                (Track 1 owns the score definition)
   scorebank/    the cached, shared data format all three tracks read
   calibration/  group-conditional and weighted recalibration        Stage 4
                 (Track 1 owns this module)
@@ -87,19 +88,61 @@ src/caliber/
   data/         dataset access and preprocessing
 
 configs/        version-controlled experiment definitions
-docs/           interface specs, data access, cross-track decision log,
-                Track 2 problems log
+Documentation/  all project documentation — see below
 scripts/        CPU-only analysis entry points
 tests/          correctness gates
 ```
+
+### Documentation
+
+One directory, all three tracks. Per-task records are prefixed with the blueprint §18 task ID.
+
+| File | Owner | What |
+|---|---|---|
+| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D34`, open questions, cross-track contracts |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-026` |
+| `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
+| `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
+| `data_access.md` | Track 2 | Dataset provenance, licensing, download |
+| `T1.1_score_design.md` | Track 1 | Operator-aware score design |
+| `T1.2_shift_robust_calibration.md` | Track 1 | The three calibration tools, what they control, and what they refuse |
+| `T1.3_operator_distance_formulation.md` | Track 1 | The locked operator-distance measure and why |
+| `T1.5_cross_track_integration.md` | Track 1 | Shared interfaces, sign-off record, contracts, adjudication log |
+| `T1.6_analysis_and_course_correction.md` | Track 1 | Phase gate reviews — all three fronts against the central claim, one section per checkpoint |
+| `T2_problems.md` | Track 2 | Track 2's problems log |
+| `T3.1`–`T3.3_*.md` | Track 3 | Formal review, distance candidates, L1 stability result |
+
+> **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.
 
 ---
 
 ## Work plan
 
-Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent tracks. **This repository covers Track 1.** Tracks 2 and 3 are partner-owned; what Track 1 depends on from them, and what it owes them, is recorded as explicit contracts in `Documentation/problems_and_decisions.md`.
+Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent tracks, all working in this repository. They are not three sub-projects: the empirical core produces the phenomenon, the cross-domain front establishes that it is general, and the analytical front explains and bounds it — none can be removed without weakening the others (§8). The tracks integrate through two shared interfaces, the **score bank** and the **operator registry**, and adjudicate disagreements through a common decision log (§19).
 
 > **Changed in v3.0.** The blueprint went from two tracks to three, and the coverage-gap bound moved **out of Track 1 into Track 3**. Track 1's T1.3 is consequently no longer "coverage-gap analysis" but the **operator-distance formulation** that Track 3 derives against. Commits and branches predating 2026-08-04 use the v2 numbering. See D14 in the decisions log.
+
+### What exists today
+
+| | |
+|---|---|
+| **Acquisition operators** | Both modalities behind one registry — 3 MRI mask families × CT sparse-view and limited-angle, exact adjoints, seeded and reproducible, with health checks |
+| **Operator distance** | All five blueprint §12.1 candidates implemented; the primary measure locked and verified non-saturating across the acceleration sweep |
+| **Hallucination score** | Three-component operator-aware score, cached as separable components; validated against *constructed* data-consistent hallucinations |
+| **Calibration** | All three tools — naive baseline, group-conditional backbone, operator-distance weighted — with thin-group refusal and effective-sample-size tracking |
+| **Analytical result** | Coverage gap bounded by a single distributional distance — a checked consequence of the non-exchangeable conformal analysis — with the reduction to operator distance drafted |
+| **Substrates** | fastMRI+ annotations parsed (16,154 boxes); M4Raw verified end to end on real k-space; LoDoPaB CT running end to end |
+| **Engineering** | 80 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
+
+---
+
+> **Two independent axes — don't read one as the other.** §18 (this section) is
+> *who does what*: three tracks × seven tasks, addressed `Tx.y` = **track x,
+> task y**. §20 (Timeline, below) is *when*: four phases, each ending at a
+> review checkpoint. They are orthogonal — a task can span several phases, and
+> a phase draws on tasks from all three tracks. The blueprint deliberately does
+> **not** map tasks onto phases, so the Status column here reports the state of
+> the work, never a scheduled phase.
 
 ### Track 1 — Methodology, Calibration and Scientific Direction
 
@@ -107,23 +150,43 @@ Owns the central claim, the design of the method, and the decisions that set dir
 
 | Task | Deliverable | Status |
 |------|-------------|--------|
-| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **In progress** |
-| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | Not started |
-| **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities (resolves Q1) | Not started |
+| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Blocked on T2.2** — WI-1–WI-5 done; weights unset, so the definition is not yet pinned |
+| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | **Implemented** — verified on synthetic banks; real banks need C2 |
+| **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19; CT cross-check pending T2.5 |
 | **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | Not started |
-| **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | Not started |
-| **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | Not started |
+| **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | **Week 1 sign-off delivered** (D19–D24); standing |
+| **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | **Phase 1 gate delivered**; standing |
 | **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | Not started |
 
-Each task gets a branch (`T1.1`, `T1.2`, …) and a record in `Documentation/T1.<n>_*.md`, merged to `main`.
+### Track 2 — Systems, Data Engineering and Cross-Domain Validation
 
-### Track 2 — Systems, Data Engineering and Cross-Domain Validation *(partner-owned)*
+Owns the reconstruction and evaluation infrastructure, and carries the study into the second modality. Produces the score banks the other two tracks consume.
 
-T2.1 data and operator pipeline · T2.2 solver integration · T2.3 score-bank production · T2.4 evaluation harness · T2.5 cross-domain experiments · T2.6 baseline reproduction · T2.7 figures and packaging.
+| Task | Deliverable | Status |
+|------|-------------|--------|
+| **T2.1** Data and operator pipeline | Dataset access, preprocessing, and reproducible generation of acquisition operators across both modalities | **Delivered** — both modalities, seeded registry, health checks, annotations parsed |
+| **T2.2** Solver integration | Configured, verified pretrained reconstruction back-ends behind the common interface | **In progress** — interface fixed and reference samplers running; pretrained back-ends next |
+| **T2.3** Score-bank production | Cached reconstructions and non-conformity scores across the full operator grid | **Delivered (v0)** — schema + validator; banks produced on phantom, M4Raw and LoDoPaB |
+| **T2.4** Evaluation harness | Coverage, efficiency, and region-level detection utilities with automated logging | **Delivered** — coverage, flag area, region FDR/power, ESS, coverage gap |
+| **T2.5** Cross-domain experiments | Execution of the protocol in the second modality and the supporting appendix domain | **In progress** — CT path runs end to end; projector fix (D-012) precedes reported curves |
+| **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | Not started — needs T2.2; **Phase 1's last open artefact** |
+| **T2.7** Figures and packaging | Visualisations, reproducibility package, and experimental-setup write-ups | Not started |
 
-### Track 3 — Analytical Foundations and Numerical Verification *(partner-owned)*
+### Track 3 — Analytical Foundations and Numerical Verification
 
-T3.1 formal review of the setting · T3.2 operator-distance candidates · T3.3 stability result (L1) · T3.4 ill-posedness scaling (L2) · T3.5 numerical verification · T3.6 bound-versus-measurement study · T3.7 analytical authoring.
+Owns the derivation of the coverage-gap bound and its verification against measured behaviour. Works from the cached score banks, so it runs in parallel with reconstruction rather than behind it.
+
+| Task | Deliverable | Status |
+|------|-------------|--------|
+| **T3.1** Formal review of the setting | Structured account of the non-exchangeable conformal framework and the assumptions it requires | **Complete** — verified against the source theorems; L3 scope decided |
+| **T3.2** Operator-distance candidates | Comparative analysis of subspace, projection and spectral distance measures, with their properties | **Substantially complete** — five candidates reduced to three; saturation failure identified |
+| **T3.3** Stability result (L1) | Derivation bounding the coverage gap by the operator distance in known quantities | **First pass** — Step 1 rigorous; Step 2 sketched with two assumptions flagged, not hidden |
+| **T3.4** Ill-posedness scaling (L2) | Extension relating the bound to null-space dimension and spectral decay | Next — picks up the two constants from T3.3 |
+| **T3.5** Numerical verification | Verification of derived results on small synthetic linear operators, requiring negligible compute | Not started — checks T3.3's flagged assumption |
+| **T3.6** Bound-versus-measurement study | Comparison of predicted and observed coverage gaps using the cached score banks | Not started |
+| **T3.7** Analytical authoring | Derivations, statements of assumptions, and the theoretical sections of the manuscripts | Not started |
+
+Each task gets a branch (`T1.1`, `T2.1`, `T3.1`, …) and a record in `Documentation/`, merged to `main` by pull request.
 
 ---
 
@@ -131,12 +194,12 @@ T3.1 formal review of the setting · T3.2 operator-distance candidates · T3.3 s
 
 Blueprint §20 groups the tasks into four term phases, sequenced so a valid, demonstrable result exists early and higher-risk elements come later — the coverage failure plus the group-conditional fix must be in hand by the midterm, before the weighted recalibration, the second modality, and the coverage-gap bound are attempted.
 
-| Phase | Focus | Key artefacts | Checkpoint |
-|-------|-------|---------------|------------|
-| 1 | Setup, infrastructure and baselines | Operator pipeline and score bank in MRI; reproduced baselines; formal review of the analytical setting | Topic approval and feasibility |
-| 2 | Empirical core and guaranteed backbone | Operator-aware score; demonstrated coverage failure; group-conditional remedy; first analytical result; preprint draft | Midterm review |
-| 3 | Generalisation and primary contribution | Second-modality score bank and results; weighted recalibration; coverage-gap-against-distance curves in both modalities; ill-posedness scaling | Interim results |
-| 4 | Consolidation and dissemination | Bound-versus-measurement study; ablations; manuscript submission; open-source release; final report | Final presentation and viva |
+| Phase | Focus | Key artefacts | Checkpoint | Status |
+|-------|-------|---------------|------------|--------|
+| 1 | Setup, infrastructure and baselines | Operator pipeline and score bank in MRI; reproduced baselines; formal review of the analytical setting | Topic approval and feasibility | **Complete but for baselines** — see `Documentation/T1.6_analysis_and_course_correction.md` |
+| 2 | Empirical core and guaranteed backbone | Operator-aware score; demonstrated coverage failure; group-conditional remedy; first analytical result; preprint draft | Midterm review | In progress — score and L1 delivered early |
+| 3 | Generalisation and primary contribution | Second-modality score bank and results; weighted recalibration; coverage-gap-against-distance curves in both modalities; ill-posedness scaling | Interim results | Not started |
+| 4 | Consolidation and dissemination | Bound-versus-measurement study; ablations; manuscript submission; open-source release; final report | Final presentation and viva | Not started |
 
 ---
 

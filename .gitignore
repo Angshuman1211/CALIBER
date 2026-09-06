@@ -8,9 +8,10 @@ external/
 # Data - never committed. fastMRI requires credentialed access (NYU
 # application) and each user downloads their own copy. Currently ~74 GB of CT
 # archives live here too, so this must exclude the whole tree: `git add data`
-# will otherwise try to hash a 30 GB zip and hang. See docs/data_access.md.
-data/*
-!data/README.md
+# will otherwise try to hash a 30 GB zip and hang. See
+# Documentation/data_access.md.
+# The whole tree is ignored: data/ carries no README of its own (D-025).
+data/
 
 *.h5
 *.hdf5

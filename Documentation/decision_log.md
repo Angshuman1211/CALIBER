@@ -144,26 +144,69 @@ coil sensitivity estimation becoming a confound in the operator definition.
 ---
 
 ## D-009 · Region definition v0 is a 16px patch grid
-**Date:** Week 1 · **Status:** OPEN · **Proposed by:** Track 2
+**Date:** Week 1 · **Status:** **RESOLVED — Week 1 sign-off** · **Proposed by:** Track 2 · **Ruled by:** Track 1
 
-*Needs:* Week 2 decision (O2). If regions become anatomically derived,
-`region_area` stops being constant and region-level rates become weighted,
-which changes the risk definition itself.
+**Confirmed as proposed.** The patch grid stays the risk unit; annotations are an
+evaluation *overlay*, never the region definition. `region_area` therefore stays
+constant and the weighted-rate problem does not arise.
+
+Track 1's reasoning, in full, is **D20** in `Documentation/problems_and_decisions.md`.
+Summary: §11 requires one region definition across both modalities, and MRI lesion
+boxes and CT organ masks are not commensurable objects; hallucination lives in the
+null space, which does not respect organ boundaries, so an annotation marks where a
+hallucination *matters*, not where it *is*; and equal-area regions keep every
+region-level rate a plain proportion instead of an area-weighted one.
+
+*C4 is satisfied by* intersecting flagged patches with annotation masks —
+`ann_coverage` and `label_hallucinated(require_annotation=True)` already do this.
+Report both readings; annotation-restricted is secondary.
+
+*Open sub-item:* region size (16 px) is a declared **ablation axis** for T1.4, not a
+settled constant — it trades detection resolution against per-region calibration
+sample size.
 
 *Affects:* O2, T1.2, T2.4, Week 2.
 
 ---
 
 ## D-010 · Working default distance is `null_space_projection` / `ambient`
-**Date:** Week 1 · **Status:** OPEN · **Proposed by:** Track 2
+**Date:** Week 1 · **Status:** **RESOLVED — locked as primary** · **Proposed by:** Track 2 · **Ruled by:** Track 1 (T1.3)
 
-All five Sec. 12.1 candidates are implemented. The primary measure is locked in
-Week 3 by T1.3.
+**Confirmed as proposed, and now locked** rather than a working default. Track 2's
+default and Track 3's T3.2 §5 recommendation had independently converged; this
+ratifies the convergence. Full reasoning is **D19** in
+`Documentation/problems_and_decisions.md`.
 
-*Note:* normalisation stays configurable through Week 9, because which choice
-makes the MRI and CT curves collapse is an empirical question (Sec. 21 R5).
+*Why it survives:* computable from the two operators alone; defined identically for
+a k-space mask and a projection-angle set; and on Cartesian MRI under `ambient`
+normalisation it reduces to √(fraction of k-space lines whose sampled status
+changed) — interpretable to a non-specialist.
 
-*Affects:* T1.3, T3.2, Week 3, Week 9.
+*T3.2's saturation warning does not apply* — the implemented measure is the
+**Frobenius** form. Verified graded and monotone at 128², `random1d`, calibrating at
+R=2: R = 2, 3, 4, 6, 8, 12, 16 → 0.000, 0.405, 0.500, 0.580, 0.612, 0.644, 0.650.
+The operator-norm form of family (A), which pins at 1 under dimension mismatch, is
+**not implemented and must not be added** under a confusable name.
+
+*Two consequences for Track 2:*
+1. **The axis compresses** (it is a square root): R=2→3 moves 0.405, R=8→16 moves
+   0.037. Operator grids must be designed to spread **distance** evenly rather than
+   acceleration evenly. Report `d²` as the interpretable secondary axis.
+2. **Naming collision:** `operator_norm` in `operators/distance.py` is ‖A−B‖_F —
+   family (B) — not the family-(A) operator norm T3.2 warns about. Worth a comment
+   at the call site before someone conflates them in a figure caption.
+
+*Ill-posedness normalisation stays out of the distance*, deliberately: L1 bounds the
+gap by `2ML·d_op` and L2's job is to express `L`, `M` via null-space dimension and
+spectral decay. Folding ill-posedness into `d` would make L2's scaling
+unidentifiable. It is applied at plot time as a separate **named** factor, which is
+what leaves the Week 9 collapse test something to test.
+
+*`sampling_support` is retained as a free MRI-only diagnostic* — verified numerically
+identical to the primary in MRI (both 0.612372 at R=2→8), heuristic in CT.
+*`chordal_subspace` is an alias* (same number ÷ √2), not an alternative.
+
+*Affects:* T1.3, T3.2, T3.3, Week 3, Week 9.
 
 ---
 
@@ -617,6 +660,225 @@ will not do. Interacts with **D-003** (which error the criterion uses) and
 **D-009** (region definition).
 
 *Affects:* O2, T1.1, T1.2, T2.3, T2.4, D-003, D-009, D-012, Weeks 2-3.
+
+---
+
+### Track 1 ruling — Week 1 sign-off · **Status: RESOLVED, with the diagnosis revised**
+
+Full entry: **D21** in `Documentation/problems_and_decisions.md`.
+
+**The finding is real, but the cause is not the threshold — and that changes the fix.**
+`w02_m4raw_smoke` runs `reference_nullspace`, whose draws are `A⁺y + P_N(texture)`.
+`A⁺y` carries **zero** null-space content by construction, so
+`P_N(mean_recon − x_true)` is dominated by `−P_N(x_true)`. On this sampler `err_free`
+is therefore measuring **the true image's own hidden content**, not what the
+reconstruction invented. Real anatomy has much of it; a smooth phantom has little.
+That *is* the phantom-vs-M4Raw gap.
+
+Reproduced on synthetic images alone (128², R=4, reference sampler, 16 px grid),
+without touching M4Raw:
+
+| true image | mean `err_free` | ‖P_N x_true‖/ref | labelled at 0.10 |
+|---|---|---|---|
+| smooth (phantom-like) | 0.0715 | 0.0771 | 14.1% |
+| textured (anatomy-like) | 0.1878 | 0.2046 | **100%** |
+
+Per-region `err_free` vs ‖P_N x_true‖: **r = 0.95**, mean ratio 0.92. This also
+accounts for the `err_free`/`err_total` ratio moving 0.78 → 0.97 in the table above:
+as the truth's null-space content grows, essentially *all* of a prior-free
+reconstruction's error becomes free-component error.
+
+**Consequence:** no constant, absolute *or* relative-to-global-intensity, fixes this
+while the sampler has no prior — the thresholded quantity is a property of the
+anatomy. (Note `err_free` is *already* divided by `ref_intensity` in `labels.py`, so
+"make it relative" has in effect been tried.) **So the threshold must not be set from
+this run.** Lock the criterion's form now; set τ once a real prior lands (T2.2).
+
+**Criterion form v1:** `err_free(r) / (free_content(r) + ε) > τ`, where
+`free_content(r) = ‖P_N x_true‖_r / ref_intensity` — *what fraction of this region's
+hidden content did the reconstruction get wrong*, with `>1` meaning it invented more
+than was ever there. Dimensionless, substrate-independent, modality-independent.
+Using `x_true` is legitimate: a **label** may use ground truth, only the **score** may not.
+
+**Ask to Track 2 (A1):** add one nullable column `free_content` to the bank. Per
+score-bank spec §6 an added nullable column is backwards-compatible — no
+`SCHEMA_VERSION` bump, no re-run, and the criterion stays re-derivable from cache
+forever (Rule 2).
+
+**Sanity property:** on `reference_nullspace` the v1 ratio sits near 0.92 everywhere,
+correctly reporting *"this sampler does not invent, it fails to fill the null space."*
+
+**τ is reported, not targeted.** Choose it once on held-out data after T2.2, then
+report the induced positive rate per substrate as a measured property. Tuning τ to
+hit a target rate would make the positive rate definitional and hollow out region-level
+FDR and power.
+
+---
+
+## D-021 · `calib_group` keeps its granularity and moves into the registry
+**Date:** Week 1 · **Status:** RESOLVED · **Ruled by:** Track 1 (T1.2) · **Track 1 entry:** D22
+
+Granularity unchanged — `mri/{family}/R{acceleration}`, `ct/{family}/v{n_views}` —
+and the definition moves out of `runner.calibration_group` into the **operator
+registry** as a field, so Track 1 can re-group without a Track 2 code change. Both
+halves as Track 2 recommended (B2/C2).
+
+**Noise is not a group axis in v1.** It multiplies the group count, and D10 (Track 1
+log) already warns that high-acceleration regimes are where per-regime calibration
+data is scarcest — exactly where Tool 1's declared trade-off bites hardest. If T1.4's
+protocol varies noise as a studied axis it *becomes* a group axis and the registry
+field must reflect it. Recorded so that stays a decision, not a silent default.
+
+*Affects:* T1.2, T2.1, T2.3, score-bank `calib_group`, Week 4.
+
+---
+
+## D-022 · Split is fixed per patient in the registry, and must be operator-independent
+**Date:** Week 1 · **Status:** RESOLVED · **Ruled by:** Track 1 (T1.2) · **Track 1 entry:** D23
+
+Split assignment is deterministic per `sample_id`, made at **patient/volume** level
+(D-014), stored in the registry, identical across every run, every operator, and both
+modalities. Never per-run. Track 2's B3 recommendation, confirmed.
+
+**Track 1 adds the binding reason.** The split must be **operator-independent** — the
+same patient on the same side in *every* regime. Otherwise group-conditional
+calibration compares different patient populations across regimes, and a coverage
+difference between R=4 and R=8 is confounded with anatomy rather than attributable to
+acquisition. That is the Sec. 13 controlled-comparison assumption applied to the
+split; violating it would undermine the headline claim, not merely inconvenience the
+Week 10 merge.
+
+*Affects:* T1.2, T2.1, T2.3, D-014, bank `split` column, Week 10 merge.
+
+---
+
+## D-023 · One calibration group per (family, acceleration); seeds are members
+**Date:** Week 1 · **Status:** RESOLVED · **Ruled by:** Track 1 (T1.2) · **Track 1 entry:** D24
+
+A mask family at fixed acceleration is **one** group; `mask_seed` values are members
+of it. Track 2's C3 recommendation, confirmed.
+
+Seeds from the same family at the same acceleration are exchangeable draws from a
+single acquisition regime, and that exchangeability is exactly what licenses using
+them as calibration data for it. Splitting by seed would discard the only
+within-regime exchangeability the design has, while starving each group (D10, Tool 1).
+
+**This also defines the Week 4 grid's axes** — the part that matters beyond grouping.
+A *mask-family shift* = change family at fixed acceleration. An *acceleration shift* =
+change R at fixed family. Both are between-group moves. **Seed variation is
+within-group and is therefore the noise floor a real shift must clear**: a coverage
+change smaller than seed-to-seed variation is not a finding, and T1.4 should report
+that floor alongside the curves.
+
+*Affects:* T1.2, T1.4, T2.1, Week 4 grid.
+
+---
+
+## D-024 · `NullSpaceNoiseSampler` leaks ~4% of its "hallucination" into the measured component
+**Date:** Week 2 · **Status:** OPEN · **Raised by:** Track 1 (T1.1) · **Owner:** Track 2 · **Track 1 entry:** D29
+
+`solvers/reference.py` builds each draw as `base_real + free`, where
+`free = operator.project_null(texture)` is cast with `.real` before it is added.
+A random 1-D Cartesian mask is **not conjugate-symmetric**, so `P_N` of a real
+image genuinely has an imaginary part — measured at **33% of its norm** at
+128², R=4. Discarding it means the perturbation no longer lies in the null space.
+
+Measured, same operator and texture:
+
+| injection | relative change in `A x` |
+|---|---|
+| full complex `P_N delta` | 9.6e-08 (float noise) |
+| `.real` part only | **4.1e-02** |
+
+**Why it matters.** The docstring calls the sampler "a *faithful caricature* of
+the failure the project studies... the measured component is pinned to the data
+and every posterior draw differs only inside the operator's null space." With the
+`.real` cast that is not what it does: draws perturb the measured component too,
+so `s_residual` is non-zero as a pure artefact, and the smoke numbers taken from
+this sampler — the README coverage table, the D-020 coverage figures — carry that
+confound.
+
+**Not urgent** (D-018: nothing from this sampler is reportable) but it should be
+fixed before the sampler is used to characterise anything, and before anyone
+reads its `s_residual` as evidence.
+
+**Fix:** keep the projection complex and take magnitudes only at the point of
+measurement, as `tests/test_score_combination.py` now does. The same `.real`
+pattern is worth grepping for elsewhere in the operator paths.
+
+*Found by* the WI-4 injection test failing its own data-consistency precondition —
+the test working as intended.
+
+*Affects:* T2.2, `solvers/reference.py`, README smoke table, D-018, D-020.
+
+---
+
+## D-025 · `data/README.md` removed; all data documentation consolidated into `data_access.md`
+**Date:** Week 2 · **Status:** DONE · **Raised and actioned by:** Track 1 (T1.5)
+
+`data/README.md` had grown into a status board — per-archive `OK`/`downloading`
+markers, "~30 GB free", "downloading off-machine", "nothing has been deleted,
+the call is yours". Two problems with that in a tracked file.
+
+**It described one machine.** `data/` is gitignored apart from this README, so
+on any other clone the file documents contents that are not there. It reads as
+a report on whoever last ran the downloads.
+
+**It had already gone stale against itself.** The layout section listed m4raw as
+extracted with 240 volumes while the archive inventory five sections later still
+showed the same archive as downloading — in the same file, in the commit named
+"M4Raw landed". Status tables in version control drift the moment they are
+correct.
+
+**Actioned.** The durable half moved into `data_access.md`, which is the
+provenance record and already carried the status board: archive inventory with
+measured sizes and the ~55 GB recoverable (§6), why `observation_*` and
+`ground_truth_train` are not needed (§6), extraction commands (§6), M4Raw's
+layout and its `patient_id` attribute (§1a), LoDoPaB's `patient_ids_rand_*.csv`
+and why slice-level splits leak (§3), and the TotalSegmentator/LoDoPaB cohort
+mismatch (§4).
+
+**Final outcome went one step further than first proposed.** The intermediate
+state was a trimmed `data/README.md` holding the layout tree; on review that was
+cut too, and `data/` now carries no README at all. One data document, not two.
+The layout tree moved into `data_access.md` §6 with it.
+
+No content was dropped; the volatile status markers were, deliberately — the
+per-archive `OK`/`downloading` flags, free-disk figures, and "downloading
+off-machine" notes. `fetch_data.py --list` / `--verify` answer those, and cannot
+go stale.
+
+*Track 2 owns both files* — flagged here rather than done silently. Say if the
+inventory should live back in `data/` and it goes back.
+
+*Affects:* T2.1, `data/README.md` (deleted), `Documentation/data_access.md`, `.gitignore`.
+
+---
+
+## D-026 · Reference `split_conformal_threshold` over-certifies thin groups
+**Date:** Week 2 · **Status:** OPEN · **Raised by:** Track 1 (T1.2) · **Owner:** Track 2 · **Track 1 entry:** D32
+
+Two issues in `calibration/__init__.py`, found while T1.2 superseded it.
+
+**Docstring contradicts code.** The docstring says the threshold is the
+`ceil((n+1)(1-alpha))`-th smallest score among hallucinated regions; the code
+takes the `ceil((n+1)*alpha)`-th. The code is the nearer of the two.
+
+**The ceiling certifies groups it should refuse.** For exchangeable scores the
+correct constant is `k = floor(alpha*(n+1))`, giving `P(miss) = k/(n+1) <= alpha`
+exactly. Rounding up breaks this where it matters most: at `n=1, alpha=0.1` the
+ceiling returns `k=1`, so the threshold is that single positive score and the
+true miss rate is **1/2** — five times the promise, with nothing in the return
+value indicating a problem. Measured at ~0.5 over 2,000 trials.
+
+**Impact: none published.** The function is marked not-for-reported-results and
+the Week 4 harness only exercises it. `caliber.calibration.conformal.split_threshold`
+now floors and returns `certifiable=False` for thin groups.
+
+**Suggested fix:** delegate the reference to `conformal.split_threshold`, or
+floor and fix the docstring. Worth doing before someone reuses it in good faith.
+
+*Affects:* T1.2, `calibration/__init__.py`, Week 4 harness.
 
 ---
 
