@@ -53,12 +53,23 @@ def expand_grid(spec: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def build_operator(spec: dict[str, Any], image_shape: tuple[int, int]) -> ForwardOperator:
-    """Instantiate a single operator from a fully-resolved spec."""
+    """Instantiate a single operator from a fully-resolved spec.
+
+    ``calib_group`` is pulled out before construction and written back into the
+    operator's ``params``. Operators do not take it as a constructor argument --
+    it is not a property of the acquisition, it is Track 1's grouping decision
+    about the acquisition (D-021), and it reaches the descriptor through
+    ``params`` so that setting it in config needs no Track 2 code change.
+    """
     spec = dict(spec)
     modality = spec.pop("modality", None)
+    calib_group = spec.pop("calib_group", None)
     if modality not in OPERATOR_TYPES:
         raise ValueError(f"unknown modality {modality!r}; expected one of {sorted(OPERATOR_TYPES)}")
-    return OPERATOR_TYPES[modality](image_shape=image_shape, **spec)
+    operator = OPERATOR_TYPES[modality](image_shape=image_shape, **spec)
+    if calib_group:
+        operator.params["calib_group"] = str(calib_group)
+    return operator
 
 
 class OperatorRegistry:

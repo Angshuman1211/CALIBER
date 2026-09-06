@@ -65,6 +65,33 @@ class OperatorDescriptor:
     def undersampling_ratio(self) -> float:
         return self.measurement_dim / self.ambient_dim
 
+    @property
+    def calib_group(self) -> str:
+        """The group used by group-conditional calibration (Tool 1).
+
+        One group per acquisition regime. This lives on the descriptor rather
+        than in the runner (D-021) so that Track 1 owns the grouping without a
+        Track 2 code change: setting ``calib_group`` in an operator's config
+        spec overrides the default, and the registry manifest records whichever
+        was used.
+
+        Granularity is ``mri/{family}/R{acceleration}`` and
+        ``ct/{family}/v{n_views}`` -- one group per (family, severity). Mask
+        seeds are *members* of a group, not groups of their own (D-023), and
+        noise is deliberately not a group axis in v1 (D-021): it multiplies the
+        group count exactly where per-regime calibration data is scarcest. If
+        T1.4's protocol ever varies noise as a studied axis, it becomes a group
+        axis and this must reflect that.
+        """
+        override = self.params.get("calib_group")
+        if override:
+            return str(override)
+        if self.modality == "mri":
+            return f"mri/{self.params['family']}/R{self.params['acceleration']:g}"
+        if self.modality == "ct":
+            return f"ct/{self.family}/v{self.params['n_views']}"
+        return f"{self.modality}/{self.family}"
+
     def to_row(self) -> dict[str, Any]:
         """Flat, serialisable form for the operator-registry manifest."""
         return {
@@ -77,6 +104,10 @@ class OperatorDescriptor:
             "null_space_dim": self.null_space_dim,
             "undersampling_ratio": self.undersampling_ratio,
             "exact_pinv": self.exact_pinv,
+            # Recorded in the manifest so a bank's grouping can be audited
+            # against the registry that produced it, rather than inferred
+            # from the runner that happened to be current (D-021).
+            "calib_group": self.calib_group,
             "params": self.params,
         }
 

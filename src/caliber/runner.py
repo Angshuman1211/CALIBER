@@ -57,19 +57,13 @@ def add_measurement_noise(y: torch.Tensor, sigma: float, seed: int) -> torch.Ten
 
 
 def calibration_group(operator) -> str:
-    """The group used by group-conditional calibration (Tool 1).
+    """Deprecated shim -- the grouping now lives on the operator descriptor.
 
-    One group per acquisition regime. Defaulting to modality plus family plus
-    the primary severity axis keeps groups coarse enough to hold calibration
-    data while still separating regimes that genuinely differ.
+    Kept so that existing callers and configs do not break, but the definition
+    moved into the registry (D-021) so Track 1 can re-group without a Track 2
+    code change. Read ``operator.descriptor().calib_group`` instead.
     """
-    desc = operator.descriptor()
-    params = desc.params
-    if desc.modality == "mri":
-        return f"mri/{params['family']}/R{params['acceleration']:g}"
-    if desc.modality == "ct":
-        return f"ct/{desc.family}/v{params['n_views']}"
-    return f"{desc.modality}/{desc.family}"
+    return operator.descriptor().calib_group
 
 
 def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
@@ -180,7 +174,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                     "operator_id": desc.operator_id,
                     "modality": desc.modality,
                     "operator_family": desc.family,
-                    "calib_group": calibration_group(op),
+                    "calib_group": desc.calib_group,
                     **solver.info().to_row(),
                     "n_posterior": n_posterior,
                     "seed": item_seed,
@@ -195,6 +189,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                     "s_residual": components.s_residual.tolist(),
                     "err_total": truth.err_total.tolist(),
                     "err_free": truth.err_free.tolist(),
+                    "free_content": truth.free_content.tolist(),
                     "ann_coverage": truth.ann_coverage.tolist(),
                 },
             )

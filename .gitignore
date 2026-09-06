@@ -18,6 +18,15 @@ data/
 *.mat
 *.ismrmrd
 *.zip
+*.tar
+
+# The fastMRI archives specifically. Named rather than left to `data/` because
+# pushing these would breach the NYU Data Sharing Agreement signed to obtain
+# them (redistribution is forbidden) — not merely bloat the repo. See
+# GIT_RULES.md §15 and Documentation/data_access.md §6.
+data/knee_singlecoil_val.tar
+data/knee_singlecoil_test.tar
+data/raw/fastmri/
 
 # Score banks and run outputs - regenerated from configs + seeds.
 runs/
@@ -85,3 +94,11 @@ Computer_Vision_Weekly_Cards_MASTER.docx
 MOVE_TO_COLLEGE_PC.md
 caliber-repo.bundle
 *.bundle
+
+# Local-only working rules. Personal working agreement, not project source.
+GIT_RULES.md
+
+# Superseded by Documentation/ on main (Track 1 merged the two folders). The
+# local copy is kept on this machine as a working scratch area and is never
+# pushed; all shared documentation lives in Documentation/.
+docs/

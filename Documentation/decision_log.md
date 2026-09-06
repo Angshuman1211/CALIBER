@@ -390,7 +390,14 @@ alike, and a run should stop if that regresses.
 ---
 
 ## D-013 · TotalSegmentator masks do not align with LoDoPaB images
-**Date:** Week 1 · **Status:** OPEN — needs a Week 1 answer · **Raised by:** Track 2
+**Date:** Week 1 · **Status:** RESOLVED (Week 1 sign-off) — Option A adopted · **Raised by:** Track 2
+
+> **Resolution.** Option A: TotalSegmentator becomes the CT substrate. Track 1's Week 1
+> sign-off records that it does not object, and D20 removed the coupling that made this
+> a cross-track question at all — annotations are an evaluation *overlay*, not the region
+> definition, so the choice of CT substrate no longer changes what a region is. D-005
+> already re-projects ground-truth images with our own operator, so no projection data is
+> needed and LoDoPaB's observation archives stay unused (D-005, D-013).
 
 Sec. 14 lists LoDoPaB-CT as the cross-domain substrate and TotalSegmentator as
 the source of "region-level ground truth for evaluating flags in the second
@@ -775,7 +782,13 @@ that floor alongside the curves.
 ---
 
 ## D-024 · `NullSpaceNoiseSampler` leaks ~4% of its "hallucination" into the measured component
-**Date:** Week 2 · **Status:** OPEN · **Raised by:** Track 1 (T1.1) · **Owner:** Track 2 · **Track 1 entry:** D29
+**Date:** Week 2 · **Status:** RESOLVED — fixed, and it moved a headline number · **Raised by:** Track 1 (T1.1) · **Owner:** Track 2 · **Track 1 entry:** D29
+
+> **Resolution.** The `.real` cast is gone from both reference samplers; draws stay in the
+> operator's own complex domain and magnitudes are taken only where something is measured.
+> `s_residual` is now **exactly 0.000000** at every operator, where it had been 0.082 at
+> R=2 and 0.032 at R=10. `tests/test_splits.py` asserts data consistency for both samplers.
+> **This changed a result, not just a number** — see D-028.
 
 `solvers/reference.py` builds each draw as `base_real + free`, where
 `free = operator.project_null(texture)` is cast with `.real` before it is added.
@@ -879,6 +892,86 @@ now floors and returns `certifiable=False` for thin groups.
 floor and fix the docstring. Worth doing before someone reuses it in good faith.
 
 *Affects:* T1.2, `calibration/__init__.py`, Week 4 harness.
+
+---
+
+## D-027 · fastMRI `singlecoil_val` has 199 volumes but only 96 patients; the split must be by `patient_id`
+**Date:** Week 1 · **Status:** ACCEPTED — fixed · **Found by:** Track 2
+
+D-014 fixed the rule as "split by patient for LoDoPaB, **by volume for fastMRI**, never
+by slice", on the assumption that a fastMRI volume *is* a patient. It is not. Reading
+the attributes of all 199 extracted volumes:
+
+| quantity | value |
+|---|---|
+| volumes in `singlecoil_val` | 199 |
+| distinct `patient_id` | **96** |
+| patients owning more than one volume | **96 of 96** |
+| patients leaked if split by volume | **45 of 96 (47%)** |
+| patients leaked under the patient-level split | **0** |
+
+Every patient in the split has more than one volume, so the by-volume rule puts nearly
+half of all patients on both sides of the calibration/test boundary. That is the exact
+hazard D-014 was written to prevent, in the modality D-014 declared safe — and it fails
+in the direction that flatters our own numbers, because a patient seen during
+calibration makes the test set easier.
+
+**Fix.** `caliber.data.splits` assigns the split from the de-identified `patient_id`
+carried in each file's HDF5 attributes, deterministically and *operator-independently*
+(D-022): a pure function of `(salt, patient_key)`, so no run, ordering, or acquisition
+parameter can move a patient. `FastMRIDataset(split="auto")` uses it;
+`verify_no_patient_straddles` is the assertion, and `split_summary` prints the counts
+before a bank is produced. Resulting balance: 52/44 patients, 108/91 volumes.
+
+A property worth having deliberately: because assignment is per key rather than a
+shuffle, **growing the dataset does not move anybody**, so a bank built on 199 volumes
+stays comparable with one built after the substrate grows.
+
+*Affects:* D-014, D-022, P-06, T2.1, T2.3, every reported MRI coverage number.
+
+---
+
+## D-028 · Fixing D-024 reversed the direction of the naive-transfer coverage failure
+**Date:** Week 1 · **Status:** ACCEPTED — recorded, not yet re-measured on a real solver · **Found by:** Track 2
+
+Removing the `.real` cast (D-024) changed a smoke result, and the change is worth
+recording rather than absorbing quietly.
+
+| | `s_free` R=2 | `s_free` R=10 | `s_residual` |
+|---|---|---|---|
+| before (with `.real`) | 0.0827 | 0.0448 | 0.082 / 0.032 |
+| after (complex) | 0.0326 | 0.0377 | **0.000000** |
+
+Before the fix, the artefact `s_residual` dominated the combined score *and was larger
+at the near operator*, so the score fell as acceleration rose. A threshold calibrated at
+R=2 therefore under-covered at R=10, which is what `test_naive_transfer_loses_coverage_
+under_operator_shift` asserted. With the projection kept complex, `s_free` rises with
+acceleration — the physically correct direction, since a larger null space holds more
+free content — and naive transfer now **over**-covers:
+
+| calibration | deployment | coverage | gap |
+|---|---|---|---|
+| R=2 | R=2 | 0.947 | −0.047 |
+| R=2 | R=10 | **1.000** | −0.100 |
+| Mondrian | R=10 | 0.914 | −0.014 |
+
+**Over-coverage here is not the safe side.** Coverage 1.0 means the transferred
+threshold flags *every* region, so the flag carries no information at all — the same
+vacuity D-020 records for the absolute label threshold, reached by a different route.
+The guarantee promises the nominal level, not "at least".
+
+What survives unchanged: naive transfer is materially miscalibrated under operator
+shift, and the group-conditional backbone restores it (0.914 against a nominal 0.90).
+The test now asserts the magnitude of the gap and the saturation, not a direction the
+synthetic sampler does not produce.
+
+**Scope, honestly.** This is the D-015/D-018 reference sampler, and nothing from it is
+reportable. The direction under a *real* pretrained solver is unknown and must be
+measured in Week 4, not inferred from here. What this does establish is that the
+previously recorded direction was an artefact, so the README smoke table and the D-020
+coverage figures should not be cited until they are regenerated.
+
+*Affects:* D-018, D-020, D-024, README smoke table, T2.2, Week 4.
 
 ---
 

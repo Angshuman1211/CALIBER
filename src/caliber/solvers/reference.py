@@ -59,15 +59,19 @@ class NullSpaceNoiseSampler(PosteriorSampler):
         self.check_supports(operator)
         gen = torch.Generator().manual_seed(seed)
         base = operator.pinv(y)
-        base_real = base.abs() if base.is_complex() else base
-        scale = float(base_real.abs().mean()) * self.hallucination_scale
+        scale = float(base.abs().mean()) * self.hallucination_scale
 
+        # The draw stays in the operator's own (complex, for MRI) domain, and
+        # magnitudes are taken only where something is measured. A random 1-D
+        # Cartesian mask is not conjugate-symmetric, so P_N of a real image
+        # genuinely has an imaginary part -- 33% of its norm at 128^2, R=4.
+        # Casting it away with `.real` put 4.1% of the perturbation back into
+        # the *measured* component, so the draws were no longer data-consistent
+        # and s_residual was non-zero as a pure artefact. See D-024.
         draws = []
         for _ in range(n_samples):
             texture = self._texture(tuple(operator.image_shape), gen) * scale
-            free = operator.project_null(texture)
-            free = free.real if free.is_complex() else free
-            draws.append(base_real + free)
+            draws.append(base + operator.project_null(texture))
         return torch.stack(draws, dim=0)
 
 
@@ -88,6 +92,9 @@ class PseudoInverseSampler(PosteriorSampler):
         self, y: Tensor, operator: ForwardOperator, n_samples: int, seed: int = 0
     ) -> Tensor:
         self.check_supports(operator)
+        # Same domain convention as NullSpaceNoiseSampler (D-024): return A^+ y
+        # as the operator produces it. Collapsing to magnitude here would make
+        # the two reference samplers disagree about what a draw *is*, and would
+        # break the data consistency A(A^+ y) = y that the residual score reads.
         base = operator.pinv(y)
-        base = base.abs() if base.is_complex() else base
         return base.unsqueeze(0).repeat(n_samples, *([1] * base.dim()))

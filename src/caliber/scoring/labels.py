@@ -37,6 +37,7 @@ class RegionTruth:
 
     err_total: Tensor  # region RMSE between reconstruction and truth
     err_free: Tensor  # region RMSE restricted to the free (null-space) component
+    free_content: Tensor  # ||P_N x_true|| per region / ref -- the A1 denominator
     ann_coverage: Tensor  # fraction of the region covered by an annotation, or zeros
 
 
@@ -60,6 +61,18 @@ def compute_region_truth(
     free_err = free_err.abs() if free_err.is_complex() else free_err.abs()
     err_free = grid.reduce(free_err, how="rms") / ref
 
+    # The ground truth's *own* null-space content, per region (A1 / D21).
+    # `err_free` alone cannot separate "the reconstruction invented structure"
+    # from "this region simply has a lot the operator cannot see": a region of
+    # dense anatomy carries large ||P_N x_true|| before any solver runs. Track 1
+    # needs the denominator to make the criterion relative (err_free /
+    # free_content > tau) instead of an absolute constant, which D-020 showed
+    # transfers neither across modalities nor across substrates within one.
+    # Recorded, never thresholded here -- the bank stays re-thresholdable.
+    free_true = operator.project_null(x_true)
+    free_true = free_true.abs() if free_true.is_complex() else free_true.abs()
+    free_content = grid.reduce(free_true, how="rms") / ref
+
     if annotation is None:
         ann = torch.zeros(grid.n_regions, dtype=torch.float32)
     else:
@@ -68,6 +81,7 @@ def compute_region_truth(
     return RegionTruth(
         err_total=err_total.to(torch.float32),
         err_free=err_free.to(torch.float32),
+        free_content=free_content.to(torch.float32),
         ann_coverage=ann,
     )
 

@@ -50,6 +50,11 @@ R=8, monotonicity rho = +0.829 against operator distance.
 
 **Blocks:** region-level CT evaluation - **See:** D-013
 
+> **Decided in the Week 1 sign-off (Option A).** TotalSegmentator becomes the CT
+> substrate. Track 1 does not object, and D20 removed the coupling that made this a
+> cross-track question: annotations are an evaluation overlay, not the region definition.
+> The remaining work is the Week 7 loader, so this stays listed until that is wired.
+
 The plan listed LoDoPaB-CT as the CT substrate and TotalSegmentator as the
 source of region labels for that substrate. Inspecting both showed the two
 roles do not compose: TotalSegmentator's masks segment TotalSegmentator's own
@@ -107,6 +112,14 @@ it nearly unchanged. It carries pipeline work but no reported result - 0.3 T
 low-field brain against fastMRI's 3 T knee, and no pathology annotations, so
 the annotation-restricted evaluation cannot run on it.
 
+**Update (Week 1 close-out).** The data has landed. `knee_singlecoil_val` was
+downloaded directly and extracted to `data/raw/fastmri/singlecoil_val/`: **199 volumes,
+7,135 slices, 19.4 GB**, all readable (every file opened and a real slice read, so a
+truncated extraction would have surfaced - see P-08 for why that check exists). 155 of
+the 199 volumes carry fastMRI+ annotations; 44 do not. The loader reads them unchanged.
+
+`knee_singlecoil_test` was also downloaded, and is **unusable** - see P-13.
+
 *Not settled.* The transfer was staged through Kaggle rather than the 6 GB
 laptop. The NYU agreement forbids third-party redistribution, and it is not
 established that staging through another account is compatible with the terms
@@ -115,7 +128,31 @@ well the pipeline works. This needs a real answer, not an assumption.
 
 ---
 
-### P-06 - Patient-level splitting is decided but not yet wired
+### P-06 - Patient-level splitting: wired for fastMRI, still open for LoDoPaB
+
+**See:** D-014, D-022, **D-027**
+
+**Update (Week 1 close-out).** Half of this is now fixed, and fixing it exposed that
+the rule itself was wrong.
+
+The rule said "split by patient for LoDoPaB, **by volume for fastMRI**, never by slice",
+on the assumption that a fastMRI volume is a patient. Reading the attributes of all 199
+extracted `singlecoil_val` volumes shows only **96 distinct `patient_id`** values, and
+**every one of those 96 patients owns more than one volume**. Splitting by volume leaks
+**45 of 96 patients (47%)** across the calibration/test boundary - the exact hazard
+D-014 exists to prevent, in the modality D-014 declared safe.
+
+`caliber.data.splits` now assigns from `patient_id`, deterministically and
+operator-independently; `FastMRIDataset(split="auto")` uses it, and
+`verify_no_patient_straddles` asserts it. Measured on the real data: 0 straddling
+patients, 52/44 patients, 108/91 volumes. See D-027.
+
+**Still open: LoDoPaB.** `LoDoPaBDataset` still indexes by file and slice offset and
+does not read the patient CSVs. The hazard is live there until that is wired (Week 7).
+
+---
+
+### P-06a - The original entry, kept for the record
 
 **See:** D-014
 
@@ -130,6 +167,65 @@ The rule is decided: split by patient for LoDoPaB, by volume for fastMRI, never
 by slice. But `LoDoPaBDataset` still indexes by file and slice offset and does
 not read the patient CSVs yet. The hazard is live until that is wired (Week 7,
 or earlier if CT moves up).
+
+---
+
+### P-13 - fastMRI `singlecoil_test` cannot be used by this project at all
+
+**See:** D-017, data_access.md section 1
+
+`knee_singlecoil_test` (1.46 GB) was downloaded alongside the validation split. It
+cannot be used, for two independent reasons, and both were checked rather than assumed:
+
+```
+keys:  ['ismrmrd_header', 'kspace', 'mask']
+attrs: {'acceleration': 8, 'num_low_frequency': 15, ...}
+kspace (37, 640, 368) complex64      mask (368,) bool
+```
+
+1. **The k-space is already undersampled** at a fixed R=8, and ships the mask it was
+   undersampled with. The acquisition operator is the variable under study, so it has to
+   be *chosen* and applied to fully-sampled k-space. An operator grid cannot be
+   synthesised retrospectively from measurements that have already been decimated.
+2. **There is no `reconstruction_esc`.** It is the challenge submission set, so it has no
+   ground truth, and without ground truth there is no `err_total`, no `err_free`, and no
+   region-level criterion to evaluate.
+
+It is also not annotated: fastMRI+ covers the train and validation splits.
+
+Compare the validation split, which has `kspace` **fully sampled**, plus
+`reconstruction_esc`, `reconstruction_rss`, and `patient_id`.
+
+**Consequence.** `singlecoil_val` is the entire reported MRI substrate. Its 96 patients
+are the whole calibration *and* test population, which makes the per-patient split
+(D-027) load-bearing rather than tidy, and it caps how thin `calib_group` can be sliced
+before groups starve (D10, Tool 1). The train split was deliberately not downloaded
+(72.7 GB) and nothing needs it: no config references it, and the project trains nothing.
+
+---
+
+### P-14 - The disk is full, and the archives are the reason
+
+**See:** P-10, D-017
+
+Extracting `singlecoil_val` took the 215 GB volume to **99 MB free**. The 19.4 GB of
+extracted `.h5` now coexists with the 16.0 GB `.tar` it came from, plus ~49 GB of CT
+archives that D-005 and D-013 already establish are not needed.
+
+Nothing is corrupted - the extraction completed and was verified - but there is no room
+to write a score bank, which is the next thing T2.3 has to do. Reclaimable, in order of
+how safe each one is:
+
+| candidate | size | why it is safe |
+|---|---|---|
+| `data/knee_singlecoil_val.tar` | 16.0 GB | fully extracted and verified |
+| `data/raw/fastmri/singlecoil_test/` | 1.4 GB | unusable, P-13 |
+| `data/knee_singlecoil_test.tar` | 1.46 GB | unusable, P-13 |
+| `data/archives/lodopab/observation_*.zip` | ~40 GB | not needed, D-005 |
+| `data/archives/lodopab/ground_truth_train.zip` | ~9 GB | not needed, D-013 |
+
+Not actioned unilaterally: the fastMRI links are time-limited, so deleting an archive is
+not trivially reversible even though the extracted data is intact.
 
 ---
 
