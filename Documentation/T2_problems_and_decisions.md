@@ -244,6 +244,65 @@ not trivially reversible even though the extracted data is intact.
 
 ---
 
+#### P-15 - A checkpoint's scheduler config is a 15-byte "Entry not found"
+
+**See:** D-016, P-08
+
+`checkpoints/ddpm-celebahq-256/scheduler/scheduler_config.json` is 15 bytes long and
+contains the literal text `Entry not found`. The download failed and the error page was
+saved with the filename it was asked for, so the directory *looks* complete: config,
+weights, scheduler, all present.
+
+```
+-rw-r--r--  790        config.json
+-rw-r--r--  454853117  diffusion_pytorch_model.bin
+-rw-r--r--  15         scheduler/scheduler_config.json   <- "Entry not found"
+```
+
+The 454 MB weights are fine and load correctly (113.7M parameters). Only the scheduler
+config is a stub, which is the worst case: had the *weights* failed this way, loading
+would have raised immediately.
+
+**This is P-08 again** — a failed fetch recorded as a success — in a different corner of
+the project, which is what makes it worth its own entry rather than a footnote. The
+lesson generalises: an artefact's presence is not evidence of its content, and the check
+has to open the file.
+
+**Not worked around, designed around.** The DDPM schedule (1000 steps, betas linear in
+[1e-4, 0.02]) is written out explicitly in `solvers/denoiser.py` as named constants
+rather than read from any config. The sampler therefore does not depend on that file at
+all, and the numbers that scale every `x0` estimate are visible in source instead of
+buried in JSON. `NoiseSchedule` is pinned against the closed form by
+`test_predict_x0_inverts_the_forward_noising_exactly`, so a wrong schedule fails loudly
+rather than producing plausible-looking but systematically mis-scaled reconstructions.
+
+---
+
+#### P-16 - No GPU: torch here is the CPU build
+
+**See:** P-10, D-029, Sec. 17 risk R7
+
+`torch.cuda.is_available()` is **False** — the installed torch is `2.13.0+cpu`, so the
+6 GB RTX 3050 the compute budget was written around is not being used at all. Measured
+cost of one UNet forward at 128²: **~0.6 s**, so:
+
+| job | cost |
+|---|---|
+| one 100-step DDNM draw | ~1 min |
+| one 100-step DPS draw | ~3 min (backward pass every step) |
+| the Week 2 smoke run actually executed (6 items x 2 operators x 3 draws x 12 steps) | 119 s |
+
+This does not block T2.2 — the back-ends work and produce banks — but it does bound
+Week 3 and Week 4. A full operator grid at a useful step count is not affordable on CPU,
+and the honest options are a GPU-enabled torch build, the college machine (RTX 4500 Ada,
+24 GB), or a permanently reduced grid with the reduction stated in Experimental Setup
+rather than left implicit.
+
+The immediate mitigation is D-029: the samplers are testable against an analytic
+denoiser, so correctness work does not wait on compute.
+
+---
+
 ### Resolved
 
 #### P-01 - The CT null projector amplifies instead of projecting
@@ -449,7 +508,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 28 entries, so a problem in Part I can be
+What lives here instead is the index — 31 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -482,3 +541,6 @@ traced to the decision that settled it without opening the log.
 | [D-026](decision_log.md) | Reference `split_conformal_threshold` over-certifies thin groups | Week 2 | OPEN |
 | [D-027](decision_log.md) | fastMRI `singlecoil_val` has 199 volumes but only 96 patients; the split must be by `patient_id` | Week 1 | ACCEPTED — fixed |
 | [D-028](decision_log.md) | Fixing D-024 reversed the direction of the naive-transfer coverage failure | Week 1 | ACCEPTED — recorded, not yet re-measured on a real solver |
+| [D-029](decision_log.md) | Solver algorithms are separated from the network that drives them | Week 2 | ACCEPTED |
+| [D-030](decision_log.md) | The flow-matching family uses diffusion-derived velocities, not a FlowDPS checkpoint | Week 2 | ACCEPTED — scope limitation, must appear in the write-up |
+| [D-031](decision_log.md) | Guidance strength is a fixed solver constant, never tuned per operator | Week 2 | ACCEPTED |

@@ -990,6 +990,92 @@ coverage figures should not be cited until they are regenerated.
 
 ---
 
+## D-029 · Solver algorithms are separated from the network that drives them
+**Date:** Week 2 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+The three back-ends (DPS, DDNM, FlowDPS) are implemented against a small `Denoiser`
+interface — `predict_noise(x, t)` — rather than against `diffusers` directly. A
+`DiffusersUNetDenoiser` adapter loads the real checkpoint; an `AnalyticDenoiser` provides
+a closed-form stand-in.
+
+*Alternative:* call `diffusers` inside each sampler, which is shorter.
+
+*Reason:* three things become possible that otherwise are not. The sampling algorithms
+are unit-testable in **1.6 s on CPU** with no checkpoint and no GPU — which matters
+because the torch build on this machine is CPU-only and one real 100-step draw at 128²
+costs about a minute, so a test suite that needed the real prior would not be run.
+Swapping the prior (D-016: natural-image now, medical later) touches one adapter rather
+than three samplers. And the determinism `solvers/base.py` promises can be *asserted*
+bitwise, because a deterministic test double makes the comparison meaningful.
+
+*Cost:* one more indirection, and the analytic denoiser is not an image prior — it tests
+arithmetic and contracts, never reconstruction quality. Quality still needs the real
+checkpoint and a human looking at pictures.
+
+*Affects:* T2.2, T2.3, Week 10 ablation, D-016.
+
+---
+
+## D-030 · The flow-matching family uses diffusion-derived velocities, not a FlowDPS checkpoint
+**Date:** Week 2 · **Status:** ACCEPTED — scope limitation, must appear in the write-up · **Proposed by:** Track 2
+
+The Week 2 card asks for a second solver family "to establish solver-agnosticism early".
+No public flow-matching checkpoint is available here and the project trains nothing
+(Sec. 17). What is implemented is FlowDPS's **sampling dynamics** — a deterministic
+rectified-flow ODE with per-step range replacement — driven by a velocity field derived
+from the available diffusion checkpoint via the standard probability-flow correspondence
+(matched SNR gives, for each flow time `s`, an index `t` and scale `c` with `x_t = c·x_s`;
+`v = eps − x0`).
+
+*What this is sufficient for:* the Week 2 deliverable and the Week 10 solver ablation.
+Both need two families whose **dynamics genuinely differ** behind one interface —
+stochastic ancestral sampling with per-step noise against deterministic ODE integration —
+because that is the axis the ablation probes. Their posterior spread arises by different
+mechanisms: FlowDPS's spread comes *entirely* from its initial noise.
+
+*What it is not sufficient for:* claiming the project reproduced FlowDPS [26]. It did
+not. The manuscript must say "flow-matching sampling dynamics on a diffusion-derived
+velocity field", not "FlowDPS".
+
+*Alternative rejected:* leaving the second family stubbed until a checkpoint appears —
+which would push the solver-agnosticism check to Week 10, exactly what the card warns
+against.
+
+*Affects:* T2.2, T2.5, Week 10 ablation, O7 manuscript wording.
+
+---
+
+## D-031 · Guidance strength is a fixed solver constant, never tuned per operator
+**Date:** Week 2 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+DPS's guidance step size is set once (`DEFAULT_STEP_SIZE = 5.0`, measured) and held fixed
+across every operator in every curve.
+
+*Reason:* Sec. 13 requires the acquisition operator to be the only quantity that varies
+within a coverage curve. Re-tuning guidance strength at each acceleration would make
+reconstruction quality depend on the operator through **two** paths at once, and the
+coverage gap could no longer be attributed to the acquisition — the same class of
+confound as D-028, where an artefact that varied with the operator masqueraded as a
+finding.
+
+*The value, measured* on the analytic denoiser at 32², R=4, 50 steps — data-consistency
+error against step size:
+
+| step size | 0.5 | 2 | **5** | 10 | 20 | 50 |
+|---|---|---|---|---|---|---|
+| dc error | 0.94 | 0.60 | **0.053** | 0.16 | 0.31 | 0.76 |
+
+A clean minimum: too small and the soft constraint never bites, too large and it
+overshoots the prior.
+
+*Cost:* the value is **not transferable between priors** and must be re-measured when
+medical weights land (D-016). Re-measuring is legitimate; re-measuring *per operator* is
+not.
+
+*Affects:* T2.2, T1.4 protocol, Weeks 4 and 10, D-028.
+
+---
+
 ## Template
 
 ```
