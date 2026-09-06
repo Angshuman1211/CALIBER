@@ -28,14 +28,17 @@ Every operator implements `ForwardOperator`:
 |---|---|
 | `forward(x)` | `A x` — image to measurements |
 | `adjoint(y)` | `A^H y` — the exact transpose |
-| `pinv(y)` | `A^+ y` — exact where possible, best available otherwise |
+| `pinv(y)` | `A^+ y` — exact where possible, best available otherwise; the *display* reconstruction |
+| `decomposition_pinv(y)` | The inverse the decomposition below is built from. Defaults to `pinv`; overridden when `pinv` is not a genuine pseudo-inverse and a better one exists for this purpose specifically (CT, D-012) |
 | `descriptor()` | Data-free summary registered here |
 
-and inherits the decomposition of Sec. 2.3:
+and inherits the decomposition of Sec. 2.3, built from `decomposition_pinv`,
+**not** `pinv`, so that a display-only approximation (CT's FBP) never leaks
+into `project_range` / `project_null`:
 
 ```
-project_range(x) = A^+ A x          the measured component
-project_null(x)  = x - A^+ A x      the free component
+project_range(x) = decomposition_pinv(A x)          the measured component
+project_null(x)  = x - project_range(x)             the free component
 ```
 
 ## 3. The descriptor
@@ -50,7 +53,7 @@ from descriptors and never touches a dataset or a GPU.
 | `params` | Every parameter needed to rebuild the operator exactly |
 | `image_shape`, `ambient_dim`, `measurement_dim` | Dimensions |
 | `null_space_dim` | Size of the unmeasured subspace |
-| `exact_pinv` | Whether the decomposition is exact |
+| `exact_pinv` | Whether `pinv(y)`, the display reconstruction, is the exact Moore-Penrose inverse — also gates the idempotence health check, unchanged by D-012 |
 | `sampling_support` | MRI: k-space mask. CT: angle set |
 | `singular_values` | Optional spectral summary |
 
@@ -71,10 +74,25 @@ write-up and the Assumptions and Honest Scope section (Sec. 13).
 
 **`exact_pinv`.** For mask-based MRI, `M` is an orthogonal projection and `F`
 is unitary, so `A^+ = F^H M` exactly and `P_R`, `P_N` are true orthogonal
-projections. For CT, `pinv` is filtered backprojection, which is *not* the
-Moore-Penrose inverse, so the range/null-space split is approximate. Any claim
-that rests on exactness of the decomposition holds for MRI and must be
-qualified for CT.
+projections; `exact_pinv` is `True`. For CT, `pinv` is filtered
+backprojection, which is *not* the Moore-Penrose inverse — `exact_pinv` is
+`False`, and any claim resting on the exactness of the *display*
+reconstruction, or on idempotence of the decomposition, must be qualified for
+CT.
+
+**This is deliberately unchanged by D-012.** D-012 fixed CT's decomposition
+being built from FBP — `decomposition_pinv` now uses conjugate gradient on the
+normal equations (`CTProjectionOperator.pinv_cg`) instead, which reliably
+fixes the *contraction* property (`null_projection_gain() <= 1`, verified
+across the Sec. 16 operator grid, often from as few as 5-10 CG iterations, and
+now a hard gate — see `contraction_ok` below). It does not fix idempotence:
+CG is iterative and only approximately idempotent at any budget cheap enough
+to run per item, and — because applying an incompletely-converged solve twice
+compounds error in a way that doesn't simply shrink with more iterations of
+the first solve — pushing further towards convergence is not the free lunch
+it looks like, and past a point is not even safe (`pinv_cg`'s docstring has
+the numerical-divergence story). So `exact_pinv` correctly stays `False` for
+CT, and the idempotence gate stays bypassed for it, exactly as before D-012.
 
 **`null_space_dim` for CT is a bound, not a rank.** It is the dimension count
 `ambient - measurements`, recorded in `params` as
@@ -89,11 +107,16 @@ either use the estimated rank or state that it uses the bound.
 the runner aborts on failure:
 
 - **Adjoint test.** `<A x, v> == <x, A^H v>` to a relative tolerance.
-- **Idempotence.** `P_R(P_R x) == P_R x`, required only where `exact_pinv`.
+- **Idempotence.** `P_R(P_R x) == P_R x`, required only where `exact_pinv` —
+  MRI only; unchanged by D-012 (see §4).
+- **Contraction.** `‖P_N x‖ / ‖x‖ <= 1`, required for every operator. Gated
+  (not merely reported) since D-012 — this is the check the FBP-based CT
+  decomposition used to fail.
 
-A wrong adjoint or a non-idempotent projector corrupts every score in the bank
-in a way that is invisible downstream — the numbers stay plausible. Both checks
-are cheap; there is no reason not to run them every time.
+A wrong adjoint, a non-idempotent projector, or an amplifying null projector
+corrupts every score in the bank in a way that is invisible downstream — the
+numbers stay plausible. All three checks are cheap; there is no reason not to
+run them every time.
 
 The CT adjoint is obtained as the vector-Jacobian product of the forward map.
 Because the forward map is linear, the VJP **is** the exact transpose, so the

@@ -7,9 +7,16 @@ Blueprint (Sec. 6, Sec. 16): view count, angular range, and dose.
 Two honest differences from the MRI operator, both of which propagate into the
 analysis and must not be papered over:
 
-1. ``pinv`` is filtered backprojection, not the Moore-Penrose inverse. The
-   range/null-space split is therefore *approximate* for CT, and
-   ``exact_pinv`` is False. Week 7 owns tightening this.
+1. ``pinv`` is filtered backprojection, not the Moore-Penrose inverse, so
+   ``exact_pinv`` is False — the *display* reconstruction stays approximate,
+   and so does the idempotence of ``project_range`` (``exact_pinv`` still
+   gates that check, unchanged). What ``pinv`` no longer determines is
+   whether the null projector *amplifies*: the range/null-space
+   *decomposition* goes through ``decomposition_pinv``, conjugate gradient on
+   the normal equations, instead (D-012, resolved for the contraction
+   property specifically — FBP's ``P_N`` had gain up to 1.74 at 30 views;
+   CG's is a contraction like MRI's, robustly so even at a handful of
+   iterations). See ``pinv_cg`` for what is and is not fixed by this.
 2. ``null_space_dim`` is the trivial dimension-count bound
    ``ambient - measurements``, not a computed rank. The true value needs a
    spectral estimate; see ``operators.spectrum`` and Track 3's L2.
@@ -54,6 +61,8 @@ class CTProjectionOperator(ForwardOperator):
         start_angle_deg: float = 0.0,
         photon_count: float | None = None,
         family: str | None = None,
+        cg_iterations: int = 20,
+        cg_tol: float = 1e-6,
         **_: Any,
     ):
         super().__init__(
@@ -64,6 +73,11 @@ class CTProjectionOperator(ForwardOperator):
                 "start_angle_deg": float(start_angle_deg),
                 "photon_count": photon_count,
                 "null_space_dim_method": "dimension_count",
+                # Decomposition-only numerics (D-012), not part of the
+                # operator's physical identity — excluded from operator_id,
+                # same treatment as null_space_dim_method.
+                "cg_iterations": int(cg_iterations),
+                "cg_tol": float(cg_tol),
             },
         )
         # "sparse_view" and "limited_angle" are the two CT regimes; the family
@@ -109,10 +123,108 @@ class CTProjectionOperator(ForwardOperator):
         return filtered[..., :n]
 
     def pinv(self, y: Tensor) -> Tensor:
-        """Filtered backprojection — an *approximate* inverse (``exact_pinv`` is False)."""
+        """Filtered backprojection — the fast *display* inverse (``exact_pinv`` is False).
+
+        Not used for the range/null-space decomposition; see
+        :meth:`decomposition_pinv` and D-012.
+        """
         filtered = self._ramp_filter(y.to(torch.float32))
         scale = math.pi / max(1, len(self.angles))
         return self.adjoint(filtered) * scale
+
+    def _AtA(self, x: Tensor) -> Tensor:
+        """Normal-equations operator ``A^T A`` — one forward pass, one adjoint pass."""
+        return self.adjoint(self.forward(x))
+
+    def pinv_cg(self, y: Tensor, n_iter: int | None = None, tol: float | None = None) -> Tensor:
+        """``A^+ y`` via conjugate gradient on the normal equations ``A^T A x = A^T y``.
+
+        Fixes D-012's *contraction* property. FBP is not the Moore-Penrose
+        inverse, so the ``P_N`` built from it amplifies rather than projects
+        (measured gain up to 1.74 at 30 views on real LoDoPaB data). CG on
+        the normal equations heads instead towards the true least-squares
+        pseudo-inverse solution: started from ``x0 = 0``, every CG iterate
+        stays in the Krylov subspace spanned by ``A^T A`` and ``b = A^T y``,
+        both of which live entirely in ``row-space(A)`` — ``A^T A`` maps row
+        space to itself and never touches ``null-space(A)``, and ``b``
+        already lies there. So CG never leaves row space, and within it heads
+        towards the unique minimum-norm least-squares solution, ``A^+ y``.
+
+        **What this does not fix: idempotence.** Measured across the Sec. 16
+        operator grid (64x64 to 256x256, 8 to 180 views, sparse-view and
+        limited-angle), ``null_projection_gain()`` clears the contraction bar
+        robustly — often within 5-10 iterations — but
+        ``projection_idempotence_error()`` settles in the few-percent range at
+        best and is *not* monotone in iteration count: applying an
+        incompletely-converged CG solve twice (as idempotence testing does)
+        compounds approximation error in a way more iterations of the first
+        solve does not simply fix, and can occasionally make worse. CT's
+        ``exact_pinv`` stays ``False`` and the registry's idempotence gate
+        stays keyed on it, unchanged — D-012 was never a claim that CT's
+        decomposition would become idempotent-exact, only that it would stop
+        amplifying.
+
+        **Why iterations are capped, not driven to convergence.** This
+        operator's row space is poorly conditioned at aggressive
+        undersampling (the same tail the spectral estimator in
+        ``operators.spectrum`` resolves worst, D-011): residual reduction
+        stalls well short of machine precision at any iteration budget cheap
+        enough to run per item — measured on CPU, contraction gain is already
+        near its floor by ~20 iterations at every grid point tried (64x64 to
+        256x256, 8 to 180 views), while cost keeps climbing (multiple seconds
+        per call at 256x256 with 100+ views) for idempotence that does not
+        reliably improve. Worse, because ``A^T A`` is rank-deficient rather than
+        merely ill-conditioned, the Krylov recurrence exhausts the
+        well-determined subspace after a finite number of steps — pushing
+        iterations past that point amplifies accumulated rounding error in
+        near-null directions instead of resolving signal, and residual growth
+        can become catastrophic rather than gentle (verified: an early,
+        undamped version of this diverged by 6+ orders of magnitude beyond
+        ~500 iterations on a 16-view operator). So this tracks the best
+        iterate seen by residual norm and returns it rather than whatever
+        ``x`` the loop ends on, stopping outright once the residual has
+        clearly turned upward — this is what makes an iteration count higher
+        than the default *safe* to pass, not merely unnecessary.
+
+        ``n_iter``/``tol`` default to the operator's ``cg_iterations``/
+        ``cg_tol`` params (constructor args, so configurable per experiment
+        and recorded for reproducibility) when not given explicitly.
+        """
+        if n_iter is None:
+            n_iter = int(self.params["cg_iterations"])
+        if tol is None:
+            tol = float(self.params["cg_tol"])
+        b = self.adjoint(y.to(torch.float32))
+        x = torch.zeros_like(b)
+        r = b.clone()
+        p = r.clone()
+        rs_old = torch.dot(r.flatten(), r.flatten())
+        b_norm_sq = torch.dot(b.flatten(), b.flatten()).clamp_min(1e-20)
+        best_x, best_rs = x, rs_old
+        if rs_old / b_norm_sq <= tol**2:
+            return x
+        for _ in range(n_iter):
+            ap = self._AtA(p)
+            denom = torch.dot(p.flatten(), ap.flatten())
+            if float(denom) <= 1e-20:
+                break
+            alpha = rs_old / denom
+            x = x + alpha * p
+            r = r - alpha * ap
+            rs_new = torch.dot(r.flatten(), r.flatten())
+            if rs_new < best_rs:
+                best_x, best_rs = x.clone(), rs_new
+            if rs_new / b_norm_sq <= tol**2:
+                return x
+            if float(rs_new) > 4.0 * float(best_rs):
+                break  # diverging past the well-determined subspace; bail to best_x
+            p = r + (rs_new / rs_old) * p
+            rs_old = rs_new
+        return best_x
+
+    def decomposition_pinv(self, y: Tensor) -> Tensor:
+        """The decomposition uses CG (:meth:`pinv_cg`), not FBP. See D-012."""
+        return self.pinv_cg(y)
 
     # -- registry ------------------------------------------------------------
 

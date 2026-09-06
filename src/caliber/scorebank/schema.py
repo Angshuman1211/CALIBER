@@ -64,9 +64,21 @@ COLUMNS: dict[str, str] = {
     "criterion_version": "string",
     "err_total": "float32",
     "err_free": "float32",
+    "free_content": "float32",
     "ann_coverage": "float32",
     "ref_intensity": "float32",
 }
+
+# Columns added after a bank format was already in use. They are *additive and
+# nullable*, so a bank written before they existed still validates: `coerce`
+# backfills them as NA rather than raising, and `validate` does not require them
+# to be populated. This is the mechanism that lets the format grow without a
+# SCHEMA_VERSION bump and without migrating existing banks (spec section 6).
+#
+# `free_content` = ||P_N x_true|| per region / ref_intensity, requested by
+# Track 1 as A1 so the Week 2 criterion can be relative (err_free /
+# free_content) rather than an absolute constant -- see D-020, D21.
+NULLABLE_COLUMNS = frozenset({"free_content"})
 
 # Uniquely identifies a row; duplicates indicate a double-write.
 KEY_COLUMNS = (
@@ -95,9 +107,16 @@ def empty_frame() -> pd.DataFrame:
 
 def coerce(df: pd.DataFrame) -> pd.DataFrame:
     """Reorder to the canonical column order and cast to the declared dtypes."""
-    missing = [c for c in COLUMNS if c not in df.columns]
+    missing = [c for c in COLUMNS if c not in df.columns and c not in NULLABLE_COLUMNS]
     if missing:
         raise SchemaError(f"score bank is missing required columns: {missing}")
+    df = df.copy()
+    for name in NULLABLE_COLUMNS:
+        if name not in df.columns:
+            # NaN rather than pd.NA: these are numpy float columns, and pd.NA
+            # will not cast into float32. The missing value has to survive the
+            # cast, or "nullable" is only nullable until someone calls coerce.
+            df[name] = float("nan") if COLUMNS[name].startswith("float") else pd.NA
     extra = [c for c in df.columns if c not in COLUMNS]
     out = df[list(COLUMNS) + extra].copy()
     for name, dtype in COLUMNS.items():
@@ -112,7 +131,7 @@ def validate(df: pd.DataFrame, strict: bool = True) -> list[str]:
     """Check a score bank against the shared format. Returns a list of problems."""
     problems: list[str] = []
 
-    missing = [c for c in COLUMNS if c not in df.columns]
+    missing = [c for c in COLUMNS if c not in df.columns and c not in NULLABLE_COLUMNS]
     if missing:
         problems.append(f"missing columns: {missing}")
         if strict:

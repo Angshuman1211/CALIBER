@@ -14,8 +14,8 @@ simplification consistent with the Sec. 17 compute profile; it means the
 operator studied is single-coil Cartesian undersampling, which should be stated
 in the Experimental Setup rather than left implicit.
 
-Data access is credentialed and has lead time — see Documentation/data_access.md. This
-module reads whatever is present under ``data/raw/fastmri`` and raises a clear
+Data access is credentialed and has lead time — see Appendix A of
+Documentation/T2.1_data_and_operator_pipeline.md. This module reads whatever is present under ``data/raw/fastmri`` and raises a clear
 error otherwise, so the pipeline can be developed against phantoms meanwhile.
 """
 
@@ -29,6 +29,7 @@ import torch
 from torch import Tensor
 
 from .base import Item, SliceDataset, center_crop, normalise
+from .splits import DEFAULT_SALT, split_for
 
 
 def _require_h5py():
@@ -137,16 +138,27 @@ class FastMRIDataset(SliceDataset):
         normalisation: str = "p99",
         limit_volumes: int | None = None,
         annotation_grid: tuple[int, int] = ANNOTATION_GRID,
+        calib_fraction: float = 0.5,
+        split_salt: str = DEFAULT_SALT,
     ):
         self.root = Path(root)
+        # ``split="auto"`` is the D-022 path: the side is decided per *patient*
+        # by the split registry, identically in every run and every operator.
+        # An explicit "calib"/"test" forces the whole dataset onto one side,
+        # which is what the phantom and smoke configs want and what a real
+        # score bank must not use.
         self.split = split
+        self.auto_split = split == "auto"
+        self.calib_fraction = float(calib_fraction)
+        self.split_salt = split_salt
+        self._patient_cache: dict[str, str] = {}
         self.image_shape = tuple(image_shape)
         self.slices_per_volume = int(slices_per_volume)
         self.normalisation = normalisation
         self.annotation_grid = tuple(annotation_grid)
         if not self.root.is_dir():
             raise FileNotFoundError(
-                f"fastMRI directory not found: {self.root}. See Documentation/data_access.md - "
+                f"fastMRI directory not found: {self.root}. See T2.1 Appendix A - "
                 "access is credentialed and must be requested before Week 3."
             )
         self.files = find_volumes(self.root)
@@ -173,7 +185,7 @@ class FastMRIDataset(SliceDataset):
                 # to fully-sampled k-space, not inferred from a finished image.
                 raise KeyError(
                     f"{path.name} has no 'kspace' dataset (found: {sorted(fh.keys())}). "
-                    "Raw k-space is required - see Documentation/data_access.md section 1."
+                    "Raw k-space is required - see Documentation/T2.1_data_and_operator_pipeline.md Appendix A.1."
                 )
             kspace = fh["kspace"]
             n_slices = kspace.shape[0]
@@ -190,6 +202,11 @@ class FastMRIDataset(SliceDataset):
                 if key in fh:
                     grid_shape = tuple(fh[key].shape[-2:])
                     break
+            # fastMRI carries the de-identified patient hash in the file
+            # attributes. It is the only thing that makes a patient-level split
+            # possible, and it is *not* the filename: singlecoil_val's 199
+            # volumes come from 96 patients (D-027).
+            patient = str(fh.attrs.get("patient_id", "")) or path.stem
 
         if raw.dim() == 3:  # multi-coil (coils, H, W) -> root sum of squares
             coil_images = torch.fft.ifft2(raw, norm="ortho")
@@ -213,15 +230,36 @@ class FastMRIDataset(SliceDataset):
         if boxes:
             annotation = boxes_to_mask(boxes, grid_shape, self.image_shape)
 
+        self._patient_cache[path.stem] = patient
+        split = (
+            split_for(patient, calib_fraction=self.calib_fraction, salt=self.split_salt)
+            if self.auto_split
+            else self.split
+        )
+
         return Item(
             dataset=self.name,
-            split=self.split,
+            split=split,
             sample_id=path.stem,
             slice_idx=int(slice_idx),
             image=image.to(torch.float32),
             annotation=annotation,
-            meta={"source": str(path), "raw_shape": raw_shape},
+            meta={"source": str(path), "raw_shape": raw_shape, "patient_id": patient},
         )
+
+    def patient_index(self) -> dict[str, str]:
+        """``{sample_id: patient_id}`` for every volume, by reading the attrs.
+
+        Opens each file, so call it once before producing a bank rather than
+        per item. This is what :func:`caliber.data.splits.split_summary` and
+        :func:`~caliber.data.splits.verify_no_patient_straddles` consume.
+        """
+        h5py = _require_h5py()
+        index = {}
+        for path in self.files:
+            with h5py.File(path, "r") as fh:
+                index[path.stem] = str(fh.attrs.get("patient_id", "")) or path.stem
+        return index
 
 
 class M4RawDataset(FastMRIDataset):

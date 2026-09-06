@@ -190,11 +190,25 @@ def _bank_for(operators, n_items=12, region_size=16, seed=0):
 def test_naive_transfer_loses_coverage_under_operator_shift():
     """The empirical core (O3), in miniature.
 
-    Calibrate a threshold at R=2 and deploy it at R=10. Because the far
-    operator hides far more of the image, its scores live on a different scale
-    and the transferred threshold catches fewer hallucinations than promised.
-    Group-conditional calibration, which thresholds within each regime, must
-    recover the nominal level.
+    Calibrate a threshold at R=2 and deploy it at R=10. The far operator hides
+    more of the image, so its scores live on a different scale and the
+    transferred threshold is miscalibrated. Group-conditional calibration,
+    which thresholds within each regime, must recover the nominal level.
+
+    **The direction is not asserted, deliberately.** Until D-024 this test
+    required *under*-coverage at the far operator. That direction was an
+    artefact of the `.real` cast in `NullSpaceNoiseSampler`: it put 4.1% of
+    each perturbation back into the measured component, making `s_residual`
+    non-zero (0.082 at R=2 vs 0.032 at R=10) and dragging the combined score
+    *down* with acceleration. With the projection kept complex, `s_residual`
+    is exactly 0 and `s_free` rises with acceleration (0.0326 -> 0.0377), which
+    is the physically correct direction: a larger null space holds more free
+    content. Naive transfer now *over*-covers, and it does so to saturation.
+
+    Over-coverage here is not the safe side. Coverage 1.0 means every region is
+    flagged, so the detector carries no information at all -- the same vacuity
+    D-020 records for the absolute label threshold, reached by a different
+    route. What the guarantee promises is the *nominal* level, not "at least".
     """
     calib_op = MRIUndersamplingOperator(SHAPE, family="random1d", acceleration=2)
     far_op = MRIUndersamplingOperator(SHAPE, family="random1d", acceleration=10)
@@ -214,8 +228,13 @@ def test_naive_transfer_loses_coverage_under_operator_shift():
     assert naive.loc[calib_id, "empirical_coverage"] >= nominal - 0.05
 
     # Deployment operator: the guarantee is not honoured. This is the failure
-    # the whole project exists to expose and repair.
-    assert naive.loc[far_id, "coverage_gap"] > 0.0
+    # the whole project exists to expose and repair. Magnitude, not sign --
+    # see the docstring and D-024.
+    assert abs(naive.loc[far_id, "coverage_gap"]) > 0.05
+
+    # ...and it fails by saturating: the transferred threshold flags every
+    # region, so the flag is vacuous rather than merely imprecise.
+    assert naive.loc[far_id, "empirical_coverage"] == pytest.approx(1.0)
 
     # The guaranteed backbone restores it.
     taus = mondrian_thresholds(df, "score", "label", alpha=alpha)
@@ -223,6 +242,6 @@ def test_naive_transfer_loses_coverage_under_operator_shift():
         apply_threshold(df, taus, "score"), by=("operator_id",), nominal=nominal
     ).set_index("operator_id")
     assert mondrian.loc[far_id, "empirical_coverage"] >= nominal - 0.05
-    assert (
-        mondrian.loc[far_id, "empirical_coverage"] > naive.loc[far_id, "empirical_coverage"]
-    )
+    # Closer to nominal, not merely higher: naive over-covers here, so "higher"
+    # would be satisfied by getting the calibration *more* wrong (D-024).
+    assert abs(mondrian.loc[far_id, "coverage_gap"]) < abs(naive.loc[far_id, "coverage_gap"])

@@ -66,7 +66,7 @@ Sec. 15.2 makes flag area a reported metric alongside coverage.
 
 The Front I substrate is accelerated MRI with raw k-space (fastMRI; M4Raw as an open stopgap while access clears), with fastMRI+ pathology annotations for region-level evaluation. The Front II substrate (Phase 3) is a low-dose / sparse-view CT benchmark exposing **projection data** — LoDoPaB-CT — for the same reason: raw measurements permit angle subsampling, angular-range restriction, and dose reduction to be applied retrospectively. Region-level ground truth there comes from anatomical segmentation (TotalSegmentator, AbdomenCT-1K).
 
-Nothing is committed. See [Documentation/data_access.md](Documentation/data_access.md) for provenance, licensing and download.
+Nothing is committed. See [T2.1 Appendix A](Documentation/T2.1_data_and_operator_pipeline.md#appendix-a--data-access-and-provenance) for provenance, licensing and download.
 
 ---
 
@@ -100,16 +100,16 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | File | Owner | What |
 |---|---|---|
 | `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D34`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-026` |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-028` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
-| `data_access.md` | Track 2 | Dataset provenance, licensing, download |
+| `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-14`) plus an index of every decision |
 | `T1.1_score_design.md` | Track 1 | Operator-aware score design |
 | `T1.2_shift_robust_calibration.md` | Track 1 | The three calibration tools, what they control, and what they refuse |
 | `T1.3_operator_distance_formulation.md` | Track 1 | The locked operator-distance measure and why |
 | `T1.5_cross_track_integration.md` | Track 1 | Shared interfaces, sign-off record, contracts, adjudication log |
 | `T1.6_analysis_and_course_correction.md` | Track 1 | Phase gate reviews — all three fronts against the central claim, one section per checkpoint |
-| `T2_problems.md` | Track 2 | Track 2's problems log |
+| `T2.1_data_and_operator_pipeline.md` | Track 2 | Week 1 record — what was built, the numbers, honest limitations — plus dataset provenance, licensing and download (App. A) |
 | `T3.1`–`T3.3_*.md` | Track 3 | Formal review, distance candidates, L1 stability result |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.

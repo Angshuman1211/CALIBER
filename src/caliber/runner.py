@@ -57,19 +57,13 @@ def add_measurement_noise(y: torch.Tensor, sigma: float, seed: int) -> torch.Ten
 
 
 def calibration_group(operator) -> str:
-    """The group used by group-conditional calibration (Tool 1).
+    """Deprecated shim -- the grouping now lives on the operator descriptor.
 
-    One group per acquisition regime. Defaulting to modality plus family plus
-    the primary severity axis keeps groups coarse enough to hold calibration
-    data while still separating regimes that genuinely differ.
+    Kept so that existing callers and configs do not break, but the definition
+    moved into the registry (D-021) so Track 1 can re-group without a Track 2
+    code change. Read ``operator.descriptor().calib_group`` instead.
     """
-    desc = operator.descriptor()
-    params = desc.params
-    if desc.modality == "mri":
-        return f"mri/{params['family']}/R{params['acceleration']:g}"
-    if desc.modality == "ct":
-        return f"ct/{desc.family}/v{params['n_views']}"
-    return f"{desc.modality}/{desc.family}"
+    return operator.descriptor().calib_group
 
 
 def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
@@ -96,26 +90,23 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     print(f"[caliber] output           {out_root}")
 
     health = registry.check_health()
-    bad = [h for h in health if not h["adjoint_ok"] or not h["projector_ok"]]
+    bad = [
+        h for h in health
+        if not h["adjoint_ok"] or not h["projector_ok"] or not h["contraction_ok"]
+    ]
     if bad:
         for h in bad:
             print(
                 f"[caliber] OPERATOR CHECK FAILED  {h['operator_id']}  "
-                f"adjoint={h['adjoint_rel_error']:.2e}  idem={h['idempotence_rel_error']:.2e}",
+                f"adjoint={h['adjoint_rel_error']:.2e}  idem={h['idempotence_rel_error']:.2e}  "
+                f"null_gain={h['null_projection_gain']:.3f}",
                 file=sys.stderr,
             )
         raise ConfigError(
-            "operator health check failed; a wrong projector corrupts every score in the bank"
+            "operator health check failed; a wrong or amplifying projector corrupts "
+            "every score in the bank. See decision log D-012."
         )
     print(f"[caliber] operator check   {len(health)} operators passed")
-    amplifying = [h for h in health if not h["contraction_ok"]]
-    if amplifying:
-        worst = max(h["null_projection_gain"] for h in amplifying)
-        print(
-            f"[caliber] WARNING          {len(amplifying)}/{len(health)} operators have an "
-            f"amplifying null projector (worst gain {worst:.2f}); free-component scores "
-            f"are not comparable across modalities. See decision log D-012."
-        )
 
     if dry_run:
         registry.write_manifest(out_root / "operator_registry.json")
@@ -183,7 +174,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                     "operator_id": desc.operator_id,
                     "modality": desc.modality,
                     "operator_family": desc.family,
-                    "calib_group": calibration_group(op),
+                    "calib_group": desc.calib_group,
                     **solver.info().to_row(),
                     "n_posterior": n_posterior,
                     "seed": item_seed,
@@ -198,6 +189,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                     "s_residual": components.s_residual.tolist(),
                     "err_total": truth.err_total.tolist(),
                     "err_free": truth.err_free.tolist(),
+                    "free_content": truth.free_content.tolist(),
                     "ann_coverage": truth.ann_coverage.tolist(),
                 },
             )

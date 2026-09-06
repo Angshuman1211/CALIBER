@@ -245,7 +245,7 @@ tail estimator, or dropping the spectral term from the headline statement.
 ---
 
 ## D-012 · The FBP-based CT null projector amplifies; it must be replaced
-**Date:** Week 1 · **Status:** OPEN · **Raised by:** Track 2 · **Blocks:** Week 7
+**Date:** Week 1 · **Status:** RESOLVED — fixed · **Raised by:** Track 2 · **Fixed:** Week 7 (ahead of schedule)
 
 Measured on real LoDoPaB validation data (`w07_ct_smoke`, 128x128, 24 items):
 
@@ -296,23 +296,108 @@ confounded, and the Week 9 curve-collapse test cannot distinguish them.
 **This must be fixed before any CT coverage curve is reported**, not merely
 before publication. Until it is, CT numbers are for plumbing only.
 
-*Fix (Week 7, Track 2).* Replace FBP with a genuine pseudo-inverse for the
-**decomposition** — conjugate gradient on the normal equations `AᵀA x = Aᵀ y`,
-which converges to `A⁺y` in the least-squares sense and is a contraction. FBP
-can remain the display reconstruction. Cost is a handful of matvecs per item,
-which the score bank amortises anyway.
+### Fix, landed — scoped to the contraction property, not idempotence
 
-*Detection.* `ForwardOperator.null_projection_gain()` and the
-`contraction_ok` field in `OperatorRegistry.check_health()`. Reported as a
-runner warning rather than gated, so CT development is not blocked before the
-fix lands.
+FBP is replaced with a genuine pseudo-inverse for the **decomposition**:
+conjugate gradient on the normal equations `AᵀA x = Aᵀy`
+(`CTProjectionOperator.pinv_cg`). Starting from `x0 = 0`, every CG iterate
+stays in the Krylov subspace of `AᵀA` and `b = Aᵀy`, which lives entirely in
+`row-space(A)` — so CG never touches `null-space(A)` and heads, within row
+space, towards the minimum-norm least-squares solution, `A⁺y`.
+
+**FBP stays the display reconstruction**, exactly as planned — `pinv()` is
+unchanged and still what solvers and score-bank baselines read. Only the
+decomposition (`project_range` / `project_null`, everything `err_free` and
+`s_free` are built from) is repointed, through a new
+`ForwardOperator.decomposition_pinv` hook that defaults to `pinv` and that CT
+overrides.
+
+**What this fixes: contraction.** Measured across the Sec. 16 operator grid
+(64x64 to 256x256, 8 to 180 views, sparse-view and limited-angle),
+`null_projection_gain()` clears `≤ 1` robustly — often from as few as 5-10 CG
+iterations. `exact_pinv` is unchanged (still False for CT) and
+`OperatorRegistry.check_health()`'s idempotence gate (`projector_ok`) stays
+keyed on it, so it stays bypassed for CT exactly as before — that gate was
+never what D-012 was about. What *is* now gated, promoted from a runner
+warning to a hard failure, is `contraction_ok`.
+
+**What this does not fix, and was never going to: idempotence.**
+`projection_idempotence_error()` settles in the low tens-of-percent range at
+best, and is *not* monotone in CG iteration count — applying an
+incompletely-converged solve twice, as the idempotence test does, compounds
+approximation error in a way more iterations of the first solve doesn't
+simply undo. CT's decomposition is a cheap iterative approximation, not an
+exact projector, before or after this fix; only its worst-case behaviour
+(amplification) has changed.
+
+**Why iterations are capped, not driven toward convergence.** More CG
+iterations do not reliably help (see above) and are not free: measured
+several seconds per single decomposition call on CPU at 256x256 with 100+
+views, past which returns visibly diminish. Worse, unregularized CG on a
+rank-deficient system is not merely slow past the point where it has
+extracted the recoverable signal — it is numerically unsafe: an early,
+undamped version of this fix diverged by 6+ orders of magnitude beyond ~500
+iterations on a 16-view operator, because once the Krylov recurrence exhausts
+`row-space(A)`'s well-determined part, further iterations amplify rounding
+error in near-null directions instead of resolving anything. `pinv_cg` now
+tracks the best iterate by residual norm and stops outright once the residual
+turns upward, rather than trusting whatever iteration count is configured to
+be safe. Iteration count and tolerance are exposed as `cg_iterations` /
+`cg_tol` constructor params (default 20 / 1e-6 — chosen because the
+contraction property saturates by ~20 iterations while idempotence keeps
+wobbling non-monotonically well past it, so more is cost without reliable
+benefit), recorded in the operator's
+`params` for reproducibility, tunable per experiment, and deliberately
+excluded from `operator_id` (decomposition numerics, not physical identity —
+same treatment as `null_space_dim_method`).
+
+*Verified — including on the real data the original defect was found on.*
+`null_projection_gain() ≤ 1` at the `test_operators.py` fixture scale (64x64,
+32 views, 180°) and spot-checked across the wider grid above. Re-running
+`w07_ct_smoke.yaml` (real LoDoPaB validation slices, 128x128, 180/90/45 views,
+1536 region rows) end to end after the fix:
+
+| operator | median `err_free`/`err_total` | max row-level ratio | rows with ratio > 1 |
+|---|---|---|---|
+| v180 | 0.024 | 0.79 | 0 / 512 |
+| v90 | 0.038 | 0.76 | 0 / 512 |
+| v45 | 0.065 | 0.70 | 0 / 512 |
+
+Against D-012's original measurement of a **1.33** median ratio (`err_free`
+exceeding `err_total`, which a genuine decomposition cannot produce), every
+one of 1536 real-data region rows across all three operators now has
+`err_free` a small, bounded fraction of `err_total`, with zero violations of
+`err_free ≤ err_total`. This is the direct empirical resolution of D-012 on
+the substrate the defect was originally found on. Refreshing P-02's specific
+numbers under the new decomposition — the O2 threshold decision Track 1 owns
+— is the follow-up.
+
+*Performance, measured on the same run.* `w07_ct_smoke.yaml` end to end
+(24 item×operator pairs, 128x128): 345s at the initial `cg_iterations=50`
+attempt, 162s after tuning the default down to 20 — confirms the "more
+iterations, no reliable benefit" finding above wasn't just a synthetic-grid
+artefact. Measured on CPU; expect substantially faster on the project's
+target GPU.
+
+*Detection, promoted from a warning to a gate.*
+`ForwardOperator.null_projection_gain()` and `contraction_ok` in
+`OperatorRegistry.check_health()` now fail the run (`runner.py`) rather than
+merely warn — expected to read ≤ 1 for every registered operator, MRI and CT
+alike, and a run should stop if that regresses.
 
 *Affects:* O1, O2, L1, L2, D-006, T2.1, T2.5, T3.3, Sec. 13, Weeks 7-9.
 
 ---
 
 ## D-013 · TotalSegmentator masks do not align with LoDoPaB images
-**Date:** Week 1 · **Status:** OPEN — needs a Week 1 answer · **Raised by:** Track 2
+**Date:** Week 1 · **Status:** RESOLVED (Week 1 sign-off) — Option A adopted · **Raised by:** Track 2
+
+> **Resolution.** Option A: TotalSegmentator becomes the CT substrate. Track 1's Week 1
+> sign-off records that it does not object, and D20 removed the coupling that made this
+> a cross-track question at all — annotations are an evaluation *overlay*, not the region
+> definition, so the choice of CT substrate no longer changes what a region is. D-005
+> already re-projects ground-truth images with our own operator, so no projection data is
+> needed and LoDoPaB's observation archives stay unused (D-005, D-013).
 
 Sec. 14 lists LoDoPaB-CT as the cross-domain substrate and TotalSegmentator as
 the source of "region-level ground truth for evaluating flags in the second
@@ -437,7 +522,22 @@ as the data — confirm before use, and certainly before the open-source release
 ---
 
 ## D-017 · fastMRI acquired by direct download, staged off-machine
-**Date:** Week 1 · **Status:** ACCEPTED — one check outstanding · **Proposed by:** Track 2
+**Date:** Week 1 · **Status:** RESOLVED (Week 1 close-out) · **Proposed by:** Track 2
+
+> **Resolution.** The outstanding check is answered: the download links were **NYU's own,
+> emailed after they approved the application** — not a Kaggle mirror or any third-party
+> redistribution. The agreement's redistribution clause is therefore not engaged, and
+> results computed on `singlecoil_val` are reportable. `singlecoil_val` is extracted,
+> verified (199 volumes / 7,135 slices), and is the reported MRI substrate; M4Raw reverts
+> to what D-015 always scoped it as — a development stopgap, not the lawful fallback.
+>
+> The archive was deleted after verification to reclaim 16 GB (P-14). The extracted data
+> is intact; re-obtaining the tar means requesting fresh links from NYU, since the emailed
+> ones are time-limited.
+>
+> One clause still binds at release: §6 — fastMRI forbids redistribution, so the O7
+> open-source release ships code, configs and score banks, never images. Confirm before
+> Week 12 that derived score banks are within terms.
 
 Download links for fastMRI were obtained and the transfer is running on Kaggle
 rather than on the 6 GB laptop. The local disk has ~30 GB free against a 7 GB
@@ -697,7 +797,13 @@ that floor alongside the curves.
 ---
 
 ## D-024 · `NullSpaceNoiseSampler` leaks ~4% of its "hallucination" into the measured component
-**Date:** Week 2 · **Status:** OPEN · **Raised by:** Track 1 (T1.1) · **Owner:** Track 2 · **Track 1 entry:** D29
+**Date:** Week 2 · **Status:** RESOLVED — fixed, and it moved a headline number · **Raised by:** Track 1 (T1.1) · **Owner:** Track 2 · **Track 1 entry:** D29
+
+> **Resolution.** The `.real` cast is gone from both reference samplers; draws stay in the
+> operator's own complex domain and magnitudes are taken only where something is measured.
+> `s_residual` is now **exactly 0.000000** at every operator, where it had been 0.082 at
+> R=2 and 0.032 at R=10. `tests/test_splits.py` asserts data consistency for both samplers.
+> **This changed a result, not just a number** — see D-028.
 
 `solvers/reference.py` builds each draw as `base_real + free`, where
 `free = operator.project_null(texture)` is cast with `.real` before it is added.
@@ -801,6 +907,86 @@ now floors and returns `certifiable=False` for thin groups.
 floor and fix the docstring. Worth doing before someone reuses it in good faith.
 
 *Affects:* T1.2, `calibration/__init__.py`, Week 4 harness.
+
+---
+
+## D-027 · fastMRI `singlecoil_val` has 199 volumes but only 96 patients; the split must be by `patient_id`
+**Date:** Week 1 · **Status:** ACCEPTED — fixed · **Found by:** Track 2
+
+D-014 fixed the rule as "split by patient for LoDoPaB, **by volume for fastMRI**, never
+by slice", on the assumption that a fastMRI volume *is* a patient. It is not. Reading
+the attributes of all 199 extracted volumes:
+
+| quantity | value |
+|---|---|
+| volumes in `singlecoil_val` | 199 |
+| distinct `patient_id` | **96** |
+| patients owning more than one volume | **96 of 96** |
+| patients leaked if split by volume | **45 of 96 (47%)** |
+| patients leaked under the patient-level split | **0** |
+
+Every patient in the split has more than one volume, so the by-volume rule puts nearly
+half of all patients on both sides of the calibration/test boundary. That is the exact
+hazard D-014 was written to prevent, in the modality D-014 declared safe — and it fails
+in the direction that flatters our own numbers, because a patient seen during
+calibration makes the test set easier.
+
+**Fix.** `caliber.data.splits` assigns the split from the de-identified `patient_id`
+carried in each file's HDF5 attributes, deterministically and *operator-independently*
+(D-022): a pure function of `(salt, patient_key)`, so no run, ordering, or acquisition
+parameter can move a patient. `FastMRIDataset(split="auto")` uses it;
+`verify_no_patient_straddles` is the assertion, and `split_summary` prints the counts
+before a bank is produced. Resulting balance: 52/44 patients, 108/91 volumes.
+
+A property worth having deliberately: because assignment is per key rather than a
+shuffle, **growing the dataset does not move anybody**, so a bank built on 199 volumes
+stays comparable with one built after the substrate grows.
+
+*Affects:* D-014, D-022, P-06, T2.1, T2.3, every reported MRI coverage number.
+
+---
+
+## D-028 · Fixing D-024 reversed the direction of the naive-transfer coverage failure
+**Date:** Week 1 · **Status:** ACCEPTED — recorded, not yet re-measured on a real solver · **Found by:** Track 2
+
+Removing the `.real` cast (D-024) changed a smoke result, and the change is worth
+recording rather than absorbing quietly.
+
+| | `s_free` R=2 | `s_free` R=10 | `s_residual` |
+|---|---|---|---|
+| before (with `.real`) | 0.0827 | 0.0448 | 0.082 / 0.032 |
+| after (complex) | 0.0326 | 0.0377 | **0.000000** |
+
+Before the fix, the artefact `s_residual` dominated the combined score *and was larger
+at the near operator*, so the score fell as acceleration rose. A threshold calibrated at
+R=2 therefore under-covered at R=10, which is what `test_naive_transfer_loses_coverage_
+under_operator_shift` asserted. With the projection kept complex, `s_free` rises with
+acceleration — the physically correct direction, since a larger null space holds more
+free content — and naive transfer now **over**-covers:
+
+| calibration | deployment | coverage | gap |
+|---|---|---|---|
+| R=2 | R=2 | 0.947 | −0.047 |
+| R=2 | R=10 | **1.000** | −0.100 |
+| Mondrian | R=10 | 0.914 | −0.014 |
+
+**Over-coverage here is not the safe side.** Coverage 1.0 means the transferred
+threshold flags *every* region, so the flag carries no information at all — the same
+vacuity D-020 records for the absolute label threshold, reached by a different route.
+The guarantee promises the nominal level, not "at least".
+
+What survives unchanged: naive transfer is materially miscalibrated under operator
+shift, and the group-conditional backbone restores it (0.914 against a nominal 0.90).
+The test now asserts the magnitude of the gap and the saturation, not a direction the
+synthetic sampler does not produce.
+
+**Scope, honestly.** This is the D-015/D-018 reference sampler, and nothing from it is
+reportable. The direction under a *real* pretrained solver is unknown and must be
+measured in Week 4, not inferred from here. What this does establish is that the
+previously recorded direction was an artefact, so the README smoke table and the D-020
+coverage figures should not be cited until they are regenerated.
+
+*Affects:* D-018, D-020, D-024, README smoke table, T2.2, Week 4.
 
 ---
 
