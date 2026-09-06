@@ -155,7 +155,7 @@ RESOURCES: list[Resource] = [
         dest="data/archives/lodopab",
         manual_url="https://zenodo.org/records/3384092",
         licence="CC-BY",
-        needed_for="Week 7 - ALREADY DOWNLOADED, see Documentation/data_access.md",
+        needed_for="Week 7 - ALREADY DOWNLOADED, see T2.1 Appendix A",
         approx_mb=19100,
     ),
     Resource(
@@ -164,7 +164,7 @@ RESOURCES: list[Resource] = [
         dest="data/archives/totalsegmentator",
         manual_url="https://zenodo.org/records/10047292",
         licence="CC-BY-4.0",
-        needed_for="Week 7 - ALREADY DOWNLOADED, see Documentation/data_access.md and D-013",
+        needed_for="Week 7 - ALREADY DOWNLOADED, see T2.1 Appendix A, D-013",
         approx_mb=23600,
     ),
 ]

@@ -84,7 +84,7 @@ def test_multicoil_volume_is_reduced_by_root_sum_of_squares(tmp_path):
 def test_a_volume_without_kspace_fails_loudly(tmp_path):
     """A dataset of finished images cannot support this project.
 
-    See Documentation/data_access.md section 1.
+    See Documentation/T2.1_data_and_operator_pipeline.md Appendix A.1.
     """
     path = tmp_path / "images_only.h5"
     with h5py.File(path, "w") as fh:

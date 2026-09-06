@@ -5,7 +5,8 @@
 # Week 4; this config exists to get the full path from raw k-space to a
 # validated score bank working on a single setting first.
 #
-# Requires fastMRI access — see Documentation/data_access.md.
+# Requires fastMRI access — see Documentation/T2.1_data_and_operator_pipeline.md
+# Appendix A.
 
 include: base
 
