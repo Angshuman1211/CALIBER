@@ -120,11 +120,15 @@ the 199 volumes carry fastMRI+ annotations; 44 do not. The loader reads them unc
 
 `knee_singlecoil_test` was also downloaded, and is **unusable** - see P-13.
 
-*Not settled.* The transfer was staged through Kaggle rather than the 6 GB
-laptop. The NYU agreement forbids third-party redistribution, and it is not
-established that staging through another account is compatible with the terms
-signed. If it is not, the data is unusable for a reported result no matter how
-well the pipeline works. This needs a real answer, not an assumption.
+*Now settled too.* The licensing question is answered: the download links were
+**NYU's own, emailed after approval** — not a Kaggle mirror and not third-party
+redistribution. The clause that would have made this data unreportable is not
+engaged. `singlecoil_val` is the reported MRI substrate, and M4Raw reverts to
+being what D-015 scoped it as: a development stopgap, not the lawful fallback.
+
+**This problem is closed.** See D-017. The one licensing clause still live is at
+release, not now: §6 forbids redistributing images, so the O7 release ships code,
+configs and score banks only.
 
 ---
 
@@ -206,6 +210,11 @@ before groups starve (D10, Tool 1). The train split was deliberately not downloa
 
 ### P-14 - The disk is full, and the archives are the reason
 
+> **Partly reclaimed.** `knee_singlecoil_val.tar` was deleted after a second full
+> verification pass (199/199 volumes opened and read). Free space went 99 MB -> 16 GB,
+> which is enough for the first score banks. The CT archives below are still reclaimable
+> and still not needed.
+
 **See:** P-10, D-017
 
 Extracting `singlecoil_val` took the 215 GB volume to **99 MB free**. The 19.4 GB of
@@ -218,7 +227,7 @@ how safe each one is:
 
 | candidate | size | why it is safe |
 |---|---|---|
-| `data/knee_singlecoil_val.tar` | 16.0 GB | fully extracted and verified |
+| ~~`data/knee_singlecoil_val.tar`~~ | ~~16.0 GB~~ | **deleted** after re-verifying all 199 volumes — 16 GB reclaimed |
 | `data/raw/fastmri/singlecoil_test/` | 1.4 GB | unusable, P-13 |
 | `data/knee_singlecoil_test.tar` | 1.46 GB | unusable, P-13 |
 | `data/archives/lodopab/observation_*.zip` | ~40 GB | not needed, D-005 |

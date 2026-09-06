@@ -16,7 +16,7 @@ Everything scriptable is fetched by `python scripts/fetch_data.py --all`
 
 | Resource | Ref | Needed by | Access | Status |
 |---|---|---|---|---|
-| fastMRI raw k-space (`singlecoil_val`) | [28] | **Week 3** | Application + approval | ☑ downloaded ☑ extracted ☑ verified — 199 volumes / 7,135 slices / 19.4 GB · licensing check open, D-017 |
+| fastMRI raw k-space (`singlecoil_val`) | [28] | **Week 3** | Application + approval | ☑ downloaded ☑ extracted ☑ verified — 199 volumes / 7,135 slices / 19.4 GB · **reportable**, D-017 resolved |
 | fastMRI raw k-space (`singlecoil_test`) | [28] | — | Application + approval | ☑ downloaded · **unusable**, P-13 — pre-undersampled at R=8, no ground truth |
 | fastMRI raw k-space (`singlecoil_train`) | [28] | — | Application + approval | ☐ **not downloaded, not needed** — 72.7 GB; no config references it and the project trains nothing |
 | fastMRI+ pathology annotations | [29] | Week 3 | Public GitHub | ☑ downloaded (969 files, 16,154 boxes) · 155 of the 199 val volumes annotated |

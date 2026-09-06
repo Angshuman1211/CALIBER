@@ -522,7 +522,22 @@ as the data — confirm before use, and certainly before the open-source release
 ---
 
 ## D-017 · fastMRI acquired by direct download, staged off-machine
-**Date:** Week 1 · **Status:** ACCEPTED — one check outstanding · **Proposed by:** Track 2
+**Date:** Week 1 · **Status:** RESOLVED (Week 1 close-out) · **Proposed by:** Track 2
+
+> **Resolution.** The outstanding check is answered: the download links were **NYU's own,
+> emailed after they approved the application** — not a Kaggle mirror or any third-party
+> redistribution. The agreement's redistribution clause is therefore not engaged, and
+> results computed on `singlecoil_val` are reportable. `singlecoil_val` is extracted,
+> verified (199 volumes / 7,135 slices), and is the reported MRI substrate; M4Raw reverts
+> to what D-015 always scoped it as — a development stopgap, not the lawful fallback.
+>
+> The archive was deleted after verification to reclaim 16 GB (P-14). The extracted data
+> is intact; re-obtaining the tar means requesting fresh links from NYU, since the emailed
+> ones are time-limited.
+>
+> One clause still binds at release: §6 — fastMRI forbids redistribution, so the O7
+> open-source release ships code, configs and score banks, never images. Confirm before
+> Week 12 that derived score banks are within terms.
 
 Download links for fastMRI were obtained and the transfer is running on Kaggle
 rather than on the 6 GB laptop. The local disk has ~30 GB free against a 7 GB
