@@ -19,7 +19,7 @@ Three rules shape the schema, and each exists to prevent re-running GPU work:
 
 Long format: one row per (item, operator, solver, region). Bumping
 ``SCHEMA_VERSION`` is a cross-track decision and must be recorded in
-``Documentation/T2_problems_and_decisions.md`` (Part II).
+``Documentation/decision_log.md``.
 """
 
 from __future__ import annotations

@@ -100,13 +100,16 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | File | Owner | What |
 |---|---|---|
 | `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D34`, open questions, cross-track contracts |
-| `T2_problems_and_decisions.md` | Track 2 / cross-track | Track 2's problems (`P-01`…`P-14`) **and** the cross-track decision log (`D-001`…`D-028`) with the adjudication process |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-028` |
+| `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
+| `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
+| `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-14`) plus an index of every decision |
 | `T1.1_score_design.md` | Track 1 | Operator-aware score design |
 | `T1.2_shift_robust_calibration.md` | Track 1 | The three calibration tools, what they control, and what they refuse |
 | `T1.3_operator_distance_formulation.md` | Track 1 | The locked operator-distance measure and why |
 | `T1.5_cross_track_integration.md` | Track 1 | Shared interfaces, sign-off record, contracts, adjudication log |
 | `T1.6_analysis_and_course_correction.md` | Track 1 | Phase gate reviews — all three fronts against the central claim, one section per checkpoint |
-| `T2.1_data_and_operator_pipeline.md` | Track 2 | Week 1 record, plus the data-access provenance (App. A), the operator-registry and score-bank specs (App. B, C), and the Week 1 sign-off packet (App. D) |
+| `T2.1_data_and_operator_pipeline.md` | Track 2 | Week 1 record — what was built, the numbers, honest limitations — plus dataset provenance, licensing and download (App. A) |
 | `T3.1`–`T3.3_*.md` | Track 3 | Formal review, distance candidates, L1 stability result |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.

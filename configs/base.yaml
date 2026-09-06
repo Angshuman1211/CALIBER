@@ -27,7 +27,6 @@ calibration:
 
 distance:
   # Primary operator-distance measure. Locked in Week 3 (T1.3); until then this
-  # is the working default and any change goes in
-  # Documentation/T2_problems_and_decisions.md (Part II).
+  # is the working default and any change goes in Documentation/decision_log.md.
   measure: null_space_projection
   normalise: ambient
