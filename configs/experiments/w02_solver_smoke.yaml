@@ -1,0 +1,59 @@
+# First real pretrained back-end end to end — the Week 2 deliverable (T2.2).
+#
+# Everything before this ran on the reference sampler, which invents its
+# hallucinations by construction (D-018: nothing from it is reportable). This is
+# the first config where the free component is produced by an actual generative
+# prior deciding what to put in the null space, which is the thing the project
+# is built to audit.
+#
+#   pip install -e ".[solvers]"
+#   caliber configs/experiments/w02_solver_smoke.yaml
+#
+# DDNM rather than DPS, deliberately: it pins the range component exactly and
+# needs no backward pass, so on this CPU-only machine it costs roughly a third
+# of what DPS does per draw. Swap `name: dps` to compare — the interface is the
+# same, which is the property Week 2 exists to establish.
+#
+# Still not reportable, on three counts, and the manifest records all three:
+#   - the prior is ddpm-celebahq-256, a *face* model (D-016 orders it first,
+#     medical weights later); it is not a plausible prior for anatomy
+#   - M4Raw is a development substrate (0.3 T brain, no pathology annotations)
+#   - the score combination rule is still v0-placeholder (T1.1 WI-3)
+#
+# Compute, measured on this machine (CPU-only torch, ~0.6 s per UNet forward at
+# 128^2): one draw at 24 steps is ~15 s, so 4 draws x 6 items x 2 operators is
+# roughly 25 minutes. Raise `n_steps` before raising the operator grid — the fit
+# improves with steps (measured: DDNM data-consistency error 0.089 -> 0.020
+# going from 8 to 48 steps), and a coarse sampler makes every score noisier.
+
+include: base
+
+experiment:
+  name: w02_solver_smoke
+  solver:
+    name: ddnm
+    checkpoint: checkpoints/ddpm-celebahq-256
+    n_steps: 24
+  n_posterior: 4
+  operators:
+    # Two operators only. This config exists to prove the back-end runs inside
+    # the real pipeline, not to measure anything — the grid comes in Week 4,
+    # once the cost per draw is known.
+    - modality: mri
+      family: random1d
+      acceleration: [4, 8]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [128, 128]
+  dataset:
+    name: m4raw
+    root: data/raw/m4raw
+    split: calib
+    image_shape: [128, 128]
+    slices_per_volume: 1
+
+run:
+  limit: 6
+  cache_reconstructions: 2

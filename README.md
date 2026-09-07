@@ -132,7 +132,7 @@ Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent 
 | **Calibration** | All three tools — naive baseline, group-conditional backbone, operator-distance weighted — with thin-group refusal and effective-sample-size tracking |
 | **Analytical result** | Coverage gap bounded by a single distributional distance — a checked consequence of the non-exchangeable conformal analysis — with the reduction to operator distance drafted |
 | **Substrates** | fastMRI+ annotations parsed (16,154 boxes); M4Raw verified end to end on real k-space; LoDoPaB CT running end to end |
-| **Engineering** | 80 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
+| **Engineering** | 165 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
 
 ---
 
@@ -165,11 +165,11 @@ Owns the reconstruction and evaluation infrastructure, and carries the study int
 | Task | Deliverable | Status |
 |------|-------------|--------|
 | **T2.1** Data and operator pipeline | Dataset access, preprocessing, and reproducible generation of acquisition operators across both modalities | **Delivered** — both modalities, seeded registry, health checks, annotations parsed |
-| **T2.2** Solver integration | Configured, verified pretrained reconstruction back-ends behind the common interface | **In progress** — interface fixed and reference samplers running; pretrained back-ends next |
+| **T2.2** Solver integration | Configured, verified pretrained reconstruction back-ends behind the common interface | **Delivered** — DPS, DDNM and FlowDPS across two families, one config word apart; Stage-2 split measured on their output |
 | **T2.3** Score-bank production | Cached reconstructions and non-conformity scores across the full operator grid | **Delivered (v0)** — schema + validator; banks produced on phantom, M4Raw and LoDoPaB |
 | **T2.4** Evaluation harness | Coverage, efficiency, and region-level detection utilities with automated logging | **Delivered** — coverage, flag area, region FDR/power, ESS, coverage gap |
 | **T2.5** Cross-domain experiments | Execution of the protocol in the second modality and the supporting appendix domain | **In progress** — CT path runs end to end; projector fix (D-012) precedes reported curves |
-| **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | Not started — needs T2.2; **Phase 1's last open artefact** |
+| **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | Not started — unblocked by T2.2; **Phase 1's last open artefact** |
 | **T2.7** Figures and packaging | Visualisations, reproducibility package, and experimental-setup write-ups | Not started |
 
 ### Track 3 — Analytical Foundations and Numerical Verification

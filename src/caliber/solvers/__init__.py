@@ -5,6 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from .base import PosteriorSampler, SolverInfo
+from .denoiser import (
+    AnalyticDenoiser,
+    Denoiser,
+    DiffusersUNetDenoiser,
+    NoiseSchedule,
+)
 from .diffusion import DDNMSampler, DPSSampler
 from .flow import FlowDPSSampler
 from .reference import NullSpaceNoiseSampler, PseudoInverseSampler
@@ -31,9 +37,13 @@ def build_solver(spec: str | dict[str, Any]) -> PosteriorSampler:
 
 __all__ = [
     "SOLVERS",
+    "AnalyticDenoiser",
     "DDNMSampler",
     "DPSSampler",
+    "Denoiser",
+    "DiffusersUNetDenoiser",
     "FlowDPSSampler",
+    "NoiseSchedule",
     "NullSpaceNoiseSampler",
     "PosteriorSampler",
     "PseudoInverseSampler",

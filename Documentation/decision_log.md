@@ -990,6 +990,154 @@ coverage figures should not be cited until they are regenerated.
 
 ---
 
+## D-029 · Solver algorithms are separated from the network that drives them
+**Date:** Week 2 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+The three back-ends (DPS, DDNM, FlowDPS) are implemented against a small `Denoiser`
+interface — `predict_noise(x, t)` — rather than against `diffusers` directly. A
+`DiffusersUNetDenoiser` adapter loads the real checkpoint; an `AnalyticDenoiser` provides
+a closed-form stand-in.
+
+*Alternative:* call `diffusers` inside each sampler, which is shorter.
+
+*Reason:* three things become possible that otherwise are not. The sampling algorithms
+are unit-testable in **1.6 s on CPU** with no checkpoint and no GPU — which matters
+because the torch build on this machine is CPU-only and one real 100-step draw at 128²
+costs about a minute, so a test suite that needed the real prior would not be run.
+Swapping the prior (D-016: natural-image now, medical later) touches one adapter rather
+than three samplers. And the determinism `solvers/base.py` promises can be *asserted*
+bitwise, because a deterministic test double makes the comparison meaningful.
+
+*Cost:* one more indirection, and the analytic denoiser is not an image prior — it tests
+arithmetic and contracts, never reconstruction quality. Quality still needs the real
+checkpoint and a human looking at pictures.
+
+*Affects:* T2.2, T2.3, Week 10 ablation, D-016.
+
+---
+
+## D-030 · The flow-matching family uses diffusion-derived velocities, not a FlowDPS checkpoint
+**Date:** Week 2 · **Status:** ACCEPTED — scope limitation, must appear in the write-up · **Proposed by:** Track 2
+
+The Week 2 card asks for a second solver family "to establish solver-agnosticism early".
+No public flow-matching checkpoint is available here and the project trains nothing
+(Sec. 17). What is implemented is FlowDPS's **sampling dynamics** — a deterministic
+rectified-flow ODE with per-step range replacement — driven by a velocity field derived
+from the available diffusion checkpoint via the standard probability-flow correspondence
+(matched SNR gives, for each flow time `s`, an index `t` and scale `c` with `x_t = c·x_s`;
+`v = eps − x0`).
+
+*What this is sufficient for:* the Week 2 deliverable and the Week 10 solver ablation.
+Both need two families whose **dynamics genuinely differ** behind one interface —
+stochastic ancestral sampling with per-step noise against deterministic ODE integration —
+because that is the axis the ablation probes. Their posterior spread arises by different
+mechanisms: FlowDPS's spread comes *entirely* from its initial noise.
+
+*What it is not sufficient for:* claiming the project reproduced FlowDPS [26]. It did
+not. The manuscript must say "flow-matching sampling dynamics on a diffusion-derived
+velocity field", not "FlowDPS".
+
+*Alternative rejected:* leaving the second family stubbed until a checkpoint appears —
+which would push the solver-agnosticism check to Week 10, exactly what the card warns
+against.
+
+*Affects:* T2.2, T2.5, Week 10 ablation, O7 manuscript wording.
+
+---
+
+## D-031 · Guidance strength is a fixed solver constant, never tuned per operator
+**Date:** Week 2 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+DPS's guidance step size is set once (`DEFAULT_STEP_SIZE = 5.0`, measured) and held fixed
+across every operator in every curve.
+
+*Reason:* Sec. 13 requires the acquisition operator to be the only quantity that varies
+within a coverage curve. Re-tuning guidance strength at each acceleration would make
+reconstruction quality depend on the operator through **two** paths at once, and the
+coverage gap could no longer be attributed to the acquisition — the same class of
+confound as D-028, where an artefact that varied with the operator masqueraded as a
+finding.
+
+*The value, measured* on the analytic denoiser at 32², R=4, 50 steps — data-consistency
+error against step size:
+
+| step size | 0.5 | 2 | **5** | 10 | 20 | 50 |
+|---|---|---|---|---|---|---|
+| dc error | 0.94 | 0.60 | **0.053** | 0.16 | 0.31 | 0.76 |
+
+A clean minimum: too small and the soft constraint never bites, too large and it
+overshoots the prior.
+
+*Cost:* the value is **not transferable between priors** and must be re-measured when
+medical weights land (D-016). Re-measuring is legitimate; re-measuring *per operator* is
+not.
+
+*Affects:* T2.2, T1.4 protocol, Weeks 4 and 10, D-028.
+
+---
+
+## D-032 · Stage-2 decomposition diagnostics are a run artefact, not score-bank columns
+**Date:** Week 2 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+The range/null-space audit (`operators/decomposition.py`,
+`scripts/stage2_decomposition.py`) writes its own JSON under `runs/stage2/`. It adds no
+column to the score bank.
+
+*Alternative:* six more columns — the energy, error and spread splits — on every bank
+row. They are cheap to compute and every consumer would have them for free.
+
+*Reason:* the schema is a cross-track contract (`score_bank_spec.md` §6), and its stated
+rule is that a bank row carries **evidence about an item**: score components, error
+magnitudes, provenance. These are diagnostics about *the pipeline* — whether the
+projector is orthogonal, whether the solver converged — and they are per (operator,
+solver), not per region. Putting them in the bank would mean every consumer joins past
+six columns that are constant across every row of a run, and a schema addition that
+Track 1 and Track 3 did not ask for.
+
+*Cost:* an analysis that wants both has to read two files. Accepted: the audit is a
+pre-flight check, and pre-flight checks that live inside the artefact they are checking
+are worth less.
+
+*Affects:* T2.2, T2.3, `score_bank_spec.md`, D-021.
+
+---
+
+## D-033 · The null-error share is a per-solver step-budget precondition on a bank
+**Date:** Week 2 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+Before a score bank is produced with a given (solver, step count), the Stage-2 audit must
+show reconstruction error concentrated in the **null** component —
+`null_error_share > 0.5`, and in practice far above it. A solver that fails this is not
+producing hallucinations to be scored; it is producing an unconverged fit.
+
+*Reason:* `s_free` and `err_free` both score the free component on the premise that what
+a reconstruction gets wrong is what the operator could not see. That premise is a
+*property of the solver's convergence*, not an identity, and until this week nothing
+checked it. Measured (analytic denoiser, 32², R=4, null share of the error):
+
+| DPS steps | 8 | 24 | **48** | 100 | 200 |
+|---|---|---|---|---|---|
+| null-error share | 0.20 | 0.50 | **0.99** | 0.99 | 0.99 |
+| data-consistency error | 0.71 | 0.36 | **0.038** | 0.039 | 0.036 |
+
+At 8 steps DPS's error is **range-dominated**: four fifths of it sits in the component
+the measurements pin down. Scoring the free component of that output measures the step
+count, not the prior's invention. DDNM and FlowDPS replace the range component
+structurally and are at 0.983 and 0.968 by 8 steps, so the requirement binds per family —
+which is the point. It is a *per-solver* precondition, not a global constant.
+
+*Alternative:* gate it inside the runner and refuse to write the bank. Rejected for now:
+the check needs ground truth, which is available under retrospective undersampling but
+not in general, and a hard gate on a threshold measured on one denoiser at one image size
+is more confidence than the number has earned.
+
+*Cost:* DPS needs roughly 6× DDNM's step budget to be admissible, which on a CPU-only
+machine (P-16) is most of the reason the Week 4 grid will run DDNM.
+
+*Affects:* T2.2, T2.3, T1.4 protocol, Week 4 grid sizing, D-031, P-16.
+
+---
+
 ## Template
 
 ```

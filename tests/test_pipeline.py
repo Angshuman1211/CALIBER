@@ -123,11 +123,18 @@ def test_phantom_dataset_is_deterministic():
     assert a[2].annotation is not None
 
 
-def test_unwired_solvers_fail_loudly_not_silently():
+def test_solvers_without_weights_fail_loudly_not_silently():
+    """All three back-ends are wired now (T2.2); what they still refuse is running blind.
+
+    Until Week 2 this asserted ``NotImplementedError``. The algorithms exist, so the
+    remaining failure mode is being asked to sample with no prior configured, and that
+    has to stay loud: a solver that quietly returned something plausible without weights
+    would put unreportable draws into a bank that carries no mark of it (D-018).
+    """
     op = MRIUndersamplingOperator(SHAPE, acceleration=4)
     y = op.forward(torch.rand(*SHAPE))
     for name in ("dps", "ddnm", "flowdps"):
-        with pytest.raises(NotImplementedError, match="Week 2"):
+        with pytest.raises(ValueError, match="checkpoint"):
             build_solver(name).sample(y, op, n_samples=1)
 
 
