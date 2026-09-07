@@ -1076,6 +1076,68 @@ not.
 
 ---
 
+## D-032 · Stage-2 decomposition diagnostics are a run artefact, not score-bank columns
+**Date:** Week 2 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+The range/null-space audit (`operators/decomposition.py`,
+`scripts/stage2_decomposition.py`) writes its own JSON under `runs/stage2/`. It adds no
+column to the score bank.
+
+*Alternative:* six more columns — the energy, error and spread splits — on every bank
+row. They are cheap to compute and every consumer would have them for free.
+
+*Reason:* the schema is a cross-track contract (`score_bank_spec.md` §6), and its stated
+rule is that a bank row carries **evidence about an item**: score components, error
+magnitudes, provenance. These are diagnostics about *the pipeline* — whether the
+projector is orthogonal, whether the solver converged — and they are per (operator,
+solver), not per region. Putting them in the bank would mean every consumer joins past
+six columns that are constant across every row of a run, and a schema addition that
+Track 1 and Track 3 did not ask for.
+
+*Cost:* an analysis that wants both has to read two files. Accepted: the audit is a
+pre-flight check, and pre-flight checks that live inside the artefact they are checking
+are worth less.
+
+*Affects:* T2.2, T2.3, `score_bank_spec.md`, D-021.
+
+---
+
+## D-033 · The null-error share is a per-solver step-budget precondition on a bank
+**Date:** Week 2 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+Before a score bank is produced with a given (solver, step count), the Stage-2 audit must
+show reconstruction error concentrated in the **null** component —
+`null_error_share > 0.5`, and in practice far above it. A solver that fails this is not
+producing hallucinations to be scored; it is producing an unconverged fit.
+
+*Reason:* `s_free` and `err_free` both score the free component on the premise that what
+a reconstruction gets wrong is what the operator could not see. That premise is a
+*property of the solver's convergence*, not an identity, and until this week nothing
+checked it. Measured (analytic denoiser, 32², R=4, null share of the error):
+
+| DPS steps | 8 | 24 | **48** | 100 | 200 |
+|---|---|---|---|---|---|
+| null-error share | 0.20 | 0.50 | **0.99** | 0.99 | 0.99 |
+| data-consistency error | 0.71 | 0.36 | **0.038** | 0.039 | 0.036 |
+
+At 8 steps DPS's error is **range-dominated**: four fifths of it sits in the component
+the measurements pin down. Scoring the free component of that output measures the step
+count, not the prior's invention. DDNM and FlowDPS replace the range component
+structurally and are at 0.983 and 0.968 by 8 steps, so the requirement binds per family —
+which is the point. It is a *per-solver* precondition, not a global constant.
+
+*Alternative:* gate it inside the runner and refuse to write the bank. Rejected for now:
+the check needs ground truth, which is available under retrospective undersampling but
+not in general, and a hard gate on a threshold measured on one denoiser at one image size
+is more confidence than the number has earned.
+
+*Cost:* DPS needs roughly 6× DDNM's step budget to be admissible, which on a CPU-only
+machine (P-16) is most of the reason the Week 4 grid will run DDNM.
+
+*Affects:* T2.2, T2.3, T1.4 protocol, Week 4 grid sizing, D-031, P-16.
+
+---
+
 ## Template
 
 ```

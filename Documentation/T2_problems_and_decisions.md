@@ -491,6 +491,41 @@ enforced.
 
 ---
 
+#### P-17 - Below its step budget, DPS's error is in the component it cannot be in
+
+**Found and quantified** - **See:** D-033, D-031, P-16
+
+The Week 2 Stage-2 audit was written to confirm something the scoring layer had
+been assuming since Week 1: that reconstruction error lands in the null space.
+`s_free` scores the free component, `err_free` labels it, and both are only
+measuring invented structure if what the solver gets wrong is what the operator
+could not see.
+
+For DDNM and FlowDPS it holds immediately — both replace the range component of
+every estimate, so at 8 steps the null share of their error is already 0.98 and
+0.97. **DPS at 8 steps is 0.20.** Four fifths of its error sits in the measured
+component: the sampler has not fitted the data yet, so scoring its free
+component measures the step count rather than the prior.
+
+| DPS steps | 8 | 24 | 48 | 100 | 200 |
+|---|---|---|---|---|---|
+| null share of error | 0.20 | 0.50 | **0.99** | 0.99 | 0.99 |
+| data-consistency error | 0.71 | 0.36 | **0.038** | 0.039 | 0.036 |
+
+Nothing was broken — DPS is a soft constraint and this is what a soft constraint
+does before it converges. What was wrong was that no gate existed, so a DPS bank
+at the smoke config's 24 steps would have looked exactly like a valid one. The
+threshold is now written down as a precondition (D-033) and the audit script
+warns when a run fails it.
+
+Two consequences. The step budget is **per solver family**, not a global config
+constant, so the two families are not comparable at equal `n_steps` — which the
+Week 10 solver ablation has to hold fixed correctly or it will be measuring
+convergence. And DPS needing ~6x DDNM's budget, on top of its backward pass per
+step, is most of why the Week 4 grid will be DDNM (P-16).
+
+---
+
 ### Adding an entry
 
 Number sequentially, state the symptom before the cause, and say plainly
@@ -508,7 +543,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 31 entries, so a problem in Part I can be
+What lives here instead is the index — 33 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -544,3 +579,5 @@ traced to the decision that settled it without opening the log.
 | [D-029](decision_log.md) | Solver algorithms are separated from the network that drives them | Week 2 | ACCEPTED |
 | [D-030](decision_log.md) | The flow-matching family uses diffusion-derived velocities, not a FlowDPS checkpoint | Week 2 | ACCEPTED — scope limitation, must appear in the write-up |
 | [D-031](decision_log.md) | Guidance strength is a fixed solver constant, never tuned per operator | Week 2 | ACCEPTED |
+| [D-032](decision_log.md) | Stage-2 decomposition diagnostics are a run artefact, not score-bank columns | Week 2 | ACCEPTED |
+| [D-033](decision_log.md) | The null-error share is a per-solver step-budget precondition on a bank | Week 2 | ACCEPTED |
