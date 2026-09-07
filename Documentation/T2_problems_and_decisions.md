@@ -39,11 +39,29 @@ than a smooth phantom, so the whole `err_free` distribution shifts up: M4Raw's
 1st percentile (0.116) already clears a threshold set at 0.10. The constant had
 been calibrated against phantoms without anyone deciding that it had been.
 
-**Where it stands:** open, needs the Week 2 O2 decision from Track 1. What can
-be stated already is that the criterion cannot be a shared absolute constant -
-it fails to transfer across modalities *and* across substrates within one
-modality. It has to be relative: a quantile, a per-item normalisation, or a
-definition where the positive rate is controlled rather than observed.
+**Where it stands:** the relative criterion agreed at the Week 1 sign-off is now
+**implemented and measured** (D-034), and what remains is Track 1's choice of
+tau, not a missing component. Until Week 2 the form had been agreed and the
+denominator column (`free_content`) written, but the only criterion anything
+could actually apply was still the broken absolute one.
+
+Measured on the 384-region real-prior bank, the relative form does what the
+absolute one cannot - it separates:
+
+| tau | 1.00 | 1.25 | 1.50 | 1.75 | 2.00 | 2.50 |
+|---|---|---|---|---|---|---|
+| positive rate | 100% | 92.4% | 60.2% | 25.5% | 10.7% | 0.8% |
+
+against a flat 100% for `err_free > 0.10`. A usable operating range is roughly
+tau 1.75-2.0. Two cautions travel with it: the ratio exceeds 1 in *every*
+region, which is a face prior on brain anatomy showing through as much as it is
+a criterion; and the median ratio rises with acceleration (1.480 at R=4, 1.645
+at R=8), so a single global tau is not operator-neutral and may have to be set
+per calibration group.
+
+What was already established stands: the criterion cannot be a shared absolute
+constant - it fails to transfer across modalities *and* across substrates within
+one modality.
 
 **Not a pipeline failure.** At `err_free > 0.25` the central phenomenon
 reproduces on real k-space for the first time - naive transfer holds 0.944
@@ -543,7 +561,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 33 entries, so a problem in Part I can be
+What lives here instead is the index — 34 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -581,3 +599,4 @@ traced to the decision that settled it without opening the log.
 | [D-031](decision_log.md) | Guidance strength is a fixed solver constant, never tuned per operator | Week 2 | ACCEPTED |
 | [D-032](decision_log.md) | Stage-2 decomposition diagnostics are a run artefact, not score-bank columns | Week 2 | ACCEPTED |
 | [D-033](decision_log.md) | The null-error share is a per-solver step-budget precondition on a bank | Week 2 | ACCEPTED |
+| [D-034](decision_log.md) | Relative criterion implemented and its tau curve measured; tau stays Track 1's | Week 2 | ACCEPTED — Track 2's half discharged |

@@ -517,6 +517,19 @@ fastMRI-derived, so the NYU agreement plausibly reaches the checkpoint as well
 as the data — confirm before use, and certainly before the open-source release
 (O7).
 
+*Searched, Week 2 — no open substitute exists.* The Hugging Face Hub was searched for an
+openly-licensed medical MRI diffusion/score prior that could replace the Google Drive
+dependency. There is none. What the Hub carries for fastMRI is **end-to-end reconstruction
+networks** (VarNet, CIRIM, MoDL, KIKI-net, UNet — the `wdika/REC_*` and
+`zaccharieramzi/*` families), which are the wrong object twice over: they are
+deterministic reconstructors rather than generative priors, so they cannot be driven as
+black-box posterior samplers at all, and they are trained *at fixed 4x/8x undersampling*,
+which bakes in the acquisition operator that this project requires to be the free
+variable. The generic "medical diffusion" results are text-to-image X-ray LoRAs and
+hobby repos with single-digit downloads and no provenance. So D-016's deferral is not a
+matter of not having looked: Song et al. remains the reference option, with its licensing
+question unresolved.
+
 *Affects:* T2.2, T2.5, O7, Weeks 2, 10, 12.
 
 ---
@@ -1041,7 +1054,24 @@ velocity field", not "FlowDPS".
 which would push the solver-agnosticism check to Week 10, exactly what the card warns
 against.
 
-*Affects:* T2.2, T2.5, Week 10 ablation, O7 manuscript wording.
+*Searched, Week 2 — the gap is real, not unexamined.* The reference implementation is
+<https://github.com/FlowDPS-Inverse/FlowDPS>, which runs on **Stable Diffusion 3 / Flux**
+latent flow-matching backbones. Neither is viable here on two independent counts: each is
+well over 10 GB against 16 GB free on the working disk (P-14), and on CPU-only torch at
+~0.6 s per 128² UNet forward (P-16) a backbone of that size is minutes per step, not per
+draw. The Hub was also searched for a small unconditional flow-matching image prior that
+would fit. The only two candidates are `Dinghuai/flow-matching-cifar10` (38.4 M params,
+but **32x32** — it cannot reconstruct the 128²/256² slices the pipeline runs at) and
+`sunnycloudhust/CelebA-flow-matching` (no model card, no parameter count, a bespoke
+non-`diffusers` format, 12 downloads, no paper). Adopting the latter would trade a
+documented approximation for an undocumented checkpoint of unknown training — worse
+science, not better. **The deferral stands, and now stands on evidence.**
+
+*How it closes:* a GPU with the disk to hold SD3, i.e. the same hardware decision P-16
+forces for Weeks 3-4. If that machine appears, running true FlowDPS is a config change,
+because the interface it would plug into is already built and tested.
+
+*Affects:* T2.2, T2.5, Week 10 ablation, O7 manuscript wording, P-14, P-16.
 
 ---
 
@@ -1135,6 +1165,51 @@ is more confidence than the number has earned.
 machine (P-16) is most of the reason the Week 4 grid will run DDNM.
 
 *Affects:* T2.2, T2.3, T1.4 protocol, Week 4 grid sizing, D-031, P-16.
+
+---
+
+## D-034 · The relative criterion is implemented and its tau curve measured; tau stays Track 1's
+**Date:** Week 2 · **Status:** ACCEPTED — Track 2's half discharged, awaiting Track 1's tau
+**Proposed by:** Track 2
+
+`label_hallucinated(..., relative=True)` implements the criterion form agreed at the Week 1
+sign-off (A1 / D21): `err_free / free_content > tau`. `scripts/criterion_sweep.py` reports
+the positive rate against tau from a cached bank. **Track 2 does not pick tau.** The
+criterion is O2 and belongs to Track 1; this supplies the curve they said they needed.
+
+*Why now:* the sign-off deferred tau explicitly — "tau is set only after a real prior
+lands (T2.2), and its positive rate is then reported, not targeted". A real prior has now
+landed, so the deferral has expired. Until this week the column existed (`free_content`,
+added Week 1) and the form was agreed, but nothing computed it — the only implemented
+criterion was still the absolute one that P-02 shows is unusable.
+
+*Measured*, on the 384-region DDNM / `ddpm-celebahq-256` / M4Raw bank:
+
+| | |
+|---|---|
+| v0 absolute, `err_free > 0.10` | flags **100.0%** of regions — P-02, on the real prior |
+| ratio `err_free / free_content` | min 1.057 · median 1.558 · max 2.759 |
+
+| tau | 1.00 | 1.25 | **1.50** | **1.75** | **2.00** | 2.50 | 3.00 |
+|---|---|---|---|---|---|---|---|
+| positive rate | 100% | 92.4% | 60.2% | **25.5%** | **10.7%** | 0.8% | 0% |
+
+The relative form **does** separate, where the absolute one does not: the rate moves
+smoothly across 1.25–2.5 instead of pinning at 100%. A usable operating range is roughly
+tau 1.75–2.0.
+
+*Two cautions that belong with the number.* The ratio exceeds 1 in every region — the
+reconstruction always puts more into the free component than the truth had there — which
+is what a face prior on brain anatomy should do, and means tau is measuring a badly
+mismatched prior as much as a criterion. And the median ratio rises with acceleration
+(1.480 at R=4, 1.645 at R=8), so a single global tau is not operator-neutral; if that
+trend survives a medical prior, tau has to be set per calibration group or the criterion
+becomes a proxy for the operator.
+
+*Cost:* the numbers come from a bank that is **not reportable** (D-016, D-015), so tau
+read off it is provisional and must be re-measured when medical weights land.
+
+*Affects:* O2, T1.1, T2.3, P-02, D-020, D21, Weeks 3-4.
 
 ---
 

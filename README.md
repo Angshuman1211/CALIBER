@@ -132,7 +132,7 @@ Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent 
 | **Calibration** | All three tools — naive baseline, group-conditional backbone, operator-distance weighted — with thin-group refusal and effective-sample-size tracking |
 | **Analytical result** | Coverage gap bounded by a single distributional distance — a checked consequence of the non-exchangeable conformal analysis — with the reduction to operator distance drafted |
 | **Substrates** | fastMRI+ annotations parsed (16,154 boxes); M4Raw verified end to end on real k-space; LoDoPaB CT running end to end |
-| **Engineering** | 165 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
+| **Engineering** | 177 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
 
 ---
 

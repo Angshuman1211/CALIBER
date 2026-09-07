@@ -14,11 +14,12 @@
 # of what DPS does per draw. Swap `name: dps` to compare — the interface is the
 # same, which is the property Week 2 exists to establish.
 #
-# Still not reportable, on three counts, and the manifest records all three:
+# Still not reportable, on two counts, and the manifest records both:
 #   - the prior is ddpm-celebahq-256, a *face* model (D-016 orders it first,
 #     medical weights later); it is not a plausible prior for anatomy
 #   - M4Raw is a development substrate (0.3 T brain, no pathology annotations)
-#   - the score combination rule is still v0-placeholder (T1.1 WI-3)
+# The score combination rule used to be a third count; it is not any more --
+# T1.1 ratified it as v1-standardised-affine. Its weights are still unset.
 #
 # Compute, measured on this machine (CPU-only torch, ~0.6 s per UNet forward at
 # 128^2): one draw at 24 steps is ~15 s, so 4 draws x 6 items x 2 operators is
