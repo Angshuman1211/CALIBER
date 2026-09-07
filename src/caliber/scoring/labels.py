@@ -20,6 +20,7 @@ why ``err_free`` is recorded separately from ``err_total``.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import torch
@@ -86,22 +87,83 @@ def compute_region_truth(
     )
 
 
+# Below this much free content a region has essentially nothing the operator
+# cannot see, and `err_free / free_content` is 0/0 — an arbitrarily large ratio
+# from an empty patch of background. This is a guard against a degenerate
+# denominator, *not* a tuning knob: it excludes regions where the relative
+# criterion has nothing to say, and it must stay far below any real anatomy.
+# Measured on the M4Raw real-prior bank, the smallest region `free_content` is
+# 0.162, so this floor is two orders of magnitude clear of live data.
+MIN_FREE_CONTENT = 1e-3
+
+
 def label_hallucinated(
     truth: RegionTruth,
     threshold: float = 0.10,
     use_free_component: bool = True,
     require_annotation: bool = False,
     annotation_min_coverage: float = 0.10,
+    relative: bool = False,
+    min_free_content: float = MIN_FREE_CONTENT,
 ) -> Tensor:
     """Derive the boolean hallucination label from cached continuous quantities.
 
+    Two forms, and which one carries the headline claim is Track 1's call (O2):
+
+    * **absolute** (default) — ``err_free > threshold``. This is the v0
+      criterion, and D-020 recorded that its threshold transfers neither across
+      modalities nor across substrates within one.
+    * **relative** (``relative=True``) — ``err_free / free_content > threshold``,
+      the form agreed at the Week 1 sign-off (A1 / D21) and the reason
+      ``free_content`` was added to the bank. The denominator is the ground
+      truth's *own* null-space content, so the criterion asks whether the
+      reconstruction put more into the free component than was there to begin
+      with, rather than whether it put in more than some fixed constant. A
+      region of dense anatomy carries large ``err_free`` before any solver runs;
+      dividing by ``free_content`` is what stops that from reading as invention.
+
     ``require_annotation`` restricts positives to clinically annotated regions,
     which is the stricter reading of "does the flag fire where it matters"
-    (Sec. 14). Both readings are reported; which one carries the headline claim
-    is a Week 2 decision to be recorded in the decision log.
+    (Sec. 14). Both readings are reported.
+
+    Note that ``threshold`` means different things in the two modes — an error
+    magnitude in one, a dimensionless ratio in the other — so a value tuned for
+    one is meaningless in the other. There is deliberately no shared default.
     """
     err = truth.err_free if use_free_component else truth.err_total
-    label = err > threshold
+    if relative:
+        content = truth.free_content
+        # Guarded division: regions with no free content to speak of are not
+        # candidates at all, rather than being divided into a large ratio.
+        usable = content > min_free_content
+        ratio = torch.where(usable, err / content.clamp_min(min_free_content),
+                            torch.zeros_like(err))
+        label = (ratio > threshold) & usable
+    else:
+        label = err > threshold
     if require_annotation:
         label = label & (truth.ann_coverage >= annotation_min_coverage)
     return label
+
+
+def positive_rate_sweep(
+    err_free: Tensor,
+    free_content: Tensor,
+    thresholds: Sequence[float],
+    min_free_content: float = MIN_FREE_CONTENT,
+) -> list[tuple[float, float]]:
+    """Positive rate of the relative criterion at each candidate ``tau``.
+
+    The Week 1 sign-off fixed the criterion's *form* and deferred ``tau`` until a
+    real prior existed (T2.2), with its positive rate to be **reported, not
+    targeted**. This is that report: Track 2 supplies the curve, Track 1 picks
+    the point on it.
+
+    Returns ``[(tau, positive_rate), ...]`` over regions with usable free
+    content.
+    """
+    usable = free_content > min_free_content
+    if not bool(usable.any()):
+        raise ValueError("no region has enough free content to apply the relative criterion")
+    ratio = err_free[usable] / free_content[usable]
+    return [(float(t), float((ratio > t).to(torch.float32).mean())) for t in thresholds]
