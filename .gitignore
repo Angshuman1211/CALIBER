@@ -11,7 +11,13 @@ external/
 # will otherwise try to hash a 30 GB zip and hang. See
 # Documentation/data_access.md.
 # The whole tree is ignored: data/ carries no README of its own (D-025).
-data/
+#
+# ANCHORED with a leading slash, and it must stay that way. A trailing slash
+# alone does not anchor a pattern -- `data/` matches a directory called `data`
+# at *any* depth, which silently swallowed `src/caliber/data/splits.py` and
+# shipped a `main` that could not be imported at all (P-20). Only the dataset
+# directory at the repository root belongs here.
+/data/
 
 *.h5
 *.hdf5
