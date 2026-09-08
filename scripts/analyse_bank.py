@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +30,7 @@ from caliber.operators.distance import compute_distance
 from caliber.operators.registry import build_operator
 from caliber.scorebank import read_bank, read_manifest
 from caliber.scoring.labels import RegionTruth, label_hallucinated
+from caliber.scoring.score import ScoreComponents, ScoreScales, ScoreWeights, combine_components
 
 
 def rebuild_operators(manifest: dict) -> dict:
@@ -41,19 +43,38 @@ def rebuild_operators(manifest: dict) -> dict:
     return ops
 
 
-def main() -> int:
+def combination_note(weights: ScoreWeights, scales: ScoreScales) -> str:
+    """One line saying how the score was combined, so a table is never orphaned."""
+    return (
+        f"= {weights.free:.2f}*free/{scales.free:.3g} "
+        f"+ {weights.disagree:.2f}*disagree/{scales.disagree:.3g} "
+        f"+ {weights.residual:.2f}*residual/{scales.residual:.3g}  "
+        "(standardised affine, scales frozen on the calibration operator)"
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Analyse a CALIBER score bank (CPU only)")
     ap.add_argument("bank", help="score-bank directory produced by the runner")
     ap.add_argument("--alpha", type=float, default=0.10, help="target region miss rate")
-    ap.add_argument("--label-threshold", type=float, default=0.10)
+    ap.add_argument(
+        "--label-threshold", type=float, default=0.10,
+        help="err_free > this; with --relative, err_free/free_content > this",
+    )
+    ap.add_argument(
+        "--relative", action="store_true",
+        help="use the relative criterion err_free/free_content > tau (A1/D21, D-034)",
+    )
     ap.add_argument("--calibration-operator", default=None)
     ap.add_argument("--distance", default="null_space_projection")
     ap.add_argument("--normalise", default="ambient")
-    ap.add_argument("--w-free", type=float, default=1.0)
-    ap.add_argument("--w-disagree", type=float, default=1.0)
-    ap.add_argument("--w-residual", type=float, default=1.0)
+    # Weights are non-negative and sum to 1 (D25). Equal thirds is the ratified
+    # default, not a placeholder: standardisation is what makes it meaningful.
+    ap.add_argument("--w-free", type=float, default=1 / 3)
+    ap.add_argument("--w-disagree", type=float, default=1 / 3)
+    ap.add_argument("--w-residual", type=float, default=1 / 3)
     ap.add_argument("--out", default=None, help="write the metric tables here as CSV")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     bank = Path(args.bank)
     df = read_bank(bank)
@@ -68,32 +89,78 @@ def main() -> int:
             "pipeline; none of them may appear in the write-up."
         )
 
-    # Score and label are both derived here, from cached components. Changing
-    # either costs nothing — no reconstruction is repeated.
-    df["score"] = (
-        args.w_free * df["s_free"]
-        + args.w_disagree * df["s_disagree"]
-        + args.w_residual * df["s_residual"]
-    )
-    truth = RegionTruth(
-        err_total=torch.tensor(df["err_total"].to_numpy()),
-        err_free=torch.tensor(df["err_free"].to_numpy()),
-        ann_coverage=torch.tensor(df["ann_coverage"].to_numpy()),
-    )
-    df["label"] = label_hallucinated(truth, threshold=args.label_threshold).numpy()
-    print(
-        f"[analyse] {int(df['label'].sum()):,} hallucinated regions "
-        f"({df['label'].mean():.1%} of all regions) at err_free > {args.label_threshold}"
-    )
-    if df["label"].sum() == 0:
-        print("[analyse] no positive regions — lower --label-threshold")
-        return 1
-
     nominal = 1.0 - args.alpha
     calib_op = args.calibration_operator or sorted(df["operator_id"].unique())[0]
     print(f"[analyse] calibration operator: {calib_op}")
 
-    calib = df[df["operator_id"] == calib_op]
+    # Score and label are both derived here, from cached components. Changing
+    # either costs nothing — no reconstruction is repeated.
+    #
+    # The combination is T1.1's ratified standardised affine rule, not a raw
+    # weighted sum. That distinction is not cosmetic: the three components differ
+    # by an order of magnitude, so summing them at 1,1,1 silently reduces the
+    # score to `s_free` (score.py, D26). Scales are estimated on the calibration
+    # operator and then frozen — re-estimating per deployment operator would pull
+    # the score distributions back towards each other and shrink the very
+    # coverage gap this analysis exists to measure (D27).
+    def components_of(frame) -> ScoreComponents:
+        return ScoreComponents(
+            s_free=torch.tensor(frame["s_free"].to_numpy()),
+            s_disagree=torch.tensor(frame["s_disagree"].to_numpy()),
+            s_residual=torch.tensor(frame["s_residual"].to_numpy()),
+            ref_intensity=1.0,
+        )
+
+    weights = ScoreWeights(free=args.w_free, disagree=args.w_disagree, residual=args.w_residual)
+    scales = ScoreScales.from_components(components_of(df[df["operator_id"] == calib_op]))
+    df["score"] = combine_components(components_of(df), weights, scales).numpy()
+    print(f"[analyse] score {combination_note(weights, scales)}")
+
+    truth = RegionTruth(
+        err_total=torch.tensor(df["err_total"].to_numpy()),
+        err_free=torch.tensor(df["err_free"].to_numpy()),
+        free_content=torch.tensor(df["free_content"].to_numpy()),
+        ann_coverage=torch.tensor(df["ann_coverage"].to_numpy()),
+    )
+    df["label"] = label_hallucinated(
+        truth, threshold=args.label_threshold, relative=args.relative
+    ).numpy()
+    rule = "err_free / free_content" if args.relative else "err_free"
+    print(
+        f"[analyse] {int(df['label'].sum()):,} hallucinated regions "
+        f"({df['label'].mean():.1%} of all regions) at {rule} > {args.label_threshold}"
+    )
+    if df["label"].sum() == 0:
+        print("[analyse] no positive regions — lower --label-threshold")
+        return 1
+    if bool(df["label"].all()):
+        print(
+            "[analyse] WARNING  every region is positive, so region FDR carries no "
+            "information. Raise --label-threshold, or use --relative (P-02, D-034).",
+            file=sys.stderr,
+        )
+
+    # Conformal calibration must be out of sample. A bank written with
+    # `split: auto` carries both sides, assigned per patient and identically in
+    # every acquisition regime (D-022, D-027); calibrating and evaluating on the
+    # same rows inflates coverage at the calibration operator specifically, which
+    # is the one number the naive-transfer story is read against.
+    has_split = "split" in df.columns and df["split"].nunique() > 1
+    if has_split:
+        calib = df[(df["operator_id"] == calib_op) & (df["split"] == "calib")]
+        df = df[df["split"] == "test"].copy()
+        print(
+            f"[analyse] held out: {len(calib):,} calibration rows "
+            f"({calib_op}, split=calib) -> {len(df):,} evaluation rows (split=test)"
+        )
+    else:
+        calib = df[df["operator_id"] == calib_op]
+        print(
+            "[analyse] WARNING  bank has a single split, so calibration and evaluation "
+            "share rows and coverage at the calibration operator is in-sample. "
+            "Rebuild with `split: auto` for a held-out number.",
+            file=sys.stderr,
+        )
 
     # 1. Naive transfer — one threshold from the calibration operator, used everywhere.
     tau = split_conformal_threshold(calib["score"], calib["label"], alpha=args.alpha)

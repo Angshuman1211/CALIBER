@@ -32,6 +32,19 @@ class SolverInfo:
     n_steps: int | None = None
     notes: str = ""
 
+    @property
+    def prior_domain(self) -> str:
+        """What the prior was trained on -- "natural_image", "mri", ... (P-18).
+
+        Reportability depends on this and not only on the substrate: a real
+        generative prior trained on the wrong domain passes both of D-018's
+        original gates while still being an inappropriate prior for the images
+        it is reconstructing.
+        """
+        from .denoiser import prior_domain
+
+        return prior_domain(self.checkpoint)
+
     def to_row(self) -> dict[str, Any]:
         return {
             "solver_id": self.solver_id,

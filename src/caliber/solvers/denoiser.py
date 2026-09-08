@@ -200,3 +200,61 @@ class DiffusersUNetDenoiser(Denoiser):
         timestep = torch.full((batched.shape[0],), int(t), device=self.device, dtype=torch.long)
         eps = model(batched, timestep).sample
         return eps.mean(dim=1).to(x.dtype)
+
+
+# -- what the prior was trained on, and whether that fits the modality ---------
+#
+# D-018 made reportability a property of the bank rather than of whoever ran it,
+# and gated it on two things: is the substrate real, and is the sampler a
+# generative prior rather than a reference. Both are necessary. Neither is
+# sufficient, and P-18 is the gap: a *real* prior trained on the *wrong domain*
+# passes both gates. `ddpm-celebahq-256` on fastMRI knees is a face model
+# reconstructing anatomy, which D-016 orders deliberately and which the T2.2
+# write-up lists as a reason nothing is reportable -- but until this existed,
+# nothing in the code knew that, so the first fastMRI bank came out stamped
+# `reportable: true`.
+#
+# The mapping is keyed on the checkpoint basename because that is what travels
+# in `solver_id` and in the manifest.
+PRIOR_DOMAINS: dict[str, str] = {
+    "ddpm-celebahq-256": "natural_image",
+    "ddpm-cifar10-32": "natural_image",
+    "ddpm-church-256": "natural_image",
+    "ddpm-bedroom-256": "natural_image",
+    # Medical priors land here when D-016's outstanding half is closed. Adding a
+    # key is the *whole* change needed to make a bank reportable, which is the
+    # point: it is one deliberate edit, reviewable in a diff.
+}
+
+# Which prior domains are admissible for which modality. Deliberately strict:
+# a domain is admissible for a modality only if the prior was trained on that
+# modality's images.
+ADMISSIBLE_DOMAINS: dict[str, frozenset[str]] = {
+    "mri": frozenset({"mri"}),
+    "ct": frozenset({"ct"}),
+    # The Week 10 natural-image restoration appendix (Sec. 11.1) is the one
+    # place a natural-image prior is the appropriate prior rather than a
+    # stand-in, so there it is admissible.
+    "natural_image": frozenset({"natural_image"}),
+}
+
+UNKNOWN_DOMAIN = "unknown"
+
+
+def prior_domain(checkpoint: str | Path | None) -> str:
+    """What a checkpoint was trained on, from its basename.
+
+    Unrecognised checkpoints return ``"unknown"`` and are treated as *not*
+    admissible by :func:`prior_is_admissible`. Failing closed is the only safe
+    default here: an unknown checkpoint could be anything, and the cost of
+    wrongly stamping a bank reportable is a claim in a manuscript that the data
+    does not support.
+    """
+    if checkpoint is None:
+        return UNKNOWN_DOMAIN
+    return PRIOR_DOMAINS.get(Path(str(checkpoint)).name, UNKNOWN_DOMAIN)
+
+
+def prior_is_admissible(checkpoint: str | Path | None, modality: str) -> bool:
+    """Is this prior an appropriate prior for this modality's images? (P-18)"""
+    return prior_domain(checkpoint) in ADMISSIBLE_DOMAINS.get(modality, frozenset())

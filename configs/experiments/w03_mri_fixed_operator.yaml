@@ -1,25 +1,63 @@
-# Week 3 — first MRI score bank at one fixed acceleration factor.
+# Week 3 — the first MRI score bank on real fastMRI k-space.
 #
-# Deliverable (Week 3 card): "End-to-end pipeline runs on one operator setting,
-# solver held fixed." One operator, one solver, real data. The grid opens up in
-# Week 4; this config exists to get the full path from raw k-space to a
-# validated score bank working on a single setting first.
+# Deliverable (Week 3 card, Track B): "End-to-end pipeline runs on one operator
+# setting, solver held fixed. Two baselines reproduced." The R=4 slice of this
+# bank is that fixed-operator bank; R=2 and R=8 are here because the two
+# baselines are *calibrate-here / deploy-there* comparisons and cannot be
+# computed from a single operator at all. The full grid is Week 4.
 #
-# Requires fastMRI access — see Documentation/T2.1_data_and_operator_pipeline.md
-# Appendix A.
+#   caliber configs/experiments/w03_mri_fixed_operator.yaml
+#   python scripts/analyse_bank.py runs/<run_id> \
+#       --calibration-operator mri.random1d.R2.c0.08.s0
+#
+# NOT REPORTABLE, on one count, and the manifest records it: the prior is
+# `ddpm-celebahq-256`, a face model (D-016). The substrate is real and reportable
+# now (fastMRI, D-017) and the solver is a real generative prior — which is
+# exactly why P-18 had to be fixed before this config was run. Two of the three
+# gates pass, and a bank that passed two of three used to come out stamped
+# `reportable: true`.
+#
+# --- the three choices that are not free ------------------------------------
+#
+# **DDNM, not DPS.** The Week 1 draft of this config said `dps, n_steps: 200`.
+# Measured on this machine that is 195 hours — 8.1 days — because DPS needs a
+# backward pass per step (P-16: CPU only, 1.46 s per UNet forward at 256²).
+# DDNM needs none, and D-033 measured it clearing the free-component premise at
+# 0.997 by 24 steps where DPS is still at 0.495. It is both the cheaper and the
+# better-founded choice here, and Sec. 13 requires it held fixed across the
+# whole curve regardless.
+#
+# **24 steps.** D-033's precondition, not a guess: the null share of DDNM's
+# error is 0.983 at 8 steps and 0.997 at 24. Run
+# `scripts/stage2_decomposition.py` on this config before trusting a bank from a
+# different step count.
+#
+# **256², the checkpoint's native resolution.** 128² would be 4x cheaper and
+# Week 2's M4Raw runs used it, but this is the first bank intended to stand as a
+# result, and running a 256-native prior off-resolution is a caveat worth 3.5
+# hours to avoid.
+#
+# Measured cost: 1.46 s/forward x 24 steps x 4 draws x 30 items x 3 operators
+# = ~3.5 hours.
 
 include: base
 
 experiment:
   name: w03_mri_fixed_operator
   solver:
-    name: dps            # Week 2 deliverable; reference_nullspace until wired
-    n_steps: 200
-  n_posterior: 8
+    name: ddnm
+    checkpoint: checkpoints/ddpm-celebahq-256
+    n_steps: 24
+  n_posterior: 4
   operators:
+    # R=2 is the calibration operator; R=4 and R=8 are the deployment operators
+    # the naive-transfer baseline is supposed to fail on. One mask family and one
+    # seed: the mask seed is a member of a calibration group, not a group of its
+    # own (D-023), and varying it here would spend compute on within-group
+    # variation before the between-group effect has been measured at all.
     - modality: mri
       family: random1d
-      acceleration: 4
+      acceleration: [2, 4, 8]
       center_fraction: 0.08
       mask_seed: 0
 
@@ -34,10 +72,16 @@ data:
     # the calibration/test split (the D-014 hazard, in its fastMRI form).
     root: data/raw/fastmri/singlecoil_val
     annotations_csv: data/annotations/fastmri_plus/knee.csv
-    split: calib
+    # `auto`, not `calib`: conformal calibration needs a *held-out* evaluation
+    # set, and a bank containing only calibration items cannot supply one. The
+    # side is decided per patient (D-022, D-027) and identically in every
+    # acquisition regime, so the same patients sit on the same side at R=2, 4
+    # and 8 — without which a coverage difference between regimes would be
+    # confounded with anatomy rather than attributable to the operator.
+    split: auto
     image_shape: [256, 256]
     slices_per_volume: 1
 
 run:
-  limit: 100
-  cache_reconstructions: 8
+  limit: 30
+  cache_reconstructions: 6
