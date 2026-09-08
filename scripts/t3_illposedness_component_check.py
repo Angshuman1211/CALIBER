@@ -48,8 +48,8 @@ for name, path in [("caliber", "src/caliber"), ("caliber.data", "src/caliber/dat
     sys.modules[name] = m
 
 from caliber.data.synthetic import PhantomDataset  # noqa: E402
-from caliber.operators.mri import MRIUndersamplingOperator  # noqa: E402
 from caliber.operators.distance import null_space_projection_distance  # noqa: E402
+from caliber.operators.mri import MRIUndersamplingOperator  # noqa: E402
 from caliber.scoring.regions import RegionGrid  # noqa: E402
 from caliber.scoring.score import ScoreScales, ScoreWeights, compute_score_components  # noqa: E402
 
@@ -70,7 +70,9 @@ def make_op(acceleration: float) -> MRIUndersamplingOperator:
 
 def draws_for(x: torch.Tensor, op: MRIUndersamplingOperator, gen: torch.Generator):
     y = op.forward(x)
-    y_obs = y + MEAS_NOISE * (torch.randn(y.shape, generator=gen) + 1j * torch.randn(y.shape, generator=gen))
+    y_obs = y + MEAS_NOISE * (
+        torch.randn(y.shape, generator=gen) + 1j * torch.randn(y.shape, generator=gen)
+    )
     draws = []
     for _ in range(N_DRAWS):
         y_solver = y_obs + (MEAS_NOISE / 2) * (
@@ -181,7 +183,9 @@ def main():
         pred = null_frac**0.5
         norm_free = (raw_free / pred) / (raw_free_cal / cal_null_frac**0.5)
         norm_dis = (raw_dis / pred) / (raw_dis_cal / cal_null_frac**0.5)
-        norm_res = (raw_res / pred) / (raw_res_cal / cal_null_frac**0.5) if pred > 0 else float("nan")
+        norm_res = (
+            (raw_res / pred) / (raw_res_cal / cal_null_frac**0.5) if pred > 0 else float("nan")
+        )
         print(f"{R:>4} {norm_free:>14.3f} {norm_dis:>18.3f} {norm_res:>18.3f}")
 
     return results
