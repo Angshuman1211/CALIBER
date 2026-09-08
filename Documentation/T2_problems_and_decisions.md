@@ -23,6 +23,66 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
+#### P-21 - The ground-truth label is itself operator-dependent, so the coverage-failure experiment cannot mean what it is supposed to mean
+
+**Blocks:** the O3 reading of any coverage curve - **See:** D-034, D-028, D-020, P-02
+
+On the Week 3 fastMRI bank (23,040 regions, DDNM, three accelerations), naive
+transfer does **not** lose coverage. It gains it:
+
+| tau | metric | R=2 (calib) | R=4 | R=8 |
+|---|---|---|---|---|
+| 1.75 | coverage | 0.851 | 1.000 | 1.000 |
+| 1.75 | flag area | 0.676 | 0.999 | 0.990 |
+| 3.00 | coverage | 0.914 | 0.915 | 0.955 |
+| 3.00 | flag area | 0.244 | 0.502 | 0.668 |
+
+The direction is robust - it holds at every tau tested (1.75, 2.5, 3.0, 4.0).
+Coverage never collapses; **flag area explodes** instead. The certificate stays
+valid and becomes useless, which is a failure of efficiency, not of validity.
+
+**Why.** Both the score and the label move with the operator, in the same
+direction:
+
+| operator | label positive rate (tau=1.75) | median err_free/free_content | mean s_free |
+|---|---|---|---|
+| R=2 | 0.401 | 1.528 | 0.486 |
+| R=4 | 0.681 | 2.296 | 0.847 |
+| R=8 | 0.772 | 2.677 | 1.046 |
+
+A threshold calibrated where positives are rare and scores are low, then
+deployed where positives are common and scores are high, flags nearly
+everything - and therefore catches nearly every positive. Coverage is achieved
+trivially.
+
+**This is not a calibration failure and not a pipeline failure.** It is a
+property of the *criterion*. A coverage comparison across operators is only
+interpretable if the quantity being covered means the same thing at each
+operator, and at present it does not: the base rate of "hallucinated" nearly
+doubles between R=2 and R=8. D-034 flagged this risk on M4Raw, where the trend
+was mild (median 1.480 -> 1.645). On fastMRI knees with a face prior it is
+severe (1.528 -> 2.677), and it has crossed from a caution into a blocker.
+
+**Where it stands: open, and it is Track 1's to rule on (O2).** Track 2's part
+is measured and delivered. The options, none of them Track 2's to choose:
+
+1. **Set tau per calibration group** so the label base rate is matched across
+   operators. Makes coverage comparable, but "hallucination" then means
+   something slightly different at each acceleration, which has to be defended.
+2. **Make flag area the headline** rather than coverage, with coverage reported
+   alongside. Sec. 15.2 already requires flag area as a reported metric, and the
+   over-flagging result above is a perfectly good demonstration of operator
+   shift mattering - it is just not the *coverage* story O3 is written around.
+3. **Redefine the criterion to be operator-invariant by construction.** Cleanest
+   scientifically, most expensive, and it invalidates nothing already cached
+   because the bank stores continuous quantities (D-002).
+
+**Not a wasted run.** The bank is real, cached, and re-thresholdable without a
+GPU (Sec. 17), so whichever option Track 1 picks is a re-analysis, not a
+re-reconstruction.
+
+---
+
 #### P-02 - The v0 label threshold marks everything as hallucinated
 
 **Blocks:** region FDR / power on any real substrate - **See:** D-020, D-003, D-009
@@ -615,6 +675,46 @@ exception, and both would have biased the Week 3 baselines:
 and runs `main()` over it, which is what was missing. A structural test also
 asserts that every `RegionTruth` field has a bank column, so the *next* field
 added to the criterion cannot repeat this.
+
+---
+
+#### P-20 - An unanchored `data/` ignore rule shipped a `main` that could not be imported
+
+**Fixed** - **See:** D-025, reported by Track 3
+
+`main` raised `ModuleNotFoundError: No module named 'caliber.data.splits'` on
+`import caliber.data`. Because `caliber/data/__init__.py` imports it too, the
+whole package was unimportable and pytest collection failed for every test file.
+Anyone cloning the repository got something that did not work at all.
+
+`.gitignore` line 14 was `data/`, meant for the ~74 GB dataset directory at the
+repository root. **A trailing slash does not anchor a pattern** - `data/` matches
+a directory named `data` at *any* depth, so it also matched `src/caliber/data/`.
+Five of the six files in that package had been committed before the rule reached
+that form and stayed tracked; `splits.py` was added later, in the Week 1
+close-out, and was swallowed silently. It never appeared in `git status`,
+because ignored files do not.
+
+**Local test suites passed the entire time**, because the file exists on the
+machine that wrote it. That is exactly why it survived two weeks: nothing in a
+local workflow can see it. It took someone checking out the repository
+elsewhere - Track 3, working on T3.4 - to surface it.
+
+**A second consequence of the same rule.** `ruff` also respects `.gitignore`, so
+the linter had been skipping all six files in that package for as long as the
+rule existed. Anchoring it revealed two pre-existing `E501`s in `fastmri.py`,
+now wrapped.
+
+**The fix** anchors the pattern to `/data/`, commits `splits.py` unchanged, and
+carries a comment recording the trap. Verified on a clean `git archive` export
+rather than the working copy that hid the bug: `import caliber.data` succeeds,
+197 tests pass, `ruff check src tests scripts` is clean. Every `.py`, `.yaml`
+and `.yml` under `src`, `tests`, `scripts` and `configs` was audited for the same
+loss - `splits.py` was the only casualty.
+
+**Lesson worth keeping:** a green local suite says nothing about what is in the
+repository. The check that matters is an export of the committed tree, and
+nothing in the project performed one until this.
 
 ---
 
