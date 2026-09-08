@@ -24,8 +24,8 @@ for name, path in [("caliber", "src/caliber"), ("caliber.data", "src/caliber/dat
     sys.modules[name] = m
 
 from caliber.data.synthetic import PhantomDataset  # noqa: E402
-from caliber.operators.mri import MRIUndersamplingOperator  # noqa: E402
 from caliber.operators.distance import null_space_projection_distance  # noqa: E402
+from caliber.operators.mri import MRIUndersamplingOperator  # noqa: E402
 from caliber.scoring.regions import RegionGrid  # noqa: E402
 from caliber.scoring.score import ScoreScales, ScoreWeights, compute_score_components  # noqa: E402
 
@@ -46,7 +46,9 @@ def make_op(acceleration: float, mask_seed: int = 1) -> MRIUndersamplingOperator
 def draws_for(x: torch.Tensor, op: MRIUndersamplingOperator, gen: torch.Generator):
     """samples: (n_draws, H, W); y: the single observed measurement for the item."""
     y = op.forward(x)
-    y_obs = y + MEAS_NOISE * (torch.randn(y.shape, generator=gen) + 1j * torch.randn(y.shape, generator=gen))
+    y_obs = y + MEAS_NOISE * (
+        torch.randn(y.shape, generator=gen) + 1j * torch.randn(y.shape, generator=gen)
+    )
     draws = []
     for _ in range(N_DRAWS):
         y_solver = y_obs + (MEAS_NOISE / 2) * (
