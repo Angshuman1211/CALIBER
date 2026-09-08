@@ -42,6 +42,7 @@ from .scoring.labels import CRITERION_VERSION, compute_region_truth
 from .scoring.regions import RegionGrid
 from .scoring.score import SCORE_VERSION, compute_score_components
 from .solvers import build_solver
+from .solvers.denoiser import prior_is_admissible
 
 
 def add_measurement_noise(y: torch.Tensor, sigma: float, seed: int) -> torch.Tensor:
@@ -116,18 +117,36 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     dataset = build_dataset(cfg["data"]["dataset"])
     print(f"[caliber] dataset          {dataset.name}  ({len(dataset)} items available)")
 
-    # Two independent ways a run can be development-only: a substrate that is
-    # not the real thing (phantoms, the M4Raw stopgap) or a sampler that is not
-    # a generative prior. Either one makes the resulting bank unreportable, and
-    # a bank carries no visible mark of either, so both are announced here and
-    # recorded in the manifest.
-    reportable = bool(getattr(dataset, "reportable", True)) and solver.family != "reference"
+    # Three independent ways a run can be development-only: a substrate that is
+    # not the real thing (phantoms, the M4Raw stopgap), a sampler that is not a
+    # generative prior, or a prior trained on the wrong domain. Any one of them
+    # makes the resulting bank unreportable, and a bank carries no visible mark
+    # of any of them, so all three are announced here and recorded in the
+    # manifest.
+    #
+    # The third gate is P-18. D-018 originally checked only the first two, and
+    # they are not sufficient: `ddpm-celebahq-256` is a real generative prior and
+    # fastMRI is a real substrate, so a face model reconstructing knees passed
+    # both and produced a bank stamped `reportable: true`. Whether the prior
+    # suits the modality is exactly as much a property of the bank as the other
+    # two, and it fails closed for unrecognised checkpoints.
+    info = solver.info()
+    substrate_ok = bool(getattr(dataset, "reportable", True))
+    solver_ok = solver.family != "reference"
+    prior_ok = solver_ok and prior_is_admissible(info.checkpoint, dataset.modality)
+
+    reportable = substrate_ok and solver_ok and prior_ok
     if not reportable:
         why = []
-        if not getattr(dataset, "reportable", True):
+        if not substrate_ok:
             why.append(f"substrate {dataset.name!r} is for development only")
-        if solver.family == "reference":
+        if not solver_ok:
             why.append("solver is a reference, not a generative prior")
+        elif not prior_ok:
+            why.append(
+                f"prior domain {info.prior_domain!r} is not appropriate for "
+                f"{dataset.modality!r} (D-016, P-18)"
+            )
         print(f"[caliber] NOT REPORTABLE   {'; '.join(why)}")
 
     items = dataset.take(run_cfg.get("limit"))
@@ -144,6 +163,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
             "dataset": dataset.name,
             "modality": dataset.modality,
             "solver_family": solver.family,
+            "prior_domain": info.prior_domain,
             "reportable": reportable,
         },
     )

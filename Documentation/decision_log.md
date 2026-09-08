@@ -1213,6 +1213,39 @@ read off it is provisional and must be re-measured when medical weights land.
 
 ---
 
+## D-035 · The prior's training domain is a third reportability gate
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+A bank is reportable only if **all three** hold: the substrate is real, the sampler is a
+generative prior rather than a reference, **and the prior was trained on the modality it
+is reconstructing**. The third gate is new. `solvers/denoiser.py` maps checkpoint
+basenames to domains, `ADMISSIBLE_DOMAINS` says which domain each modality accepts, and
+the runner records `prior_domain` in every manifest.
+
+*Reason:* D-018 gated on the first two and they are **not sufficient**. fastMRI is a real
+reportable substrate (D-017) and `ddpm-celebahq-256` is a real generative prior, so the
+first fastMRI run came out stamped `reportable: true` — a face model reconstructing knees,
+which D-016 orders deliberately and which the T2.2 write-up lists as a reason nothing is
+reportable. The code did not know what the prose knew. That is exactly the P-12 failure
+D-018 was written to prevent, one level up: a caveat that survives only in whoever
+remembers which checkpoint was configured.
+
+*Fails closed.* An unregistered checkpoint is `"unknown"` and admissible nowhere. An
+unknown checkpoint could be anything, and the cost of wrongly stamping a bank reportable
+is a claim in a manuscript the data does not support. Making a prior reportable is then
+one deliberate line in `PRIOR_DOMAINS` — visible in a diff, which is the point.
+
+*Alternative rejected:* a config flag such as `reportable: false`. Rejected for the reason
+D-018 gives — reportability is a property of the bank, derived from what actually
+produced it, not an assertion someone remembered to write down.
+
+*Cost:* the registry must be maintained. A new checkpoint is unreportable until someone
+adds it, which will occasionally be briefly annoying and is the correct direction to fail.
+
+*Affects:* D-018, D-016, P-12, P-18, T2.3, O7, every bank produced from Week 3 on.
+
+---
+
 ## Template
 
 ```

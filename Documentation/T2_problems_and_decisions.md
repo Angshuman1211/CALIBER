@@ -544,6 +544,80 @@ step, is most of why the Week 4 grid will be DDNM (P-16).
 
 ---
 
+#### P-18 - A face prior on knee MRI produced a bank stamped `reportable: true`
+
+**Fixed** - **See:** D-035, D-018, D-016, P-12
+
+The first fastMRI run of Week 3 wrote `"reportable": true` into its manifest.
+The substrate was real (fastMRI, D-017 resolved) and the sampler was a real
+generative prior (DDNM), so both of D-018's gates passed. The prior was
+`ddpm-celebahq-256` - a **face model reconstructing knee anatomy**.
+
+Nothing was wrong with the run. What was wrong is that the code did not know
+what the prose already said: D-016 orders the natural-image prior deliberately
+and the T2.2 write-up lists it as one of the reasons nothing is reportable, but
+reportability was computed from substrate and solver family alone, and neither
+of those notices the prior's training domain.
+
+This is P-12 again, one level up. P-12 was "a score bank carries no mark of
+where it came from"; D-018 fixed it for the substrate and the sampler and
+stopped there. Two gates out of three passing produced a green light.
+
+**The fix** adds the third gate (D-035): `PRIOR_DOMAINS` maps checkpoint
+basenames to what they were trained on, `ADMISSIBLE_DOMAINS` says what each
+modality accepts, and the runner refuses to call a bank reportable unless the
+prior matches. It **fails closed** - an unregistered checkpoint is admissible
+nowhere - and `prior_domain` is now recorded in every manifest, so existing
+banks can be audited rather than re-run. The Week 3 run now says:
+
+```
+[caliber] NOT REPORTABLE   prior domain 'natural_image' is not appropriate for 'mri' (D-016, P-18)
+```
+
+**Worth stating plainly:** this was caught with one smoke run of two items,
+because the missing `NOT REPORTABLE` line was conspicuous. Had it been noticed
+three weeks later, every bank produced in between would have carried a false
+flag into the write-up.
+
+---
+
+#### P-19 - `analyse_bank.py` had been broken for two weeks and nothing noticed
+
+**Fixed** - **See:** D21, D26, D27, D-022, D-027
+
+The script that produces the two Week 3 baselines raised `TypeError:
+RegionTruth.__init__() missing 1 required positional argument: 'free_content'`
+on every bank. `free_content` was added to `RegionTruth` when A1 / D21 landed in
+Week 1; this caller was never updated.
+
+It went unnoticed because **no test executed the script**. The unit tests
+exercise the library the script calls, which is a different thing - every
+function it uses was individually green.
+
+Fixing the crash exposed two further defects that were never going to raise an
+exception, and both would have biased the Week 3 baselines:
+
+- **Calibration and evaluation shared rows.** The threshold was fitted on the
+  calibration operator's rows and then evaluated on a frame still containing
+  them, so coverage *at the calibration operator* - the reference point the
+  whole naive-transfer story is read against - was in-sample and optimistic.
+  It now calibrates on `split=calib` and evaluates on `split=test`, which is
+  patient-disjoint by construction (D-022, D-027), and warns loudly when a bank
+  carries only one split.
+- **The score was an unstandardised `1,1,1` sum.** `score.py` says in its own
+  docstring that the three components differ by an order of magnitude, so this
+  reduces to `score = s_free` - the combination was nominally three-component
+  and effectively one. It now uses T1.1's ratified standardised affine rule with
+  scales frozen on the calibration operator (D26, D27), and prints the exact
+  combination above every table.
+
+**The real fix is the test.** `tests/test_analyse_bank.py` builds a bank on disk
+and runs `main()` over it, which is what was missing. A structural test also
+asserts that every `RegionTruth` field has a bank column, so the *next* field
+added to the criterion cannot repeat this.
+
+---
+
 ### Adding an entry
 
 Number sequentially, state the symptom before the cause, and say plainly
@@ -561,7 +635,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 34 entries, so a problem in Part I can be
+What lives here instead is the index — 35 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -600,3 +674,4 @@ traced to the decision that settled it without opening the log.
 | [D-032](decision_log.md) | Stage-2 decomposition diagnostics are a run artefact, not score-bank columns | Week 2 | ACCEPTED |
 | [D-033](decision_log.md) | The null-error share is a per-solver step-budget precondition on a bank | Week 2 | ACCEPTED |
 | [D-034](decision_log.md) | Relative criterion implemented and its tau curve measured; tau stays Track 1's | Week 2 | ACCEPTED — Track 2's half discharged |
+| [D-035](decision_log.md) | The prior's training domain is a third reportability gate | Week 3 | ACCEPTED |
