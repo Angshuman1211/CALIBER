@@ -44,8 +44,8 @@ for name, path in [("caliber", "src/caliber"), ("caliber.data", "src/caliber/dat
     sys.modules[name] = m
 
 from caliber.data.synthetic import PhantomDataset  # noqa: E402
-from caliber.operators.mri import MRIUndersamplingOperator  # noqa: E402
 from caliber.operators.distance import null_space_projection_distance  # noqa: E402
+from caliber.operators.mri import MRIUndersamplingOperator  # noqa: E402
 
 IMAGE_SHAPE = (128, 128)
 CENTER_FRACTION = 0.04
