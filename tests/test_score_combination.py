@@ -191,8 +191,14 @@ def test_combination_is_affine_in_the_components(setup):
         w,
         scales,
     )
-    expected = w.free / scales.free
-    assert torch.allclose(bumped - base, torch.full_like(base, expected), atol=1e-4)
+    # Weights are renormalised over the live components (D35), so the effective
+    # free weight is w.free / sum(live weights), not the nominal w.free.
+    live = scales.live_mask()
+    effective_free = float((w.as_tensor() * live)[0] / (w.as_tensor() * live).sum())
+    expected = effective_free / scales.free
+    assert torch.allclose(bumped - base, torch.full_like(base, expected), atol=1e-4), (
+        "score must stay affine in each live component — T3.3 §3 depends on it"
+    )
 
 
 def test_score_never_consults_ground_truth(setup):
@@ -212,3 +218,42 @@ def test_weights_are_validated(bad):
     else:
         with pytest.raises(ValueError):
             ScoreWeights(free=1.0, disagree=1.0, residual=1.0)  # does not sum to 1
+
+
+def test_degenerate_component_is_excluded_not_amplified(setup):
+    """D35: a structurally-zero component must not be rescaled into noise.
+
+    Standardisation maps every component to O(1), so a component that is exactly
+    zero has its float noise amplified to the magnitude of real signal and then
+    spends a full share of the weight budget on nothing. Measured before the
+    guard: `s_residual` scale 9.1e-8 against `s_free` 3.5e-2, standardised to
+    mean 0.95 — indistinguishable from a live component.
+    """
+    op, grid, x_true, gen = setup
+    y = op.forward(x_true)
+    samples = _draws(op, x_true, n=6, scale=0.05, gen=gen)
+    comps = compute_score_components(samples, y, op, grid)
+    scales = ScoreScales.from_components(comps)
+
+    # The reference draws are data-consistent by construction, so the residual
+    # is structurally zero — the DDNM case (D35).
+    assert "residual" in scales.degenerate_names
+
+    auto = combine_components(comps, ScoreWeights(), scales)
+    manual = combine_components(
+        comps, ScoreWeights(free=0.5, disagree=0.5, residual=0.0), scales
+    )
+    assert torch.allclose(auto, manual, atol=1e-6), (
+        "dropping the degenerate component automatically must equal dropping it by hand"
+    )
+
+
+def test_all_components_degenerate_raises_rather_than_returning_zeros(setup):
+    op, grid, x_true, gen = setup
+    y = op.forward(x_true)
+    comps = compute_score_components(_draws(op, x_true, 6, 0.05, gen), y, op, grid)
+    dead = ScoreScales(
+        free=1e-9, disagree=1e-9, residual=1e-9, degenerate=(True, True, True)
+    )
+    with pytest.raises(ValueError):
+        combine_components(comps, ScoreWeights(), dead)

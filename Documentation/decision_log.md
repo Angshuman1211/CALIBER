@@ -1243,6 +1243,38 @@ produced it, not an assertion someone remembered to write down.
 adds it, which will occasionally be briefly annoying and is the correct direction to fail.
 
 *Affects:* D-018, D-016, P-12, P-18, T2.3, O7, every bank produced from Week 3 on.
+## D-036 · A bare `data/` in .gitignore also ignored `src/caliber/data/`
+**Date:** Week 2 · **Status:** FIXED · **Cause:** Track 1 · **Found by:** Track 1 (T1.5)
+
+**Root cause of the two broken pushes.** `.gitignore` carried a bare `data/`.
+A gitignore pattern with no slash before its final character matches at **any
+depth**, so it ignored the *source package* `src/caliber/data/` as well as the
+dataset directory. Files already tracked stayed tracked, so nothing looked
+wrong — but every **new** file under `src/caliber/data/` was invisible to
+`git add`.
+
+That is exactly what happened to `src/caliber/data/splits.py`. It was never
+committed, while `data/__init__.py`, `data/fastmri.py` and `tests/test_splits.py`
+— all committed — import it. Because `caliber/__init__.py` imports the data
+package eagerly, one silently-ignored file took down **every module in the
+package**: operators, scoring, calibration, scorebank, runner. Two consecutive
+pushes landed on a tree that could not be imported at all.
+
+**Introduced by Track 1** in the D-025 consolidation, replacing
+`data/*` + `!data/README.md` with `data/`. The original `data/*` contains an
+internal slash and so was anchored to the repository root; the replacement was
+not. The change looked like a simplification and was a scope widening.
+
+**Fix:** `/data/` — the leading slash anchors it to the root. Verified both
+ways: `src/caliber/data/splits.py` is no longer ignored, and `data/raw` still is.
+A comment above the pattern now says the slash is load-bearing, since this is
+precisely the kind of line that gets "tidied" back.
+
+**Lesson worth keeping:** an ignore rule that is too broad fails *silently and
+asymmetrically* — existing files keep working, new ones vanish — so it presents
+as someone else forgetting to add a file rather than as a config error.
+
+*Affects:* every module, T2.1, T2.2, D-025.
 
 ---
 

@@ -11,7 +11,11 @@ external/
 # will otherwise try to hash a 30 GB zip and hang. See
 # Documentation/data_access.md.
 # The whole tree is ignored: data/ carries no README of its own (D-025).
-data/
+# LEADING SLASH IS LOAD-BEARING: a bare `data/` has no slash before its end, so
+# git matches it at ANY depth and silently ignores `src/caliber/data/` as well.
+# That is not hypothetical -- it blocked `src/caliber/data/splits.py` from ever
+# being committed and broke every import in the package (D36).
+/data/
 
 *.h5
 *.hdf5

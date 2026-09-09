@@ -263,6 +263,26 @@ Full record in `T1.2_shift_robust_calibration.md`.
 
 **Why this is not an API nicety.** §16's first bullet is *calibrate at one acquisition setting and apply at others*. The first implementation calibrated on whatever rows it received; a test measured the consequence of pooling every regime instead — the miss rate on the deployment regime fell from **0.76 to 0.19**, making naive transfer look four times healthier than it is. The baseline exists to expose the coverage collapse, so understating it would have quietly weakened the paper's central empirical claim while every test still passed. Pinned by `test_pooling_every_regime_understates_the_naive_failure`.
 
+### D35 — `s_residual` is structurally zero for data-consistent solvers; exclude degenerate components rather than standardising them [T1.1, found via D-028]
+**The finding.** Track 2's D-028 recorded `s_residual = 0.000000` after the D-024 fix. That is not a small number, it is a **structural** one. The reference sampler builds draws as `A⁺y + P_N(z)`, so `A·x̂ − y = 0` identically. Measured: residual `1.1e-7` (float noise) for a data-consistent sampler against `6.7e-3` when the measured component is perturbed — five orders of magnitude.
+
+**Why this generalises past the mock.** **DDNM enforces hard data consistency by construction**, and it is one of the project's back-ends. For any such solver the third score component carries no information at all, so D25's three-component design is a *two*-component design, and T1.4's ablation will show a flat residual row that means "structurally absent", not "tried and unhelpful".
+
+**The bug this exposed in D26.** Standardisation rescales every component to O(1). Dividing a structurally-zero component by its own tiny scale therefore **amplifies float noise to the magnitude of real signal**: measured scale `9.1e-8` against `3.5e-2` for `s_free`, standardising to mean 0.95 — indistinguishable from a live component — and then collecting a full 1/3 of the weight budget. Correlation between the score with and without the residual term was 0.944, so the noise was measurably degrading the ranking.
+
+**Ruling.** `ScoreScales.from_components` marks any component whose scale falls below `1e-6` as **degenerate**; `combine_components` drops those and renormalises the remaining weights. The threshold is absolute because the components are already normalised by reference intensity and so share an O(1) scale — anything at 1e-6 or below is FFT round-trip noise. Renormalising rather than merely zeroing keeps the score on a comparable scale across solvers where the residual is live and solvers where it is dead. Degeneracy is decided once, from the calibration operator, and carried unchanged to deployment — the same freezing rule as D27, for the same reason. All three degenerate raises rather than silently returning zeros.
+
+**`s_residual` is retained, as a guard rather than a detector.** A non-zero residual means the solver has drifted off the data-consistent set — under-converged, or not enforcing consistency at all — which is worth catching. What it cannot be counted on for is detection power. **T1.4 must report per-component detection per solver**, since the residual row's meaning changes with the back-end.
+
+### D36 — Anchor ignore patterns; a bare `data/` matched the source package too [T1.5, self-inflicted]
+The D-025 consolidation replaced `data/*` + `!data/README.md` with a bare `data/`. `data/*` has an internal slash and is anchored to the repository root; `data/` has none and therefore matches **any directory of that name at any depth** — including `src/caliber/data/`.
+
+Consequence: `src/caliber/data/splits.py` could never be committed, while three committed files import it. `caliber/__init__.py` imports the data package eagerly, so the whole package failed to import — two consecutive Track 2 pushes landed unusable, and it read as their omission rather than a Track 1 config error.
+
+Fixed to `/data/`, verified in both directions, with a comment marking the slash as load-bearing. Recorded cross-track as D-029.
+
+**How to apply:** an over-broad ignore rule fails *silently and asymmetrically* — tracked files keep working while new ones vanish — so it disguises itself as someone forgetting `git add`. When a partner's push arrives with a missing module, check `git check-ignore -v` on the path before assuming they forgot it.
+
 ---
 
 ## Open Questions
@@ -303,6 +323,7 @@ The answer exists and is defensible — weighting buys what Mondrian structurall
 The two "verified empty" cells (operator-shift-robust conformal coverage; flow-matching × conformal) were verified as of **mid-2026**, and the research documents explicitly flag that absence of evidence is not proof, naming VOILA (Fridovich-Keil), Schniter/Ahmad and Sulam as the groups to monitor monthly across cs.CV, eess.IV and stat.ME. D11 already mandates an early preprint for priority. The sweep has not been repeated since the research was written. Repeat it before further design work, and again at write-up.
 
 ### Q6 — Does `s_free` fire on detailed anatomy rather than on hallucination? [OPEN, owned by T1.1/T1.4]
+**Sharpened by D35:** with `s_residual` structurally dead for data-consistent solvers, the score is effectively `s_free` + `s_disagree`. If `s_free` also turns out to track anatomy rather than invention, the whole thing reduces to cross-sample disagreement — a posterior-spread detector, which is a *known baseline*, not this project's contribution. That makes Q6 considerably more load-bearing than when it was written.
 `s_free` measures ‖P_N x̂‖ — the magnitude of the reconstruction's hidden content. But real anatomy *has* large null-space content whether or not the prior invented any of it, which is structurally the same trap D21 identified in the label criterion. The injection test shows `s_free` alone does detect an injection **on top of** anatomy (it is the *excess* that stands out), so the component is not useless. The open risk is region-level FDR on real data: if `s_free` is uniformly high across all textured tissue, it will flag detail rather than invention, and the weighting (D28) will have to suppress it.
 
 This cannot be settled on synthetic images — it needs the real prior plus the D21 criterion. **T1.4's ablation must report per-component FDR/power separately**, not just the combined score, or a `s_free` that is doing nothing useful will hide inside an acceptable-looking total. Note the possible outcome, flagged early: if `s_disagree` alone matches the combination's detection quality, that is an honest and publishable negative result about the operator decomposition (D2), and better found at reference-implementation scale than in Phase 3.
