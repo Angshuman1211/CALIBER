@@ -15,8 +15,9 @@ operator studied is single-coil Cartesian undersampling, which should be stated
 in the Experimental Setup rather than left implicit.
 
 Data access is credentialed and has lead time — see Appendix A of
-Documentation/T2.1_data_and_operator_pipeline.md. This module reads whatever is present under ``data/raw/fastmri`` and raises a clear
-error otherwise, so the pipeline can be developed against phantoms meanwhile.
+Documentation/T2.1_data_and_operator_pipeline.md. This module reads whatever is
+present under ``data/raw/fastmri`` and raises a clear error otherwise, so the
+pipeline can be developed against phantoms meanwhile.
 """
 
 from __future__ import annotations
@@ -185,7 +186,8 @@ class FastMRIDataset(SliceDataset):
                 # to fully-sampled k-space, not inferred from a finished image.
                 raise KeyError(
                     f"{path.name} has no 'kspace' dataset (found: {sorted(fh.keys())}). "
-                    "Raw k-space is required - see Documentation/T2.1_data_and_operator_pipeline.md Appendix A.1."
+                    "Raw k-space is required - see Appendix A.1 of "
+                    "Documentation/T2.1_data_and_operator_pipeline.md."
                 )
             kspace = fh["kspace"]
             n_slices = kspace.shape[0]

@@ -14,7 +14,9 @@ external/
 # LEADING SLASH IS LOAD-BEARING: a bare `data/` has no slash before its end, so
 # git matches it at ANY depth and silently ignores `src/caliber/data/` as well.
 # That is not hypothetical -- it blocked `src/caliber/data/splits.py` from ever
-# being committed and broke every import in the package (D36).
+# being committed and shipped a `main` that could not be imported at all
+# (Track 1 D36, Track 2 P-20). It also hid that package from ruff, which
+# respects .gitignore. Only the dataset directory at the root belongs here.
 /data/
 
 *.h5
