@@ -924,6 +924,51 @@ explicit: bump `DEFAULT_SALT`, regenerate the pins, record it.
 
 ---
 
+#### P-25 - No bank the project had produced could be regenerated from its config
+
+**Fixed going forward; not recoverable backward** - **See:** D-039
+
+The runner's own docstring says a run is "fully determined by its config plus its
+seed". It was not. Each (item, operator) seed came from
+
+```python
+seed + abs(hash((item.sample_id, item.slice_idx, desc.operator_id))) % 10**6
+```
+
+and Python salts `hash()` for strings **per process** unless `PYTHONHASHSEED` is
+set. Nothing set it. Three invocations for the same item gave **77818, 549586 and
+104573**. Every run therefore drew different noise and different posterior samples
+for identical inputs. `scripts/stage2_decomposition.py` copied the same line.
+
+**Why the test suite never saw it.** Every determinism test compared two runs
+*inside one pytest process*, where the salt is shared, so the bug could not show.
+Checkpointing's "does not change the bank" test (D-038) passed for the same reason.
+A determinism test that runs in a single process cannot detect a per-process
+source of non-determinism — the check has to cross a process boundary.
+
+It was found reading `stage2_decomposition.py` line by line for an unrelated
+cosmetic fix.
+
+**Consequences, stated plainly.**
+
+- **No existing bank can be regenerated**, including the 7.2-hour Week 3 bank. Its
+  rows are still correct and interpretable - the `seed` column records the value
+  each row was actually drawn with - but re-running its config produces different
+  draws, not the same bank.
+- The Week 10 reproducibility package (O7) was built on a false premise until now.
+- Numbers quoted across two separate runs of "the same" config were never
+  guaranteed to be comparable at the level of individual draws. Aggregates over many
+  items are unaffected in expectation; single-item comparisons are not.
+
+**The fix** (D-039) derives the seed from a BLAKE2b digest of
+`sample_id|slice_idx|operator_id` - the approach `splits.py` already used correctly.
+Pinned by `tests/test_reproducibility.py`, whose central test runs the pipeline in
+**two separate processes with deliberately different `PYTHONHASHSEED` values** and
+requires identical banks. It fails against the old derivation and passes against
+the new one.
+
+---
+
 ### Adding an entry
 
 Number sequentially, state the symptom before the cause, and say plainly
@@ -941,7 +986,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 38 entries, so a problem in Part I can be
+What lives here instead is the index — 39 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -984,3 +1029,4 @@ traced to the decision that settled it without opening the log.
 | [D-036](decision_log.md) | A bare `data/` in .gitignore also ignored `src/caliber/data/` | Week 2 | FIXED — Track 1's entry; see P-20 |
 | [D-037](decision_log.md) | Track 2's `splits.py` is canonical, and the split mapping itself is pinned | Week 3 | ACCEPTED — Track 1 to confirm no bank used the stand-in |
 | [D-038](decision_log.md) | An interrupted run leaves a partial bank that readers refuse by default | Week 3 | ACCEPTED |
+| [D-039](decision_log.md) | Item seeds come from a stable digest, not Python's salted `hash()` | Week 3 | ACCEPTED |

@@ -42,8 +42,9 @@ from caliber.config import ConfigError, load_config
 from caliber.data import build_dataset
 from caliber.operators.decomposition import aggregate_reports, decompose_samples
 from caliber.operators.registry import OperatorRegistry
-from caliber.runner import add_measurement_noise
+from caliber.runner import add_measurement_noise, item_seed
 from caliber.solvers import build_solver
+from caliber.solvers.denoiser import prior_is_admissible
 
 # Printed with the table. A share is a fraction of split energy, so 0.5 is the
 # "no preference" point and anything below it for error or spread contradicts
@@ -117,10 +118,10 @@ def main(argv: list[str] | None = None) -> int:
     for item in items:
         for op in registry:
             desc = op.descriptor()
-            item_seed = seed + abs(hash((item.sample_id, item.slice_idx, desc.operator_id))) % 10**6
+            seed_here = item_seed(seed, item.sample_id, item.slice_idx, desc.operator_id)
             sigma = float(desc.params.get("noise_sigma", 0.0) or 0.0)
-            y = add_measurement_noise(op.forward(item.image), sigma, item_seed)
-            samples = solver.sample(y, op, n_samples=n_posterior, seed=item_seed)
+            y = add_measurement_noise(op.forward(item.image), sigma, seed_here)
+            samples = solver.sample(y, op, n_samples=n_posterior, seed=seed_here)
             per_operator[desc.operator_id].append(
                 decompose_samples(samples, op, x_true=item.image, y=y)
             )
@@ -138,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     if weak:
         print(
             "[stage2] WARNING  error is range-dominated for "
-            f"{len(weak)}/{len(rows)} operators — the free-component premise "
+            f"{len(weak)}/{len(rows)} operators - the free-component premise "
             "does not hold here",
             file=sys.stderr,
         )
@@ -153,8 +154,11 @@ def main(argv: list[str] | None = None) -> int:
                 "config": args.config,
                 "config_hash": cfg["_meta"]["config_hash"],
                 "dataset": dataset.name,
+                # All three D-035 gates, as the runner applies them. This file used to
+                # check only the first two, so a face prior on fastMRI said true.
                 "reportable": bool(getattr(dataset, "reportable", True))
-                and solver.family != "reference",
+                and solver.family != "reference"
+                and prior_is_admissible(solver.info().checkpoint, dataset.modality),
                 "solver": solver.info().to_row(),
                 "n_items": len(items),
                 "n_posterior": n_posterior,

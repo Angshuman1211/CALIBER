@@ -1346,6 +1346,35 @@ change the config hash, and therefore the run id, of every existing bank.
 
 ---
 
+## D-039 · Item seeds come from a stable digest, not Python's salted `hash()`
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+`caliber.runner.item_seed(base_seed, sample_id, slice_idx, operator_id)` returns
+`base_seed + BLAKE2b("sample_id|slice_idx|operator_id") mod 10**6`. The runner and the
+Stage-2 audit both call it; nothing derives a seed from `hash()` any more.
+
+*Reason:* P-25. `hash()` on strings is salted per process, so the previous derivation
+gave a different seed for the same item on every run, and no bank could be regenerated
+from its config. A digest is the same on every process, platform and Python version.
+
+*Why not set `PYTHONHASHSEED` instead:* it has to be in the environment before the
+interpreter starts, so a script, a notebook, an IDE runner or a teammate's shell each
+has to remember it — and forgetting is silent. A derivation that does not depend on
+the environment cannot be forgotten.
+
+*The separator is load-bearing:* without it, `("a1", 0)` and `("a", 10)` style inputs
+could collide. Tested.
+
+*Cost:* every bank produced from here on draws differently from every bank before it,
+for the same config. That costs nothing that was not already lost — no earlier bank was
+reproducible even against itself — and existing banks keep their recorded per-row seeds.
+Changing the derivation again requires changing the pinned values in
+`tests/test_reproducibility.py`, deliberately, and an entry here.
+
+*Affects:* P-25, O7 (reproducibility package), T2.3, every bank, `stage2_decomposition.py`.
+
+---
+
 ## Template
 
 ```

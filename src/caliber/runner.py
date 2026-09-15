@@ -26,6 +26,7 @@ scope affordable.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -55,6 +56,24 @@ def add_measurement_noise(y: torch.Tensor, sigma: float, seed: int) -> torch.Ten
         imag = torch.randn(y.shape, generator=gen)
         return y + sigma * (real + 1j * imag) / (2**0.5)
     return y + sigma * torch.randn(y.shape, generator=gen)
+
+
+def item_seed(base_seed: int, sample_id: str, slice_idx: int, operator_id: str) -> int:
+    """The seed for one (item, operator), identical in every process on every machine.
+
+    This used to be ``base_seed + abs(hash((sample_id, slice_idx, operator_id))) % 10**6``.
+    Python salts ``hash()`` for strings per process unless ``PYTHONHASHSEED`` is set, and
+    nothing set it, so the same item drew a different seed on every run — three
+    invocations gave 77818, 549586 and 104573 (P-25). The module docstring's promise that
+    a run is "fully determined by its config plus its seed" was false for every bank the
+    project had produced.
+
+    A keyed digest has none of that. The ``seed`` column still records the value used,
+    which is why older banks remain interpretable even though they cannot be regenerated.
+    """
+    key = f"{sample_id}|{int(slice_idx)}|{operator_id}".encode()
+    digest = hashlib.blake2b(key, digest_size=8).digest()
+    return int(base_seed) + int.from_bytes(digest, "big") % 10**6
 
 
 def calibration_group(operator) -> str:
@@ -177,12 +196,12 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     for item in items:
         for op in registry:
             desc = op.descriptor()
-            item_seed = seed + abs(hash((item.sample_id, item.slice_idx, desc.operator_id))) % 10**6
+            seed_here = item_seed(seed, item.sample_id, item.slice_idx, desc.operator_id)
 
             sigma = float(desc.params.get("noise_sigma", 0.0) or 0.0)
-            y = add_measurement_noise(op.forward(item.image), sigma, item_seed)
+            y = add_measurement_noise(op.forward(item.image), sigma, seed_here)
 
-            samples = solver.sample(y, op, n_samples=n_posterior, seed=item_seed)
+            samples = solver.sample(y, op, n_samples=n_posterior, seed=seed_here)
             components = compute_score_components(samples, y, op, grid)
             truth = compute_region_truth(
                 samples, item.image, op, grid, item.annotation, components.ref_intensity
@@ -201,7 +220,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                     "calib_group": desc.calib_group,
                     **solver.info().to_row(),
                     "n_posterior": n_posterior,
-                    "seed": item_seed,
+                    "seed": seed_here,
                     "score_version": SCORE_VERSION,
                     "criterion_version": CRITERION_VERSION,
                     "ref_intensity": components.ref_intensity,
