@@ -11,12 +11,12 @@ external/
 # will otherwise try to hash a 30 GB zip and hang. See
 # Documentation/data_access.md.
 # The whole tree is ignored: data/ carries no README of its own (D-025).
-#
-# ANCHORED with a leading slash, and it must stay that way. A trailing slash
-# alone does not anchor a pattern -- `data/` matches a directory called `data`
-# at *any* depth, which silently swallowed `src/caliber/data/splits.py` and
-# shipped a `main` that could not be imported at all (P-20). Only the dataset
-# directory at the repository root belongs here.
+# LEADING SLASH IS LOAD-BEARING: a bare `data/` has no slash before its end, so
+# git matches it at ANY depth and silently ignores `src/caliber/data/` as well.
+# That is not hypothetical -- it blocked `src/caliber/data/splits.py` from ever
+# being committed and shipped a `main` that could not be imported at all
+# (Track 1 D36, Track 2 P-20). It also hid that package from ruff, which
+# respects .gitignore. Only the dataset directory at the root belongs here.
 /data/
 
 *.h5

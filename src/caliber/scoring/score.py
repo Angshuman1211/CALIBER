@@ -100,6 +100,8 @@ class ScoreScales:
     free: float
     disagree: float
     residual: float
+    degenerate: tuple[bool, bool, bool] = (False, False, False)
+    """Which components are at the float-noise floor and must be excluded (D35)."""
 
     @classmethod
     def from_components(
@@ -107,6 +109,7 @@ class ScoreScales:
         components: ScoreComponents | Sequence[ScoreComponents],
         quantile: float = 0.75,
         floor: float = 1e-8,
+        degenerate_below: float = 1e-6,
     ) -> ScoreScales:
         """Robust scales, pooled over all regions of the design items.
 
@@ -116,9 +119,21 @@ class ScoreScales:
         standardisation numerically unstable. A mid-high quantile stays inside
         the anatomy while remaining insensitive to the extreme tail.
 
-        ``floor`` guards the degenerate case where a component is identically
-        zero — a single-draw run has no disagreement at all, and dividing by it
-        would produce NaNs that propagate silently into the bank.
+        ``floor`` guards against dividing by an exactly-zero scale.
+
+        ``degenerate_below`` guards something worse and less obvious (D35).
+        Standardisation *rescales every component to O(1)*, so a component that
+        is structurally zero gets its float noise amplified to the same
+        magnitude as real signal, and then spends a full share of the weight
+        budget on nothing. This is not hypothetical: ``s_residual`` is exactly
+        zero for any solver that enforces data consistency — which includes
+        DDNM by construction — and was measured at 9.1e-8 against 3.5e-2 for
+        ``s_free``. Components whose scale falls below this threshold are marked
+        degenerate and excluded by :func:`combine_components`.
+
+        The threshold is absolute because the components are already normalised
+        by reference intensity, so they live on a common O(1) scale; anything at
+        1e-6 or below is FFT round-trip noise, not structure.
         """
         items = [components] if isinstance(components, ScoreComponents) else list(components)
         if not items:
@@ -130,10 +145,23 @@ class ScoreScales:
             pooled = torch.cat([item.stack()[index].flatten() for item in items]).double()
             return max(float(torch.quantile(pooled.abs(), quantile)), floor)
 
-        return cls(free=scale_of(0), disagree=scale_of(1), residual=scale_of(2))
+        raw = [scale_of(i) for i in range(3)]
+        degenerate = tuple(v < degenerate_below for v in raw)
+        return cls(free=raw[0], disagree=raw[1], residual=raw[2], degenerate=degenerate)
+
+    @property
+    def degenerate_names(self) -> list[str]:
+        names = ("free", "disagree", "residual")
+        return [n for n, bad in zip(names, self.degenerate, strict=True) if bad]
 
     def as_tensor(self) -> Tensor:
         return torch.tensor([self.free, self.disagree, self.residual], dtype=torch.float64)
+
+    def live_mask(self) -> Tensor:
+        """1.0 for usable components, 0.0 for degenerate ones."""
+        return torch.tensor(
+            [0.0 if bad else 1.0 for bad in self.degenerate], dtype=torch.float64
+        )
 
 
 @dataclass(frozen=True)
@@ -190,9 +218,26 @@ def combine_components(
     Lipschitz constants for the components (T3.3 §3). Larger means *more likely
     to contain invented structure*; conformal calibration then places a threshold
     on this quantity, and nothing here consults ground truth.
+
+    Degenerate components (D35) are dropped and the remaining weights are
+    renormalised, so a data-consistent solver's dead ``s_residual`` neither
+    injects noise nor shrinks the score's scale relative to a solver where the
+    residual is live. Degeneracy is decided once, when the scales are built from
+    the calibration operator, and carried unchanged to deployment — the same
+    freezing rule as D27, for the same reason.
     """
+    live = scales.live_mask()
+    w = weights.as_tensor() * live
+    total = float(w.sum())
+    if total <= 0:
+        raise ValueError(
+            f"all weighted components are degenerate ({scales.degenerate_names}); "
+            "the score would be identically zero"
+        )
+    w = w / total
     standardised = components.stack().double() / scales.as_tensor().unsqueeze(-1)
-    return (weights.as_tensor().unsqueeze(-1) * standardised).sum(dim=0).to(torch.float32)
+    standardised = standardised * live.unsqueeze(-1)
+    return (w.unsqueeze(-1) * standardised).sum(dim=0).to(torch.float32)
 
 
 def compute_score_components(
