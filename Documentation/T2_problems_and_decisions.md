@@ -55,19 +55,38 @@ did not. The machine had.
 | 128² | forward, 1 image | 1.45 GB | 2.99 GB |
 | 128² | forward + backward, 1 image | 1.58 GB | 3.42 GB |
 | 128² | forward + backward, 2 images | 2.17 GB | 4.12 GB |
-| 256² | anything | - | segfault |
+| 192² | forward, 1 image | 2.27 GB | 4.20 GB |
+| 256² | forward, 1 image | 3.44 GB | **5.99 GB** |
+| 256² | forward, 2 images | - | segfault |
+| 256² | forward, 4 images | - | `RuntimeError: DefaultCPUAllocator: not enough memory` |
 
-and at the time of the crashes, **5.3 GB of commit was free** out of a 26.2 GB
-limit (15.7 GB RAM plus pagefile), with other applications holding the rest.
-Activation memory scales with pixel count, so 256² needs roughly four times the
-128² activation share - on the order of 8 GB for a single forward. That figure is
-an *estimate*: it could not be measured directly, because the pass it describes
-would not run.
+and at the time of the crashes, **5.1–5.3 GB of commit was free** out of a
+~26 GB limit (15.7 GB RAM plus pagefile), with other applications holding the
+rest. The single-image forward peak is linear in pixel count — about 2.0 GB of
+fixed overhead plus 0.061 GB per thousand pixels, which predicts the 192² point
+to within 0.04 GB.
 
-**The explanation that fits every observation:** when a large tensor allocation
-fails, this CPU build of torch (`2.13.0+cpu`, Windows) does not raise
-`MemoryError` - it segfaults. 256² succeeds when other applications happen to
-leave enough headroom and dies when they do not. 128² fits either way (5 of 5).
+*A correction to this entry's first version:* it estimated ~8 GB for a 256²
+forward, because that pass would not run at the time. Measured once headroom
+allowed, it is **6.0 GB**. The estimate was 2 GB high.
+
+**What the batch-4 row settles.** The same forward pass that segfaults at
+batch 2 raises an explicit out-of-memory error at batch 4. Allocation failure
+is the cause; whether it surfaces as a Python exception or a segfault depends on
+where in torch's native code the failing allocation happens. 256² succeeds when
+other applications leave headroom and fails when they do not; 128² fits either
+way (5 of 5).
+
+**It bites the Week 3 config directly.** The samplers pass all `n_posterior`
+draws through the UNet as one batch, and `w03_mri_fixed_operator.yaml` uses four.
+That is the batch-4 row: **the Week 3 config cannot run on this machine with
+today's memory load** — it completed a week earlier only because more was free.
+
+A further lever, recorded rather than built: drawing posterior samples one at a
+time would cap a 256² pass near 6 GB. It is not a quick patch — per-step noise is
+drawn for the whole batch, so running draws sequentially changes the order the
+random stream is consumed and therefore the draws themselves, which is a D-039
+matter, not a memory one.
 
 **Why it is serious rather than inconvenient.** The runner writes the bank only
 at the end. The Week 3 run took 7.2 hours; had the machine's memory filled at
