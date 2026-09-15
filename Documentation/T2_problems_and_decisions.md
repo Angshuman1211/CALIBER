@@ -23,6 +23,78 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
+#### P-23 - Two of the three Week 3 baselines were in-sample, and held out, 30 volumes cannot measure coverage at all
+
+**The bug is fixed; the consequence is open** - **See:** P-19, P-16, P-21, D-022, D-027
+
+**The bug.** P-19's fix to `analyse_bank.py` held out the *naive* threshold -
+fitted on `split=calib`, scored on `split=test` - but still fitted the
+matched-per-operator and group-conditional thresholds on the evaluation rows
+themselves. Split conformal scored on its own calibration rows lands on nominal
+by construction, which is why the T2.3 record reported both at **exactly
+0.900 at every operator**. It also meant a held-out method was being compared
+against two in-sample ones. That number was wrong and was written into the
+Week 3 record as a result.
+
+What gave it away was the exactness: held-out conformal coverage lands *near*
+nominal, not *on* it, three operators in a row.
+
+**Held out properly** (tau=3.0, calibration operator R=2, thresholds fitted on
+13,824 `split=calib` rows from 18 volumes, scored on 9,216 `split=test` rows
+from 12 volumes):
+
+| method | R=2 | R=4 | R=8 |
+|---|---|---|---|
+| naive transferred | 0.914 | 0.915 | 0.955 |
+| matched / group-conditional | 0.914 | 0.874 | **0.779** |
+
+**Then the part that matters more.** A volume-level bootstrap (2,000 resamples)
+puts 95% intervals on those numbers:
+
+| method | operator | coverage | 95% CI |
+|---|---|---|---|
+| matched | R=2 | 0.914 | [0.000, 1.000] |
+| matched | R=4 | 0.874 | [0.509, 0.985] |
+| matched | R=8 | 0.779 | [0.457, 0.919] |
+| naive | R=8 | 0.955 | [0.871, 0.989] |
+
+**With 12 test volumes, per-operator coverage is essentially unmeasured.** The
+bank cannot show that coverage holds - the in-sample 0.900 falsely suggested it
+did - and it cannot show that it fails. At tau=3.0 the positives concentrate in
+a handful of volumes, which is how R=2's interval spans the entire unit
+interval. The bootstrap resamples volumes, and volumes from one patient are
+correlated (D-027), so the true intervals are if anything *wider*.
+
+**What stands and what does not.** P-21 stands: it rests on the label base rate
+over all 23,040 regions and on flag area, which is a fraction of every region
+rather than of the few positive ones, and neither is a small-sample coverage
+estimate. Every *coverage* number in the Week 3 record does not stand as
+evidence of anything, in either direction.
+
+**Why this is open, and whose.** Scaling SE ~ 1/sqrt(n) from these intervals,
+order of magnitude only:
+
+| target CI half-width per operator | test volumes | items per operator (60% calib) | CPU hours per operator |
+|---|---|---|---|
+| ~0.10 | ~70 | ~170 | ~6.5 |
+| ~0.05 | ~270 | ~700 | ~26 |
+
+Two walls, not one. **Compute** (P-16): the ~0.05 row is ~26 CPU hours *per
+operator*, so a Week 4 grid at useful precision is not a CPU job. **Data**, and
+this one no hardware fixes: the unit of exchangeability is the patient, and
+fastMRI `singlecoil_val` has **96**. At the default split that is ~44 test
+patients, which caps precision near SE ~0.06 per operator no matter how long the
+solver runs. The protocol (T1.4, Track 1) has to be designed against that
+ceiling - pooled estimates, fewer and larger groups, or coverage reported with
+intervals rather than as point values.
+
+**The regression is pinned.** `test_every_threshold_is_fitted_on_calibration_
+rows_and_scored_on_test_rows` spies on every fitting and scoring call and asserts
+the split of the rows each receives. It was checked against the buggy version,
+where it fails.
+
+---
+
 #### P-21 - The ground-truth label is itself operator-dependent, so the coverage-failure experiment cannot mean what it is supposed to mean
 
 **Blocks:** the O3 reading of any coverage curve - **See:** D-034, D-028, D-020, P-02
@@ -80,6 +152,12 @@ is measured and delivered. The options, none of them Track 2's to choose:
 **Not a wasted run.** The bank is real, cached, and re-thresholdable without a
 GPU (Sec. 17), so whichever option Track 1 picks is a re-analysis, not a
 re-reconstruction.
+
+**Read with P-23.** The coverage rows in the first table above are point
+estimates from 12 test volumes, and P-23 shows intervals that wide cannot carry a
+claim. The *diagnosis* does not depend on them: the label base rate
+(0.401 -> 0.772) is measured over every region in the bank, and flag area is a
+fraction of all regions, not of the few positive ones.
 
 ---
 
@@ -680,7 +758,7 @@ added to the criterion cannot repeat this.
 
 #### P-20 - An unanchored `data/` ignore rule shipped a `main` that could not be imported
 
-**Fixed** - **See:** D-025, reported by Track 3
+**Fixed** - **See:** D-036 (Track 1's entry for the same bug), D-025 - reported by Track 3, found independently by Track 1
 
 `main` raised `ModuleNotFoundError: No module named 'caliber.data.splits'` on
 `import caliber.data`. Because `caliber/data/__init__.py` imports it too, the
@@ -700,6 +778,18 @@ machine that wrote it. That is exactly why it survived two weeks: nothing in a
 local workflow can see it. It took someone checking out the repository
 elsewhere - Track 3, working on T3.4 - to surface it.
 
+**Whose it was, accurately.** Two failures had to coincide. The ignore rule was
+widened by Track 1 in the D-025 consolidation, which replaced `data/*` plus
+`!data/README.md` with a bare `data/`; the original contained an internal slash
+and was therefore anchored, the replacement was not (Track 1 records this in
+D-036 as self-inflicted). And Track 2 added `splits.py` after that change and
+never checked that it had actually been committed. Neither alone would have
+shipped a broken `main`. An earlier Track 2 note called this Track 2's bug
+outright; that was half the story.
+
+Track 1 hit the same failure independently, anchored the rule themselves, and
+wrote a stand-in `splits.py` to keep working - which is what led to P-22.
+
 **A second consequence of the same rule.** `ruff` also respects `.gitignore`, so
 the linter had been skipping all six files in that package for as long as the
 rule existed. Anchoring it revealed two pre-existing `E501`s in `fastmri.py`,
@@ -715,6 +805,38 @@ loss - `splits.py` was the only casualty.
 **Lesson worth keeping:** a green local suite says nothing about what is in the
 repository. The check that matters is an export of the committed tree, and
 nothing in the project performed one until this.
+
+---
+
+#### P-22 - Two split implementations passed every test and disagreed on half the patients
+
+**Fixed** - **See:** D-037, P-20, D-036, D-022, D-027
+
+While `splits.py` was missing from `main` (P-20), Track 1 wrote a stand-in to the
+same contract so their work could continue - a reasonable thing to do, and its
+docstring said to take Track 2's file when it landed. It used the **same salt**,
+passed **all 21 split tests** and the full suite. On the 96 real fastMRI patients
+it put **48 on the opposite side** from the version that built the Week 3 bank.
+
+The tests could not see it because they check what a correct split must
+*satisfy* - deterministic, operator-independent, stable as patients are added,
+balanced - and never *which side any patient lands on*. Two implementations can
+satisfy every one of those properties and share almost no assignments. Banks
+built from the two would have been silently non-comparable, which is exactly what
+D-022's "identical across every run" requirement forbids.
+
+Resolved at the merge by keeping Track 2's version (D-037), for the two reasons above.
+**Anything Track 1 or Track 3 built from a `split: auto` bank on `main` between
+PR #21 and the Week 3 merge used the other split**; nothing in git can show
+whether that happened, because run outputs are not committed.
+
+**The fix makes the mapping itself the contract.** `tests/test_split_golden.py`
+pins the assignment of 40 fixed synthetic keys at two fractions, and the SHA-256
+of the real 96-patient assignment - a digest, so no patient identifier is
+committed and the NYU agreement is not engaged. The real-data test skips cleanly
+where fastMRI is absent. Checked against Track 1's version: 3 of 5 fail, as they
+should. Redrawing the split on purpose is still possible and now has to be
+explicit: bump `DEFAULT_SALT`, regenerate the pins, record it.
 
 ---
 
@@ -735,7 +857,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 35 entries, so a problem in Part I can be
+What lives here instead is the index — 37 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -775,3 +897,5 @@ traced to the decision that settled it without opening the log.
 | [D-033](decision_log.md) | The null-error share is a per-solver step-budget precondition on a bank | Week 2 | ACCEPTED |
 | [D-034](decision_log.md) | Relative criterion implemented and its tau curve measured; tau stays Track 1's | Week 2 | ACCEPTED — Track 2's half discharged |
 | [D-035](decision_log.md) | The prior's training domain is a third reportability gate | Week 3 | ACCEPTED |
+| [D-036](decision_log.md) | A bare `data/` in .gitignore also ignored `src/caliber/data/` | Week 2 | FIXED — Track 1's entry; see P-20 |
+| [D-037](decision_log.md) | Track 2's `splits.py` is canonical, and the split mapping itself is pinned | Week 3 | ACCEPTED — Track 1 to confirm no bank used the stand-in |

@@ -1278,6 +1278,37 @@ as someone else forgetting to add a file rather than as a config error.
 
 ---
 
+## D-037 · Track 2's `splits.py` is canonical, and the split mapping itself is pinned
+**Date:** Week 3 · **Status:** ACCEPTED — Track 1 to confirm no bank was built on the stand-in
+**Proposed by:** Track 2
+
+Two implementations of `caliber/data/splits.py` met when `main` was merged into `T2.3`.
+Track 2's — which built the Week 3 bank — was kept. Track 1's stand-in, written while the
+file was missing from `main` (D-036), was not. The *mapping* itself, which side each
+patient lands on, is now a tested contract (`tests/test_split_golden.py`), not only its
+properties.
+
+*Why this is a decision rather than a merge detail:* the two files share a salt and both
+pass all 21 split tests and the full suite, yet place **48 of the 96** real fastMRI
+patients on opposite sides (P-22). Picking one is picking which banks stay comparable,
+and D-022 requires the split to be identical across every run.
+
+*Reason for Track 2's:* the stand-in's own docstring says to take Track 2's file when it
+lands, and the 23,040-row Week 3 bank — 7.2 hours of CPU — was assigned under it. Nothing
+in the repository shows a bank built under the stand-in.
+
+*Cost, and the open half:* any bank Track 1 or Track 3 built with `split: auto` on `main`
+between PR #21 and the Week 3 merge used the other assignment and is not comparable with
+banks before or after. Run outputs are not committed, so git cannot show whether one
+exists. **Track 1 to confirm.**
+
+*How it changes deliberately:* bump `DEFAULT_SALT` and regenerate the pinned values in the
+same commit, recorded here. Anything else that moves the mapping fails the golden test.
+
+*Affects:* D-022, D-027, D-036, P-20, P-22, T2.3, every `split: auto` bank.
+
+---
+
 ## Template
 
 ```

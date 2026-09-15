@@ -145,34 +145,45 @@ def main(argv: list[str] | None = None) -> int:
     # every acquisition regime (D-022, D-027); calibrating and evaluating on the
     # same rows inflates coverage at the calibration operator specifically, which
     # is the one number the naive-transfer story is read against.
+    #
+    # This applies to *every* method, not only the naive one. The first version of
+    # this fix (P-19) held out the naive threshold but still fitted the matched and
+    # group-conditional thresholds on the evaluation rows themselves, which is why
+    # they reported exactly 0.900 — in-sample conformal lands on nominal by
+    # construction — and why the comparison against naive was held-out vs
+    # in-sample (P-23). Every threshold below is fitted on `calib_pool` and scored
+    # only on `evaluate`.
     has_split = "split" in df.columns and df["split"].nunique() > 1
     if has_split:
-        calib = df[(df["operator_id"] == calib_op) & (df["split"] == "calib")]
-        df = df[df["split"] == "test"].copy()
+        calib_pool = df[df["split"] == "calib"]
+        evaluate = df[df["split"] == "test"].copy()
         print(
-            f"[analyse] held out: {len(calib):,} calibration rows "
-            f"({calib_op}, split=calib) -> {len(df):,} evaluation rows (split=test)"
+            f"[analyse] held out: thresholds fitted on {len(calib_pool):,} split=calib rows, "
+            f"scored on {len(evaluate):,} split=test rows (patient-disjoint)"
         )
     else:
-        calib = df[df["operator_id"] == calib_op]
+        calib_pool = df
+        evaluate = df
         print(
-            "[analyse] WARNING  bank has a single split, so calibration and evaluation "
-            "share rows and coverage at the calibration operator is in-sample. "
-            "Rebuild with `split: auto` for a held-out number.",
+            "[analyse] WARNING  bank has a single split, so every threshold is fitted on "
+            "the rows it is scored on and all coverage below is in-sample. Rebuild with "
+            "`split: auto` for held-out numbers.",
             file=sys.stderr,
         )
 
     # 1. Naive transfer — one threshold from the calibration operator, used everywhere.
+    calib = calib_pool[calib_pool["operator_id"] == calib_op]
     tau = split_conformal_threshold(calib["score"], calib["label"], alpha=args.alpha)
     naive = evaluate_groups(
-        apply_threshold(df, tau, "score"), by=("operator_id",), nominal=nominal
+        apply_threshold(evaluate, tau, "score"), by=("operator_id",), nominal=nominal
     )
     naive["method"] = "naive_transferred"
 
-    # 2. Matched per operator — the upper bound.
+    # 2. Matched per operator — the upper bound: each operator's own calibration rows.
     matched_parts = []
-    for _oid, part in df.groupby("operator_id"):
-        t = split_conformal_threshold(part["score"], part["label"], alpha=args.alpha)
+    for oid, part in evaluate.groupby("operator_id"):
+        own = calib_pool[calib_pool["operator_id"] == oid]
+        t = split_conformal_threshold(own["score"], own["label"], alpha=args.alpha)
         matched_parts.append(apply_threshold(part, t, "score"))
     matched = evaluate_groups(
         pd.concat(matched_parts), by=("operator_id",), nominal=nominal
@@ -180,9 +191,9 @@ def main(argv: list[str] | None = None) -> int:
     matched["method"] = "matched_per_operator"
 
     # 3. Group-conditional (Mondrian) — the guaranteed backbone.
-    taus = mondrian_thresholds(df, "score", "label", alpha=args.alpha)
+    taus = mondrian_thresholds(calib_pool, "score", "label", alpha=args.alpha)
     mondrian = evaluate_groups(
-        apply_threshold(df, taus, "score"), by=("operator_id",), nominal=nominal
+        apply_threshold(evaluate, taus, "score"), by=("operator_id",), nominal=nominal
     )
     mondrian["method"] = "group_conditional"
 

@@ -93,3 +93,70 @@ def test_weights_must_form_a_valid_combination(bank):
     """Negative weights break monotonicity and the T3.3 Lipschitz argument (D25)."""
     with pytest.raises(ValueError, match="non-negative"):
         analyse_bank.main([str(bank), "--w-free", "-1", "--w-disagree", "1", "--w-residual", "1"])
+
+
+# -- every threshold is held out, not only the naive one (P-23) ----------------
+
+
+@pytest.fixture(scope="module")
+def two_split_bank(bank, tmp_path_factory):
+    """The phantom bank with half its volumes relabelled `test`.
+
+    The phantom substrate only supports a fixed split, so the two-split bank is
+    derived rather than generated; the split column is all that the held-out path
+    reads, and it is assigned per volume so no volume straddles the sides.
+    """
+    import shutil
+
+    out = tmp_path_factory.mktemp("two_split") / "bank"
+    shutil.copytree(bank, out)
+    df = read_bank(out)
+    volumes = sorted(df["sample_id"].unique())
+    test_side = set(volumes[: len(volumes) // 2])
+    df["split"] = df["sample_id"].map(lambda v: "test" if v in test_side else "calib")
+    df.to_parquet(out / "scores.parquet", index=False)
+    return out
+
+
+def test_every_threshold_is_fitted_on_calibration_rows_and_scored_on_test_rows(
+    two_split_bank, monkeypatch
+):
+    """The regression P-23 is about.
+
+    The first held-out fix calibrated the naive threshold on `split=calib` but fitted
+    the matched and group-conditional thresholds on the evaluation rows themselves.
+    Their coverage then sat on nominal by construction, and a held-out method was
+    compared against two in-sample ones. Spy on every fitting and scoring call and
+    check the split of the rows each one actually receives.
+    """
+    bank_df = read_bank(two_split_bank)
+    fitted_on, scored_on = [], []
+
+    real_split_conformal = analyse_bank.split_conformal_threshold
+    real_mondrian = analyse_bank.mondrian_thresholds
+    real_evaluate = analyse_bank.evaluate_groups
+
+    def spy_split_conformal(scores, labels, alpha):
+        fitted_on.append(set(bank_df.loc[scores.index, "split"]))
+        return real_split_conformal(scores, labels, alpha)
+
+    def spy_mondrian(df, score_col, label_col, *args, **kwargs):
+        fitted_on.append(set(df["split"]))
+        return real_mondrian(df, score_col, label_col, *args, **kwargs)
+
+    def spy_evaluate(df, *args, **kwargs):
+        scored_on.append(set(df["split"]))
+        return real_evaluate(df, *args, **kwargs)
+
+    monkeypatch.setattr(analyse_bank, "split_conformal_threshold", spy_split_conformal)
+    monkeypatch.setattr(analyse_bank, "mondrian_thresholds", spy_mondrian)
+    monkeypatch.setattr(analyse_bank, "evaluate_groups", spy_evaluate)
+
+    assert analyse_bank.main([str(two_split_bank), "--label-threshold", "0.05"]) == 0
+
+    # naive once, matched once per operator, mondrian once
+    n_ops = bank_df["operator_id"].nunique()
+    assert len(fitted_on) == 1 + n_ops + 1
+    assert all(sides == {"calib"} for sides in fitted_on), fitted_on
+    assert len(scored_on) == 3
+    assert all(sides == {"test"} for sides in scored_on), scored_on
