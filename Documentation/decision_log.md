@@ -1368,8 +1368,8 @@ set of fragments that a crash could leave inconsistent.
 key and is read as complete, so no existing bank changes meaning. The schema of
 `scores.parquet` is untouched.
 
-*Not done:* resume. A restarted run recomputes from the first item. Checkpointing turns a
-late crash from a total loss into the loss of the tail; it does not make a restart cheap.
+*Resume:* added by D-040 — a restarted run of the same config now continues from the
+checkpoint instead of recomputing from the first item.
 
 *Alternative rejected:* setting a default `checkpoint_every` in `base.yaml`. It would
 change the config hash, and therefore the run id, of every existing bank.
@@ -1404,6 +1404,38 @@ Changing the derivation again requires changing the pinned values in
 `tests/test_reproducibility.py`, deliberately, and an entry here.
 
 *Affects:* P-25, O7 (reproducibility package), T2.3, every bank, `stage2_decomposition.py`.
+
+---
+
+## D-040 · A restarted run resumes from its checkpoint — only for the same config
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+When the runner starts and finds a checkpoint (D-038) whose config hash matches its own,
+it loads the finished rows and skips those (item, operator) pairs. A checkpoint from a
+different config makes the run refuse to start.
+
+*Reason:* D-038 made a crash cost the tail of a run instead of all of it, but a restart
+still recomputed everything. At 256² on this CPU that is hours per restart, and P-24 shows
+restarts are not hypothetical.
+
+*Why it is safe now and was not before:* a resumed bank is only correct if the pairs
+computed after the restart are exactly what an uninterrupted run would have drawn. Until
+D-039 each process drew different seeds, so a resumed bank would have been a splice of two
+different random streams — valid-looking and not reproducible. With digest seeds it is
+exact. Tested directly: crash a run part-way, restart it, and require the resulting bank to
+equal one from a single uninterrupted run, and require the restart to call the sampler only
+for the pairs the checkpoint lacked. That test fails against the previous runner.
+
+*Why refuse a mismatched checkpoint rather than overwrite or merge it:* merging would put
+two runs' rows in one bank with nothing to tell them apart; overwriting silently discards
+someone's finished rows. Refusing costs one manual `rm` and cannot lose or corrupt data.
+The run directory is named by config hash, so a mismatch in practice means `run.id` was
+overridden.
+
+*Automatic, not opt-in:* the alternative — recomputing and overwriting unless a flag says
+otherwise — makes the destructive path the default.
+
+*Affects:* D-038, D-039, P-24, P-16, T2.3, T2.4 onward.
 
 ---
 

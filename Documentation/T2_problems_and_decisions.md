@@ -94,7 +94,8 @@ hour 7, it would have died with no error, no traceback and no partial output,
 and the log would have looked like a job that simply stopped. Nothing in the
 pipeline would have said why.
 
-**Where it stands: open, Track 2's — one of three mitigations is in** (D-038).
+**Where it stands: open, Track 2's — checkpointing and resume are in** (D-038,
+D-040); the preflight check is not.
 In order of cost:
 
 1. **Operational now:** close memory-heavy applications before a 256² run, and
@@ -111,10 +112,9 @@ In order of cost:
    by crashing a run part-way and recovering exactly the rows it finished — and
    that test fails against the previous runner.
 
-Still not done: the preflight check (2), and **resume** — a restarted run
-recomputes from the first item rather than skipping the ones a checkpoint
-already holds. Checkpointing makes a crash cost the tail of a run instead of
-all of it; it does not yet make a restart cheap.
+**Resume is also in (D-040):** a restarted run of the same config continues from
+its checkpoint, and the result is tested to equal an uninterrupted run exactly.
+Still not done: the preflight check (2).
 
 **No existing config sets `checkpoint_every`**, deliberately: adding it changes
 the config hash and therefore the run id of a bank that already exists. Set it
@@ -1005,7 +1005,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 39 entries, so a problem in Part I can be
+What lives here instead is the index — 40 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1049,3 +1049,4 @@ traced to the decision that settled it without opening the log.
 | [D-037](decision_log.md) | Track 2's `splits.py` is canonical, and the split mapping itself is pinned | Week 3 | ACCEPTED — Track 1 to confirm no bank used the stand-in |
 | [D-038](decision_log.md) | An interrupted run leaves a partial bank that readers refuse by default | Week 3 | ACCEPTED |
 | [D-039](decision_log.md) | Item seeds come from a stable digest, not Python's salted `hash()` | Week 3 | ACCEPTED |
+| [D-040](decision_log.md) | A restarted run resumes from its checkpoint — only for the same config | Week 3 | ACCEPTED |

@@ -191,11 +191,22 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
         },
     )
     started = time.time()
-    n_done, n_total = 0, len(items) * len(registry)
+    n_total = len(items) * len(registry)
+
+    # D-040: pick up an interrupted run of this same config instead of redoing it.
+    done = writer.resume_from_checkpoint()
+    if done:
+        print(
+            f"[caliber] resuming         {len(done)}/{n_total} (item, operator) pairs "
+            "recovered from the checkpoint (D-040)"
+        )
+    n_done = n_new = len(done)
 
     for item in items:
         for op in registry:
             desc = op.descriptor()
+            if (str(item.sample_id), int(item.slice_idx), desc.operator_id) in done:
+                continue
             seed_here = item_seed(seed, item.sample_id, item.slice_idx, desc.operator_id)
 
             sigma = float(desc.params.get("noise_sigma", 0.0) or 0.0)
@@ -244,10 +255,12 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                 )
 
             n_done += 1
+            n_new += 1
             if checkpoint_every and n_done % checkpoint_every == 0 and n_done < n_total:
                 writer.checkpoint(registry_descriptors=registry.descriptors())
             if n_done % max(1, n_total // 20) == 0 or n_done == n_total:
-                rate = n_done / max(1e-9, time.time() - started)
+                # Rate over pairs computed in *this* process, not recovered ones.
+                rate = (n_new - len(done)) / max(1e-9, time.time() - started)
                 print(f"[caliber] {n_done}/{n_total} items  ({rate:.1f}/s)")
 
     registry.write_manifest(out_root / "operator_registry.json")

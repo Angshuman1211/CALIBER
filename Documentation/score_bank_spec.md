@@ -60,8 +60,10 @@ runs/<run_id>/
 `*.partial.*` files every N items and removes them once the finished bank is on disk.
 A directory holding **only** partial files is an interrupted run: `read_bank` refuses
 it unless called with `allow_partial=True`, because a partial bank is a valid table
-whose rows give no sign the run stopped early. Banks written before D-038 have no
-`complete` key and are read as complete. The table schema below is unchanged.
+whose rows give no sign the run stopped early. Restarting the same config resumes
+from the checkpoint; a checkpoint from a different config is refused (D-040). Banks
+written before D-038 have no `complete` key and are read as complete. The table schema
+below is unchanged.
 
 A bank is **self-describing**: the manifest embeds the operator registry, so
 Track 3 can compute operator distances and Track 1 can calibrate from a copied

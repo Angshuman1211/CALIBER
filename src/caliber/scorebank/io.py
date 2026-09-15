@@ -157,6 +157,37 @@ class ScoreBankWriter:
             "validation_problems": problems,
         }
 
+    def resume_from_checkpoint(self) -> set[tuple[str, int, str]]:
+        """Load a checkpoint left by an interrupted run of *this* config (D-040).
+
+        Returns the ``(sample_id, slice_idx, operator_id)`` pairs already finished,
+        for the runner to skip; returns an empty set when there is no checkpoint.
+
+        Resuming is only safe because a bank is now a function of its config (D-039):
+        each pair's draws are identical in any process, so a resumed run produces the
+        bank an uninterrupted run would have. A checkpoint from a *different* config
+        is refused rather than merged — two runs' rows in one bank would be
+        indistinguishable from one run's, and wrong.
+        """
+        partial = self.root / PARTIAL_SCORES
+        if not partial.is_file():
+            return set()
+        manifest_path = self.root / PARTIAL_MANIFEST
+        found = None
+        if manifest_path.is_file():
+            found = (json.loads(manifest_path.read_text(encoding="utf-8"))
+                     .get("config", {}).get("_meta", {}).get("config_hash"))
+        expected = self.config.get("_meta", {}).get("config_hash")
+        if found is None or expected is None or found != expected:
+            raise schema.SchemaError(
+                f"{self.root} holds a checkpoint from config {found!r}, not this run's "
+                f"{expected!r}. Refusing to mix two runs into one bank; move or delete "
+                "the partial files to start over."
+            )
+        rows = pd.read_parquet(partial).to_dict(orient="records")
+        self._rows.extend(rows)
+        return {(str(r["sample_id"]), int(r["slice_idx"]), str(r["operator_id"])) for r in rows}
+
     def checkpoint(self, registry_descriptors: list[dict[str, Any]] | None = None) -> Path:
         """Write every row so far as a *partial* bank; returns the bank root (P-24).
 

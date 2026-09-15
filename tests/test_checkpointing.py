@@ -146,3 +146,72 @@ def test_a_bank_without_a_complete_key_still_reads_as_complete(tmp_path):
     manifest.pop("complete")
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     assert len(read_bank(bank)) > 0
+
+
+# -- resume (D-040) ------------------------------------------------------------
+
+
+def test_a_resumed_run_produces_exactly_the_uninterrupted_bank(tmp_path, monkeypatch):
+    """Crash, restart the same config, and get the bank a clean run would have made.
+
+    Only possible because draws no longer depend on the process (D-039): the pairs
+    computed after the restart come out identical to the ones a single run computes.
+    """
+    from caliber.solvers.reference import NullSpaceNoiseSampler
+
+    real_sample = NullSpaceNoiseSampler.sample
+    calls = {"n": 0, "crash_at": 4}
+
+    def sample(self, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == calls["crash_at"]:
+            raise RuntimeError("simulated crash mid-run")
+        return real_sample(self, *args, **kwargs)
+
+    monkeypatch.setattr(NullSpaceNoiseSampler, "sample", sample)
+
+    cfg = _cfg(tmp_path / "resumed", "run.checkpoint_every=1")
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        run(cfg)
+    recovered = len(read_bank(next((tmp_path / "resumed").iterdir()), allow_partial=True))
+
+    calls.update(n=0, crash_at=-1)
+    bank = run(_cfg(tmp_path / "resumed", "run.checkpoint_every=1"))
+    total_pairs = len(read_bank(bank)) // read_bank(bank)["region_id"].nunique()
+    n_regions = read_bank(bank)["region_id"].nunique()
+    assert calls["n"] == total_pairs - recovered // n_regions, "resume must skip finished pairs"
+    assert read_manifest(bank)["complete"] is True
+    assert not (bank / PARTIAL_SCORES).exists()
+
+    monkeypatch.setattr(NullSpaceNoiseSampler, "sample", real_sample)
+    clean = read_bank(run(_cfg(tmp_path / "clean", "run.checkpoint_every=1")))
+
+    key = ["sample_id", "operator_id", "region_id"]
+    ignore = ["run_id", "config_hash"]  # output_root differs, and it is part of the config
+    pd.testing.assert_frame_equal(
+        read_bank(bank).drop(columns=ignore).sort_values(key).reset_index(drop=True),
+        clean.drop(columns=ignore).sort_values(key).reset_index(drop=True),
+    )
+
+
+def test_a_checkpoint_from_a_different_config_is_refused(tmp_path):
+    """Two runs' rows in one bank look exactly like one run's — so never merge them."""
+    root = tmp_path / "bank"
+    first = ScoreBankWriter(root, run_id="r", config={"_meta": {"config_hash": "aaaa"}})
+    first._rows.append({"sample_id": "s", "slice_idx": 0, "operator_id": "o"})
+    pd.DataFrame(first._rows).to_parquet(root / PARTIAL_SCORES, index=False)
+    (root / PARTIAL_MANIFEST).write_text(
+        json.dumps({"config": {"_meta": {"config_hash": "aaaa"}}}), encoding="utf-8"
+    )
+
+    other = ScoreBankWriter(root, run_id="r", config={"_meta": {"config_hash": "bbbb"}})
+    with pytest.raises(SchemaError, match="Refusing to mix two runs"):
+        other.resume_from_checkpoint()
+
+    same = ScoreBankWriter(root, run_id="r", config={"_meta": {"config_hash": "aaaa"}})
+    assert same.resume_from_checkpoint() == {("s", 0, "o")}
+
+
+def test_no_checkpoint_means_nothing_to_resume(tmp_path):
+    writer = ScoreBankWriter(tmp_path / "bank", run_id="r", config={"_meta": {"config_hash": "x"}})
+    assert writer.resume_from_checkpoint() == set()
