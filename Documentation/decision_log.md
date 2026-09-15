@@ -1309,6 +1309,43 @@ same commit, recorded here. Anything else that moves the mapping fails the golde
 
 ---
 
+## D-038 · An interrupted run leaves a partial bank that readers refuse by default
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+With `run.checkpoint_every: N`, the runner rewrites every finished row to
+`scores.partial.parquet` and `manifest.partial.json` each N items, atomically. A finished
+run writes the normal bank, marks its manifest `"complete": true`, and only then removes
+the partial files. `read_bank` raises on a directory holding only a checkpoint unless
+called with `allow_partial=True`.
+
+*Reason:* P-24. At 256² this machine can kill the solver with a silent segfault, and the
+Week 3 bank took 7.2 hours. The runner held every row in memory and wrote once at the
+end, so a crash late in a run lost all of it, with no traceback and nothing on disk.
+
+*Why refuse partial banks rather than just read them:* a partial bank is a perfectly
+valid table. Nothing in its rows says the run stopped at item 40 of 90, and an analysis
+over it would be quietly computed on a different — and non-randomly truncated — sample
+from the one the config describes. That is the silent difference D-018 exists to prevent,
+so recovering rows has to be a deliberate act.
+
+*Why rewrite rather than append:* at this project's sizes a full rewrite is well under a
+second, and it keeps the checkpoint a single complete table at every moment instead of a
+set of fragments that a crash could leave inconsistent.
+
+*Compatibility:* `complete` is a new manifest key. Every bank written before it lacks the
+key and is read as complete, so no existing bank changes meaning. The schema of
+`scores.parquet` is untouched.
+
+*Not done:* resume. A restarted run recomputes from the first item. Checkpointing turns a
+late crash from a total loss into the loss of the tail; it does not make a restart cheap.
+
+*Alternative rejected:* setting a default `checkpoint_every` in `base.yaml`. It would
+change the config hash, and therefore the run id, of every existing bank.
+
+*Affects:* P-24, P-16, T2.3, `score_bank_spec.md`, every consumer of `read_bank`.
+
+---
+
 ## Template
 
 ```

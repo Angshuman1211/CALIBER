@@ -153,6 +153,10 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     n_posterior = int(experiment.get("n_posterior", 8))
     seed = int(run_cfg.get("seed", 0))
     cache_recons = int(run_cfg.get("cache_reconstructions", 0))
+    # Items between checkpoints; 0 writes nothing until the end, as before. P-24:
+    # at 256² this machine can kill the solver with a silent segfault, and the
+    # Week 3 bank took 7.2 hours to build, so a long run should always set this.
+    checkpoint_every = int(run_cfg.get("checkpoint_every", 0) or 0)
     region_rows = grid.table()
 
     writer = ScoreBankWriter(
@@ -221,6 +225,8 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                 )
 
             n_done += 1
+            if checkpoint_every and n_done % checkpoint_every == 0 and n_done < n_total:
+                writer.checkpoint(registry_descriptors=registry.descriptors())
             if n_done % max(1, n_total // 20) == 0 or n_done == n_total:
                 rate = n_done / max(1e-9, time.time() - started)
                 print(f"[caliber] {n_done}/{n_total} items  ({rate:.1f}/s)")

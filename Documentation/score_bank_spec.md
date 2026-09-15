@@ -50,7 +50,18 @@ runs/<run_id>/
   operator_registry.json     the registry snapshot, standalone
   scores.parquet             the long-format table below
   recons/                    OPTIONAL float16 posterior samples, small subset only
+
+  scores.partial.parquet     ONLY while running or after a crash (D-038)
+  manifest.partial.json      ditto; carries "complete": false
 ```
+
+**Complete and partial banks (D-038).** A finished bank's manifest carries
+`"complete": true`. A run with `run.checkpoint_every: N` also writes the two
+`*.partial.*` files every N items and removes them once the finished bank is on disk.
+A directory holding **only** partial files is an interrupted run: `read_bank` refuses
+it unless called with `allow_partial=True`, because a partial bank is a valid table
+whose rows give no sign the run stopped early. Banks written before D-038 have no
+`complete` key and are read as complete. The table schema below is unchanged.
 
 A bank is **self-describing**: the manifest embeds the operator registry, so
 Track 3 can compute operator distances and Track 1 can calibrate from a copied

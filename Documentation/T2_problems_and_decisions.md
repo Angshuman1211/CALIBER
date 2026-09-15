@@ -23,6 +23,90 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
+#### P-24 - At 256² the solver dies with a silent segfault when the machine is short of memory
+
+**Blocks:** reliable 256² runs of any length; DPS at 256² entirely - **See:** P-16, P-10, D-033
+
+The Week 3 D-033 sweep on the real UNet ran DDNM at 256² cleanly, then every DPS
+job printed its header, loaded the checkpoint, and **ended ten seconds later with
+no traceback and no output file**. The sweep log said `exit=0` for each - which
+was a bug in the logging, not a result: `exit=$?` was expanded after a `$(date)`
+substitution on the same line, so it recorded `date`'s status. The real exit
+code, captured properly, is **139: segmentation fault**.
+
+Isolating it took three wrong turns worth recording, because each looked like an
+answer:
+
+- **Not the DPS algorithm.** DPS at 256² with one draw and two steps ran and
+  produced a result.
+- **Not batch size.** Batch 1 then crashed too.
+- **Not a deterministic torch bug.** The identical batch-1 256² backward passed
+  twice in a row, then crashed five times out of five minutes later - and
+  finally even a **forward-only** pass at 256² segfaulted, which is the exact
+  operation that had just run for 7.2 hours to build the Week 3 bank.
+
+Nothing in the code had changed between the runs that worked and the runs that
+did not. The machine had.
+
+**Measured**, peak commit charge of one UNet pass, via `GetProcessMemoryInfo`:
+
+| resolution | pass | peak working set | peak commit |
+|---|---|---|---|
+| 128² | forward, 1 image | 1.45 GB | 2.99 GB |
+| 128² | forward + backward, 1 image | 1.58 GB | 3.42 GB |
+| 128² | forward + backward, 2 images | 2.17 GB | 4.12 GB |
+| 256² | anything | - | segfault |
+
+and at the time of the crashes, **5.3 GB of commit was free** out of a 26.2 GB
+limit (15.7 GB RAM plus pagefile), with other applications holding the rest.
+Activation memory scales with pixel count, so 256² needs roughly four times the
+128² activation share - on the order of 8 GB for a single forward. That figure is
+an *estimate*: it could not be measured directly, because the pass it describes
+would not run.
+
+**The explanation that fits every observation:** when a large tensor allocation
+fails, this CPU build of torch (`2.13.0+cpu`, Windows) does not raise
+`MemoryError` - it segfaults. 256² succeeds when other applications happen to
+leave enough headroom and dies when they do not. 128² fits either way (5 of 5).
+
+**Why it is serious rather than inconvenient.** The runner writes the bank only
+at the end. The Week 3 run took 7.2 hours; had the machine's memory filled at
+hour 7, it would have died with no error, no traceback and no partial output,
+and the log would have looked like a job that simply stopped. Nothing in the
+pipeline would have said why.
+
+**Where it stands: open, Track 2's — one of three mitigations is in** (D-038).
+In order of cost:
+
+1. **Operational now:** close memory-heavy applications before a 256² run, and
+   capture exit codes correctly - a 139 is a memory problem until proven
+   otherwise.
+2. **A preflight check** in the runner that compares free commit against an
+   estimate for the configured resolution and batch, and refuses to start a job
+   that cannot finish.
+3. **Incremental bank writes**, so a job killed at hour 7 keeps seven hours of
+   rows. This is the one that turns a silent total loss into a partial result,
+   and it also serves P-16, where every long job is a risk. **Done (D-038):**
+   `run.checkpoint_every: N` rewrites every finished row to a partial bank each
+   N items, atomically; `read_bank` refuses a partial bank unless asked. Tested
+   by crashing a run part-way and recovering exactly the rows it finished — and
+   that test fails against the previous runner.
+
+Still not done: the preflight check (2), and **resume** — a restarted run
+recomputes from the first item rather than skipping the ones a checkpoint
+already holds. Checkpointing makes a crash cost the tail of a run instead of
+all of it; it does not yet make a restart cheap.
+
+**No existing config sets `checkpoint_every`**, deliberately: adding it changes
+the config hash and therefore the run id of a bank that already exists. Set it
+with `--set run.checkpoint_every=10` on any long run, and in every new config.
+
+This also bears on D-033: DPS was measured on the real UNet at **128²** instead,
+because at 256² it cannot run here at all. Whether its step budget transfers to
+256² is unmeasured.
+
+---
+
 #### P-23 - Two of the three Week 3 baselines were in-sample, and held out, 30 volumes cannot measure coverage at all
 
 **The bug is fixed; the consequence is open** - **See:** P-19, P-16, P-21, D-022, D-027
@@ -857,7 +941,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 37 entries, so a problem in Part I can be
+What lives here instead is the index — 38 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -899,3 +983,4 @@ traced to the decision that settled it without opening the log.
 | [D-035](decision_log.md) | The prior's training domain is a third reportability gate | Week 3 | ACCEPTED |
 | [D-036](decision_log.md) | A bare `data/` in .gitignore also ignored `src/caliber/data/` | Week 2 | FIXED — Track 1's entry; see P-20 |
 | [D-037](decision_log.md) | Track 2's `splits.py` is canonical, and the split mapping itself is pinned | Week 3 | ACCEPTED — Track 1 to confirm no bank used the stand-in |
+| [D-038](decision_log.md) | An interrupted run leaves a partial bank that readers refuse by default | Week 3 | ACCEPTED |
