@@ -1104,6 +1104,22 @@ not.
 
 *Affects:* T2.2, T1.4 protocol, Weeks 4 and 10, D-028.
 
+**Re-measured on the real UNet, Week 3 — the value 5.0 does not hold for this prior.** The
+table above came from the analytic denoiser. On `ddpm-celebahq-256` (R=4, 128², 24 steps,
+two items × two draws):
+
+| ζ | 0.5 | 1 | 2 | 5 | 10 | 20 |
+|---|---|---|---|---|---|---|
+| null share of error | 0.627 | 0.707 | 0.756 | 0.817 | 0.872 | 0.931 |
+| data-consistency error | 0.454 | 0.363 | 0.305 | 0.238 | 0.182 | 0.126 |
+
+No minimum in the range: the fit is still improving at 20, so the optimum is above it and
+**unbracketed**. The analytic denoiser was never the prior, which is exactly the case this
+entry's *Cost* line anticipated. `DEFAULT_STEP_SIZE` is left at 5.0 until the optimum is
+bracketed — jointly with the step count, since strong guidance is what made DPS diverge at 8
+steps (D-033 update) — and on more than one operator's worth of items. The decision itself is
+unchanged: one value, fixed across every operator in a curve. Only the number is open.
+
 ---
 
 ## D-032 · Stage-2 decomposition diagnostics are a run artefact, not score-bank columns
@@ -1165,6 +1181,22 @@ is more confidence than the number has earned.
 machine (P-16) is most of the reason the Week 4 grid will run DDNM.
 
 *Affects:* T2.2, T2.3, T1.4 protocol, Week 4 grid sizing, D-031, P-16.
+
+**Re-measured on the real UNet, Week 3.** R=4, two items × two draws, at ζ=5.0:
+
+| solver | resolution | steps | null share of error | data-consistency error |
+|---|---|---|---|---|
+| DDNM | 256² | 8 / 24 | 0.981 / 0.990 | 0.116 / 0.067 |
+| DDNM | 128² | 8 / 24 | 0.969 / 0.986 | 0.118 / 0.068 |
+| DPS | 128² | 8 | 0.003 | **116.7 — diverged** |
+| DPS | 128² | 24 / 48 | 0.817 / 0.852 | 0.240 / 0.196 |
+
+The gate's *direction* survives and DDNM's admissibility at 8 steps is confirmed on the real
+prior, at both resolutions. DPS behaves worse than the stand-in predicted in one respect and
+better in another: at 8 steps it **diverges** rather than merely under-converging, but from 24
+steps it clears the gate — admissible at half the analytic denoiser's ~48 — and its remaining
+gap to DDNM is mostly D-031's mis-set step size rather than the step count. DPS was measured at
+128² only: at 256² it could not run on this machine at all (P-24).
 
 ---
 

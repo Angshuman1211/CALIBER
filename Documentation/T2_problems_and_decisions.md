@@ -1021,9 +1021,9 @@ traced to the decision that settled it without opening the log.
 | [D-028](decision_log.md) | Fixing D-024 reversed the direction of the naive-transfer coverage failure | Week 1 | ACCEPTED — recorded, not yet re-measured on a real solver |
 | [D-029](decision_log.md) | Solver algorithms are separated from the network that drives them | Week 2 | ACCEPTED |
 | [D-030](decision_log.md) | The flow-matching family uses diffusion-derived velocities, not a FlowDPS checkpoint | Week 2 | ACCEPTED — scope limitation, must appear in the write-up |
-| [D-031](decision_log.md) | Guidance strength is a fixed solver constant, never tuned per operator | Week 2 | ACCEPTED |
+| [D-031](decision_log.md) | Guidance strength is a fixed solver constant, never tuned per operator | Week 2 | ACCEPTED — **the value 5.0 is wrong for the real prior**; optimum above 20, unbracketed (Week 3) |
 | [D-032](decision_log.md) | Stage-2 decomposition diagnostics are a run artefact, not score-bank columns | Week 2 | ACCEPTED |
-| [D-033](decision_log.md) | The null-error share is a per-solver step-budget precondition on a bank | Week 2 | ACCEPTED |
+| [D-033](decision_log.md) | The null-error share is a per-solver step-budget precondition on a bank | Week 2 | ACCEPTED — re-measured on the real UNet; DPS diverges at 8 steps, admissible from 24 (Week 3) |
 | [D-034](decision_log.md) | Relative criterion implemented and its tau curve measured; tau stays Track 1's | Week 2 | ACCEPTED — Track 2's half discharged |
 | [D-035](decision_log.md) | The prior's training domain is a third reportability gate | Week 3 | ACCEPTED |
 | [D-036](decision_log.md) | A bare `data/` in .gitignore also ignored `src/caliber/data/` | Week 2 | FIXED — Track 1's entry; see P-20 |

@@ -1,0 +1,53 @@
+# D-033 and D-031 re-measured on the real UNet — owed by T2.3 before any DPS bank.
+#
+# D-033 set a per-solver precondition: a bank is admissible only if the null share of
+# reconstruction error exceeds 0.5 at the configured step count. D-031 fixed DPS's
+# guidance step size at 5.0. Both numbers came from the *analytic* denoiser at 32², a
+# closed-form stand-in that produces smooth blobs. This config measures them on the
+# real prior. Results are recorded in D-033, D-031 and T2.3 §7.
+#
+# DPS RUNS AT 128², NOT THE 256² BELOW. At 256² the solver segfaults on this machine
+# whenever other applications leave too little memory (P-24) — DPS's backward pass
+# never completed there once. The 128² overrides in every command are not optional.
+#
+# Step budget, one (solver, step count) per invocation:
+#
+#   python scripts/stage2_decomposition.py configs/experiments/w03_dps_step_budget.yaml \
+#       --set experiment.solver.n_steps=24 \
+#       --set data.image_shape=[128,128] --set data.dataset.image_shape=[128,128]
+#
+#   ... --set experiment.solver.name=ddnm     # the reference, same budget
+#
+# Guidance step size, at a fixed 24 steps:
+#
+#   ... --set experiment.solver.step_size=20.0 \
+#       --set experiment.name=w03_dps_stepsize_z20.0
+#
+# Measured: DPS diverges at 8 steps (data-consistency error 116.7) and clears D-033
+# from 24. Its fit improves monotonically with ζ from 0.5 to 20 with no minimum, so the
+# optimum lies above 20 and is not yet bracketed — D-031's 5.0 does not hold for this
+# prior. Bracket ζ jointly with the step count before producing any DPS bank.
+#
+# Deliberately small: one operator, two items, two draws. It locates where the premise
+# holds and which way the step size moves the fit; it is not a distribution.
+
+include: experiments/w03_mri_fixed_operator
+
+experiment:
+  name: w03_dps_step_budget
+  solver:
+    name: dps
+    checkpoint: checkpoints/ddpm-celebahq-256
+    n_steps: 24
+  n_posterior: 2
+  operators:
+    # R=4, the middle of the Week 3 grid and the operator D-033 was measured at.
+    - modality: mri
+      family: random1d
+      acceleration: 4
+      center_fraction: 0.08
+      mask_seed: 0
+
+run:
+  limit: 2
+  cache_reconstructions: 0
