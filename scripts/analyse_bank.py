@@ -25,12 +25,16 @@ import pandas as pd
 import torch
 
 from caliber.calibration import apply_threshold, mondrian_thresholds, split_conformal_threshold
-from caliber.evaluation import coverage_curve, evaluate_groups, monotonicity
+from caliber.evaluation import (
+    coverage_curve,
+    derive_score_and_label,
+    evaluate_groups,
+    monotonicity,
+)
 from caliber.operators.distance import compute_distance
 from caliber.operators.registry import build_operator
 from caliber.scorebank import read_bank, read_manifest
-from caliber.scoring.labels import RegionTruth, label_hallucinated
-from caliber.scoring.score import ScoreComponents, ScoreScales, ScoreWeights, combine_components
+from caliber.scoring.score import ScoreComponents, ScoreScales, ScoreWeights
 
 
 def rebuild_operators(manifest: dict) -> dict:
@@ -103,28 +107,22 @@ def main(argv: list[str] | None = None) -> int:
     # operator and then frozen — re-estimating per deployment operator would pull
     # the score distributions back towards each other and shrink the very
     # coverage gap this analysis exists to measure (D27).
-    def components_of(frame) -> ScoreComponents:
-        return ScoreComponents(
-            s_free=torch.tensor(frame["s_free"].to_numpy()),
-            s_disagree=torch.tensor(frame["s_disagree"].to_numpy()),
-            s_residual=torch.tensor(frame["s_residual"].to_numpy()),
+    # One definition, in the library: `scripts/sizing.py` needs the same derivation, and
+    # a second copy is how P-19 happened.
+    weights = ScoreWeights(free=args.w_free, disagree=args.w_disagree, residual=args.w_residual)
+    df = derive_score_and_label(
+        df, calib_op, weights=weights,
+        threshold=args.label_threshold, relative=args.relative,
+    )
+    scales = ScoreScales.from_components(
+        ScoreComponents(
+            s_free=torch.tensor(df[df["operator_id"] == calib_op]["s_free"].to_numpy()),
+            s_disagree=torch.tensor(df[df["operator_id"] == calib_op]["s_disagree"].to_numpy()),
+            s_residual=torch.tensor(df[df["operator_id"] == calib_op]["s_residual"].to_numpy()),
             ref_intensity=1.0,
         )
-
-    weights = ScoreWeights(free=args.w_free, disagree=args.w_disagree, residual=args.w_residual)
-    scales = ScoreScales.from_components(components_of(df[df["operator_id"] == calib_op]))
-    df["score"] = combine_components(components_of(df), weights, scales).numpy()
-    print(f"[analyse] score {combination_note(weights, scales)}")
-
-    truth = RegionTruth(
-        err_total=torch.tensor(df["err_total"].to_numpy()),
-        err_free=torch.tensor(df["err_free"].to_numpy()),
-        free_content=torch.tensor(df["free_content"].to_numpy()),
-        ann_coverage=torch.tensor(df["ann_coverage"].to_numpy()),
     )
-    df["label"] = label_hallucinated(
-        truth, threshold=args.label_threshold, relative=args.relative
-    ).numpy()
+    print(f"[analyse] score {combination_note(weights, scales)}")
     rule = "err_free / free_content" if args.relative else "err_free"
     print(
         f"[analyse] {int(df['label'].sum()):,} hallucinated regions "

@@ -209,6 +209,60 @@ where it fails.
 
 ---
 
+**Week 4 update - the ceiling is lower than "more patients would fix it".**
+`scripts/sizing.py` now measures this instead of estimating it in prose. It
+derives the score and label from a bank, bootstraps coverage **over clusters**
+rather than regions - the interval over regions treats thousands of correlated
+observations as independent - and extrapolates the observed SE as `1/sqrt(n)`.
+
+On the Week 3 bank at Track 1's ratified `tau = 1.75`, per-operator SE is
+0.103-0.117 at 12 test volumes. What that implies:
+
+| target half-width | test clusters needed | as % of the ~40 test patients available |
+|---|---|---|
+| +/- 0.10 | 63 | **156%** |
+| +/- 0.05 | 251 | 623% |
+| +/- 0.02 | 1,566 | 3,884% |
+
+and, splitting the 96-patient ceiling (D-027) across a grid:
+
+| operators | test patients each | achievable half-width |
+|---|---|---|
+| 1 | 40 | **0.125** |
+| 2 | 20 | 0.176 |
+| 3 | 13 | 0.216 |
+| 6 | 7 | 0.305 |
+| 12 | 3 | 0.432 |
+
+**Read the first row of the second table.** Even spending *every* available test
+patient on a *single* operator gives +/- 0.125 - still wider than the +/- 0.10 that
+would separate "coverage restored" from "coverage failed". A six-operator Week 4
+grid gives +/- 0.305, which is not a measurement of anything.
+
+So **fastMRI `singlecoil_val` cannot support a per-operator coverage claim at any
+grid size**, and no amount of CPU time changes that; it is a property of having 96
+patients. This is not a reason to stop - it is a reason to stop reporting
+per-operator coverage as the headline. The options, all Track 1's to choose
+(T1.4), none of them Track 2's:
+
+1. **Pool across operators** - estimate one coverage with an operator term, rather
+   than k independent estimates from k small samples.
+2. **Lead with flag area**, which is a fraction of *every* region rather than of
+   the few positive ones, and is correspondingly far better determined. The
+   over-flagging result (0.244 -> 0.668) does not depend on the coverage precision
+   at all.
+3. **Report intervals, never points.** If per-operator coverage stays in the
+   write-up, it has to carry its interval, and those intervals will overlap.
+4. **Add patients** - fastMRI `singlecoil_train` is 72.7 GB and was skipped as "not
+   needed" (D-013, P-14). It is the only lever that raises the ceiling, and it is a
+   disk and time cost, not a licensing one.
+
+The caveats travel with the numbers: the SE is extrapolated from 12 clusters, and
+clustering is by *volume* rather than patient, so the true intervals are wider
+still (fastMRI has ~2 volumes per patient).
+
+---
+
 #### P-02 - The v0 label threshold marks everything as hallucinated
 
 **Closed** - tau ruled by Track 1 - **See:** D-037, D-038, D-020, D-003, D-009
