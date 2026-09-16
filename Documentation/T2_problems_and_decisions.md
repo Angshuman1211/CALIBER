@@ -94,8 +94,9 @@ hour 7, it would have died with no error, no traceback and no partial output,
 and the log would have looked like a job that simply stopped. Nothing in the
 pipeline would have said why.
 
-**Where it stands: open, Track 2's — checkpointing and resume are in** (D-038,
-D-040); the preflight check is not.
+**Where it stands: mitigated, Track 2's — all three are in** (D-038, D-040,
+D-041). The underlying constraint does not go away: this machine cannot run the
+Week 3 config as written, and the runner now says so instead of dying part-way.
 In order of cost:
 
 1. **Operational now:** close memory-heavy applications before a 256² run, and
@@ -103,7 +104,11 @@ In order of cost:
    otherwise.
 2. **A preflight check** in the runner that compares free commit against an
    estimate for the configured resolution and batch, and refuses to start a job
-   that cannot finish.
+   that cannot finish. **Done (D-041):** the estimate is
+   `max(2.8, 2.0 + 6.1e-5 x pixels x draws)` GB, fitted to eleven measured points
+   and accurate on all of them to within 0.4 GB; it calls both observed failures.
+   Overridable with `run.skip_memory_check`, and silent where the available
+   memory cannot be read.
 3. **Incremental bank writes**, so a job killed at hour 7 keeps seven hours of
    rows. This is the one that turns a silent total loss into a partial result,
    and it also serves P-16, where every long job is a risk. **Done (D-038):**
@@ -114,7 +119,10 @@ In order of cost:
 
 **Resume is also in (D-040):** a restarted run of the same config continues from
 its checkpoint, and the result is tested to equal an uninterrupted run exactly.
-Still not done: the preflight check (2).
+**The preflight check is in too (D-041):** the runner estimates the run's peak
+commit charge, compares it with what the machine has, and refuses to start a run
+that cannot finish - overridable, because the estimate is a fit to one machine.
+All three mitigations are now built.
 
 **No existing config sets `checkpoint_every`**, deliberately: adding it changes
 the config hash and therefore the run id of a bank that already exists. Set it
@@ -1005,7 +1013,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 40 entries, so a problem in Part I can be
+What lives here instead is the index — 41 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1050,3 +1058,4 @@ traced to the decision that settled it without opening the log.
 | [D-038](decision_log.md) | An interrupted run leaves a partial bank that readers refuse by default | Week 3 | ACCEPTED |
 | [D-039](decision_log.md) | Item seeds come from a stable digest, not Python's salted `hash()` | Week 3 | ACCEPTED |
 | [D-040](decision_log.md) | A restarted run resumes from its checkpoint — only for the same config | Week 3 | ACCEPTED |
+| [D-041](decision_log.md) | A run that cannot fit in memory is refused before it starts | Week 3 | ACCEPTED |

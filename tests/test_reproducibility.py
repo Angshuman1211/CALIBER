@@ -51,7 +51,8 @@ def _run_in_subprocess(out: Path, hash_seed: str) -> Path:
     code = (
         "from caliber.config import load_config; from caliber.runner import run; "
         f"cfg = load_config(r'{SMOKE}', ['run.limit=2', 'experiment.n_posterior=2', "
-        f"'run.cache_reconstructions=0', 'run.output_root={out.as_posix()}']); "
+        f"'run.cache_reconstructions=0', 'run.skip_memory_check=true', "
+        f"'run.output_root={out.as_posix()}']); "
         "print(run(cfg))"
     )
     result = subprocess.run(

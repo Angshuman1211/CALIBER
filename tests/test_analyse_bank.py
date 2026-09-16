@@ -41,6 +41,9 @@ def bank(tmp_path_factory):
             "run.limit=4",
             "experiment.n_posterior=4",
             "run.cache_reconstructions=0",
+            # The preflight (D-041) guards long runs; these tests exercise logic and
+            # must not fail because of whatever else the machine happens to be running.
+            "run.skip_memory_check=true",
             f"run.output_root={out.as_posix()}",
         ],
     )

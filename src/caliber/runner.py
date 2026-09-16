@@ -38,6 +38,7 @@ import torch
 from .config import ConfigError, load_config
 from .data import build_dataset
 from .operators.registry import OperatorRegistry
+from .resources import memory_preflight
 from .scorebank.io import ScoreBankWriter, save_reconstructions
 from .scoring.labels import CRITERION_VERSION, compute_region_truth
 from .scoring.regions import RegionGrid
@@ -190,6 +191,33 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
             "reportable": reportable,
         },
     )
+    # P-24 / D-041: a pass that does not fit can segfault rather than raise, so check
+    # before spending hours. The estimate is fitted to measurements on this machine, so a
+    # refusal is overridable -- being wrong here must cost a flag, not a week.
+    memory = memory_preflight(
+        image_shape, n_posterior, backward=solver.info().solver_id.startswith("diffusion.dps")
+    )
+    if memory["verdict"] != "unknown":
+        print(
+            f"[caliber] memory           needs ~{memory['needed_gb']} GB commit, "
+            f"{memory['available_gb']} GB available  ({memory['verdict']})"
+        )
+    if memory["verdict"] == "too_big" and not run_cfg.get("skip_memory_check", False):
+        raise ConfigError(
+            f"this run needs about {memory['needed_gb']} GB of committed memory and only "
+            f"{memory['available_gb']} GB is available. It is expected to die part-way, and "
+            "on this torch build that can be a silent segfault rather than an error (P-24). "
+            "Close other applications, lower data.image_shape or experiment.n_posterior, or "
+            "set run.skip_memory_check=true to proceed anyway."
+        )
+    if memory["verdict"] == "tight":
+        print(
+            "[caliber] WARNING          within 20% of available memory; another application "
+            "growing during the run could kill it (P-24). Checkpoints are the safety net - "
+            "set run.checkpoint_every if it is not already set.",
+            file=sys.stderr,
+        )
+
     started = time.time()
     n_total = len(items) * len(registry)
 

@@ -1439,6 +1439,45 @@ otherwise — makes the destructive path the default.
 
 ---
 
+## D-041 · A run that cannot fit in memory is refused before it starts
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+`caliber.resources` estimates the peak commit charge of a run from its image shape and
+draw count, compares it with what the machine has, and the runner **raises rather than
+starts** when the estimate exceeds availability. `run.skip_memory_check: true` overrides.
+
+*Reason:* P-24's third mitigation. Checkpointing (D-038) and resume (D-040) make a
+memory death survivable; this makes the common case not happen. The failure it prevents is
+particularly bad because it is often silent — a segfault with no traceback, hours in.
+
+*The estimate is measured, not derived*, on this machine at `torch 2.13.0+cpu`:
+
+    peak commit GB  ≈  max(2.8, 2.0 + 6.1e-5 × pixels × draws)
+
+It reproduces eleven measured points within 0.4 GB, including both configurations that
+actually failed (128²×8 segfaulted with 7.6 GB free; 256²×4 raised out-of-memory). A
+backward pass (DPS) carries a flat +0.4 GB, measured at one size only.
+
+*Refuse, not warn.* A warning at the start of a seven-hour job is read once and then
+scrolls away, and the thing it warns about produces no error when it happens. Within 20%
+of the limit the run proceeds with a warning, since that case depends on what other
+applications do next.
+
+*Overridable, deliberately:* the model is a fit to one machine, one checkpoint and one
+torch build. On different hardware it will be wrong, and being wrong must cost a flag
+rather than a week. `available_commit_gb()` returns `None` off Windows and the verdict is
+then `"unknown"`, which never blocks — a check that cannot read the memory must not stop a
+run.
+
+*Consequence worth stating:* `w03_mri_fixed_operator.yaml` as written — 256², four draws,
+~18 GB — is now **refused on this machine**, which is correct: it is the configuration
+that raises out-of-memory today. The Week 3 bank exists because more memory was free when
+it ran.
+
+*Affects:* P-24, P-16, D-038, D-040, T2.3, every config's runnability.
+
+---
+
 ## Template
 
 ```

@@ -40,6 +40,8 @@ def _cfg(out: Path, *extra: str) -> dict:
             "run.limit=3",
             "experiment.n_posterior=2",
             "run.cache_reconstructions=0",
+            # See test_analyse_bank: logic under test, not the machine's memory (D-041).
+            "run.skip_memory_check=true",
             f"run.output_root={out.as_posix()}",
             *extra,
         ],
