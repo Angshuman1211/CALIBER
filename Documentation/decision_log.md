@@ -1478,7 +1478,39 @@ it ran.
 
 ---
 
-## Template
+## D-042 · Each posterior draw is seeded independently, so draws can be batched in any size
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+Draw *i* of a sample is a function of ``(seed, i)`` alone —
+``solvers/base.draw_seed`` — not of the batch it was computed in. Every pretrained
+back-end takes ``max_draws_per_batch``: the draws are computed in batches of that size
+and concatenated, and the result is **bit-identical** to computing them in one batch.
+
+*Reason:* P-24. Peak memory is set by how many draws go through the UNet at once, and the
+samplers put all of them through together, so `w03_mri_fixed_operator.yaml` (256², four
+draws, ~18 GB) could not run on this machine at all. Chunking is the obvious fix and was
+blocked by exactly one thing: draws shared a generator, so the noise a draw received
+depended on how many others were requested alongside it. Batch size was a property of the
+result.
+
+*Measured:* the Week 3 config at 256², four draws, chunked to one — **6.0 GB instead of
+~18 GB**, and it runs. The bank it produces is the bank a single batch would have
+produced.
+
+*Cost:* the draws differ from those of any bank produced before this entry, because the
+noise each draw receives is now derived differently. That costs nothing that was not
+already lost: no bank before D-039 was reproducible at all, and D-039 had already reset
+the draws this week. Doing both resets in one week is deliberate.
+
+*Not changed:* no committed config sets `max_draws_per_batch`, for the reason D-038 gives
+about `checkpoint_every` — it would alter the config hash, and therefore the run id, of a
+bank that already exists. Pass `--set experiment.solver.max_draws_per_batch=1` on a run
+that needs it.
+
+*Speed:* a smaller batch gives up some of the CPU's parallelism across draws. On this
+machine that is a modest cost against not being able to run at all.
+
+*Affects:* P-24, P-16, D-039, D-041, T2.3, Week 4 grid sizing.
 
 ```
 ## D-0NN · <one-line decision>

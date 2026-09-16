@@ -82,11 +82,12 @@ draws through the UNet as one batch, and `w03_mri_fixed_operator.yaml` uses four
 That is the batch-4 row: **the Week 3 config cannot run on this machine with
 today's memory load** — it completed a week earlier only because more was free.
 
-A further lever, recorded rather than built: drawing posterior samples one at a
-time would cap a 256² pass near 6 GB. It is not a quick patch — per-step noise is
-drawn for the whole batch, so running draws sequentially changes the order the
-random stream is consumed and therefore the draws themselves, which is a D-039
-matter, not a memory one.
+**That lever is now built (D-042).** Seeding each draw from `(seed, index)` rather
+than sharing one generator across the batch decoupled the result from the batch
+size, and the back-ends take `max_draws_per_batch`. Measured: the Week 3 config at
+256² with four draws needs **6.0 GB chunked to one draw, against ~18 GB batched**,
+and it runs. The bank is bit-identical either way, which is the property that
+makes the chunking a memory setting rather than an experimental choice.
 
 **Why it is serious rather than inconvenient.** The runner writes the bank only
 at the end. The Week 3 run took 7.2 hours; had the machine's memory filled at
@@ -95,8 +96,10 @@ and the log would have looked like a job that simply stopped. Nothing in the
 pipeline would have said why.
 
 **Where it stands: mitigated, Track 2's — all three are in** (D-038, D-040,
-D-041). The underlying constraint does not go away: this machine cannot run the
-Week 3 config as written, and the runner now says so instead of dying part-way.
+D-041), and D-042 removes the constraint for this config rather than only
+reporting it: **the Week 3 config runs on this machine again** when its draws are
+chunked. What remains is the underlying scarcity — a 256² pass needs ~6 GB
+whatever the batching, so a long run still competes with whatever else is open.
 In order of cost:
 
 1. **Operational now:** close memory-heavy applications before a 256² run, and
@@ -1013,7 +1016,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 41 entries, so a problem in Part I can be
+What lives here instead is the index — 42 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1059,3 +1062,4 @@ traced to the decision that settled it without opening the log.
 | [D-039](decision_log.md) | Item seeds come from a stable digest, not Python's salted `hash()` | Week 3 | ACCEPTED |
 | [D-040](decision_log.md) | A restarted run resumes from its checkpoint — only for the same config | Week 3 | ACCEPTED |
 | [D-041](decision_log.md) | A run that cannot fit in memory is refused before it starts | Week 3 | ACCEPTED |
+| [D-042](decision_log.md) | Each posterior draw is seeded independently, so draws can be batched in any size | Week 3 | ACCEPTED |

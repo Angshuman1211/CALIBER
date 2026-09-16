@@ -116,3 +116,25 @@ def test_a_tight_run_warns_but_proceeds(tmp_path, monkeypatch, capsys):
     bank = run(_cfg(tmp_path))
     assert (bank / "scores.parquet").is_file()
     assert "within 20% of available memory" in capsys.readouterr().err
+
+
+def test_the_preflight_uses_the_chunked_batch_not_the_draw_count(tmp_path, monkeypatch):
+    """Chunking is what makes a big run fit, so the estimate must reflect it (D-042).
+
+    Without this the runner would keep refusing a run that chunking has made feasible.
+    """
+    seen = {}
+
+    def spy(image_shape, draws, backward=False):
+        seen["draws"] = draws
+        return {"needed_gb": 1.0, "available_gb": 100.0, "verdict": "ok"}
+
+    from caliber.solvers.reference import NullSpaceNoiseSampler
+
+    monkeypatch.setattr("caliber.runner.memory_preflight", spy)
+    # Set on the sampler rather than through config: the phantom smoke config uses the
+    # reference sampler, which does not chunk. What is under test is that the runner
+    # estimates from the solver's batch size rather than from the draw count.
+    monkeypatch.setattr(NullSpaceNoiseSampler, "max_draws_per_batch", 2, raising=False)
+    run(_cfg(tmp_path, "experiment.n_posterior=8"))
+    assert seen["draws"] == 2

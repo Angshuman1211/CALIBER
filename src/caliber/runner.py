@@ -194,9 +194,18 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     # P-24 / D-041: a pass that does not fit can segfault rather than raise, so check
     # before spending hours. The estimate is fitted to measurements on this machine, so a
     # refusal is overridable -- being wrong here must cost a flag, not a week.
+    # The peak is set by how many draws go through the UNet at once, which is the whole
+    # draw count unless the solver was told to chunk them (D-042).
+    draws_per_batch = min(n_posterior, getattr(solver, "max_draws_per_batch", 0) or n_posterior)
     memory = memory_preflight(
-        image_shape, n_posterior, backward=solver.info().solver_id.startswith("diffusion.dps")
+        image_shape, draws_per_batch,
+        backward=solver.info().solver_id.startswith("diffusion.dps"),
     )
+    if draws_per_batch < n_posterior:
+        print(
+            f"[caliber] draw batching    {draws_per_batch} of {n_posterior} draws per forward "
+            "pass (D-042); the bank is identical either way"
+        )
     if memory["verdict"] != "unknown":
         print(
             f"[caliber] memory           needs ~{memory['needed_gb']} GB commit, "

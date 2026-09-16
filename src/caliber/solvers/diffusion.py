@@ -65,11 +65,15 @@ class _DiffusionSampler(PosteriorSampler):
         schedule: NoiseSchedule | None = None,
         eta: float = 1.0,
         device: str = "cpu",
+        max_draws_per_batch: int = 0,
     ):
         self.checkpoint = checkpoint
         self.n_steps = int(n_steps)
         self.eta = float(eta)
         self.device = device
+        # 0 = all draws in one forward batch. Lower it to fit memory (P-24); the result
+        # is unchanged either way, because each draw carries its own seed (D-042).
+        self.max_draws_per_batch = int(max_draws_per_batch)
         self.schedule = schedule or NoiseSchedule()
         if denoiser is not None:
             self._denoiser: Denoiser | None = denoiser
@@ -88,12 +92,25 @@ class _DiffusionSampler(PosteriorSampler):
             )
         return self._denoiser
 
-    def _init_latents(self, n: int, shape: tuple[int, int], seed: int) -> Tensor:
-        gen = torch.Generator(device="cpu").manual_seed(int(seed))
-        return torch.randn(n, *shape, generator=gen, dtype=torch.float32)
+    @staticmethod
+    def _draw_generators(draw_seeds: list[int], offset: int = 0) -> list[torch.Generator]:
+        return [
+            torch.Generator(device="cpu").manual_seed(int(s) + offset) for s in draw_seeds
+        ]
 
-    def _noise_like(self, x: Tensor, gen: torch.Generator) -> Tensor:
-        return torch.randn(x.shape, generator=gen, dtype=x.dtype)
+    def _init_latents(self, draw_seeds: list[int], shape: tuple[int, int]) -> Tensor:
+        # Per draw, not per batch: a draw's starting point must not depend on how many
+        # other draws were asked for at the same time (D-042).
+        return torch.stack([
+            torch.randn(*shape, generator=g, dtype=torch.float32)
+            for g in self._draw_generators(draw_seeds)
+        ])
+
+    @staticmethod
+    def _noise_like(x: Tensor, gens: list[torch.Generator]) -> Tensor:
+        return torch.stack([
+            torch.randn(x.shape[1:], generator=g, dtype=x.dtype) for g in gens
+        ])
 
     @staticmethod
     def data_consistency_error(draws: Tensor, y: Tensor, operator: ForwardOperator) -> float:
@@ -159,9 +176,14 @@ class DPSSampler(_DiffusionSampler):
         self, y: Tensor, operator: ForwardOperator, n_samples: int, seed: int = 0
     ) -> Tensor:
         self.check_supports(operator)
+        return self._sample_in_chunks(y, operator, n_samples, seed)
+
+    def _sample_draws(
+        self, y: Tensor, operator: ForwardOperator, draw_seeds: list[int]
+    ) -> Tensor:
         shape = tuple(operator.image_shape)
-        x = self._init_latents(n_samples, shape, seed)
-        gen = torch.Generator(device="cpu").manual_seed(int(seed) + 1)
+        x = self._init_latents(draw_seeds, shape)
+        gens = self._draw_generators(draw_seeds, offset=1)
         steps = self.schedule.timesteps(self.n_steps)
 
         for i, t in enumerate(steps):
@@ -178,7 +200,7 @@ class DPSSampler(_DiffusionSampler):
             (grad,) = torch.autograd.grad(residual.sum(), x)
 
             with torch.no_grad():
-                noise = self._noise_like(x, gen) if self.eta > 0 else None
+                noise = self._noise_like(x, gens) if self.eta > 0 else None
                 x_next = self.schedule.ddim_step(
                     x0.detach(), eps.detach(), t_prev, eta=self.eta, noise=noise
                 )
@@ -225,9 +247,14 @@ class DDNMSampler(_DiffusionSampler):
         self, y: Tensor, operator: ForwardOperator, n_samples: int, seed: int = 0
     ) -> Tensor:
         self.check_supports(operator)
+        return self._sample_in_chunks(y, operator, n_samples, seed)
+
+    def _sample_draws(
+        self, y: Tensor, operator: ForwardOperator, draw_seeds: list[int]
+    ) -> Tensor:
         shape = tuple(operator.image_shape)
-        x = self._init_latents(n_samples, shape, seed)
-        gen = torch.Generator(device="cpu").manual_seed(int(seed) + 1)
+        x = self._init_latents(draw_seeds, shape)
+        gens = self._draw_generators(draw_seeds, offset=1)
         steps = self.schedule.timesteps(self.n_steps)
 
         with torch.no_grad():
@@ -239,6 +266,6 @@ class DDNMSampler(_DiffusionSampler):
                     _as_real(x0[b] - operator.pinv(operator.forward(_as_real(x0[b])) - y))
                     for b in range(x0.shape[0])
                 ])
-                noise = self._noise_like(x, gen) if self.eta > 0 else None
+                noise = self._noise_like(x, gens) if self.eta > 0 else None
                 x = self.schedule.ddim_step(x0, eps, t_prev, eta=self.eta, noise=noise)
         return x
