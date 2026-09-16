@@ -1,0 +1,129 @@
+{
+  "schema_version": "0.1.0",
+  "run_id": "w02_solver_smoke-56bc92fa6a76906d",
+  "n_rows": 384,
+  "n_items": 6,
+  "operators": [
+    {
+      "operator_id": "mri.random1d.R4.c0.08.s0",
+      "modality": "mri",
+      "family": "random1d",
+      "image_shape": [
+        128,
+        128
+      ],
+      "measurement_dim": 4096,
+      "ambient_dim": 16384,
+      "null_space_dim": 12288,
+      "undersampling_ratio": 0.25,
+      "exact_pinv": true,
+      "calib_group": "mri/random1d/R4",
+      "params": {
+        "family": "random1d",
+        "acceleration": 4.0,
+        "center_fraction": 0.08,
+        "mask_seed": 0,
+        "noise_sigma": 0.0
+      }
+    },
+    {
+      "operator_id": "mri.random1d.R8.c0.08.s0",
+      "modality": "mri",
+      "family": "random1d",
+      "image_shape": [
+        128,
+        128
+      ],
+      "measurement_dim": 2048,
+      "ambient_dim": 16384,
+      "null_space_dim": 14336,
+      "undersampling_ratio": 0.125,
+      "exact_pinv": true,
+      "calib_group": "mri/random1d/R8",
+      "params": {
+        "family": "random1d",
+        "acceleration": 8.0,
+        "center_fraction": 0.08,
+        "mask_seed": 0,
+        "noise_sigma": 0.0
+      }
+    }
+  ],
+  "provenance": {
+    "dataset": "m4raw",
+    "modality": "mri",
+    "solver_family": "diffusion",
+    "reportable": false
+  },
+  "config": {
+    "run": {
+      "seed": 0,
+      "output_root": "runs",
+      "limit": 3,
+      "cache_reconstructions": 2
+    },
+    "data": {
+      "image_shape": [
+        128,
+        128
+      ],
+      "dataset": {
+        "name": "m4raw",
+        "root": "data/raw/m4raw",
+        "split": "calib",
+        "image_shape": [
+          128,
+          128
+        ],
+        "slices_per_volume": 1
+      }
+    },
+    "regions": {
+      "size": 16
+    },
+    "calibration": {
+      "alpha": 0.1,
+      "nominal_coverage": 0.9,
+      "group_column": "calib_group"
+    },
+    "distance": {
+      "measure": "null_space_projection",
+      "normalise": "ambient"
+    },
+    "experiment": {
+      "name": "w02_solver_smoke",
+      "solver": {
+        "name": "ddnm",
+        "checkpoint": "checkpoints/ddpm-celebahq-256",
+        "n_steps": 12
+      },
+      "n_posterior": 3,
+      "operators": [
+        {
+          "modality": "mri",
+          "family": "random1d",
+          "acceleration": [
+            4,
+            8
+          ],
+          "center_fraction": 0.08,
+          "mask_seed": 0
+        }
+      ]
+    },
+    "_meta": {
+      "config_path": "D:\\CALIBER\\configs\\experiments\\w02_solver_smoke.yaml",
+      "config_hash": "56bc92fa6a76906d"
+    }
+  },
+  "environment": {
+    "python": "3.10.11",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "torch": "2.13.0+cpu",
+    "gpu": null,
+    "numpy": "2.2.6",
+    "pandas": "2.3.3",
+    "git_sha": "a0315e8c5f62f7e7ed6684a27560509793ed0337"
+  },
+  "validation_problems": []
+}

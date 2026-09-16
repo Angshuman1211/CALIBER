@@ -1625,6 +1625,41 @@ machine that is a modest cost against not being able to run at all.
 
 ---
 
+## D-045 · Both of D-038's asks are answered: `s_range` shipped, and open-substrate banks are committed
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2 · **Answers:** D-038
+
+**Ask (b), `s_range`.** `compute_score_components` now also returns
+`‖P_R x̂‖` per region / `ref_intensity`, written as a nullable `s_range` column by the
+same additive mechanism as A1 — no `SCHEMA_VERSION` bump, and every existing bank still
+validates (spec §6). It is the range half of the split `s_free` takes the null half of,
+under the same reduction and the same `ref`, so the two are directly comparable, which is
+what D-037's identity needs. It is deliberately **not** part of `ScoreComponents.stack()`
+and so cannot enter the score: it is a denominator Track 1 may use, not a fourth
+component (D25). Tested for the property it exists for — that it needs no ground truth.
+
+**Ask (a), the bank.** `banks/w02_solver_smoke/` holds the 384-row Week 2 bank: the
+manifest, the operator registry and `scores.parquet`, 35 KB. `runs/` stays gitignored;
+this is a deliberate exception with a rule, written down in `banks/README.md`:
+
+* **only open substrates** — phantom and M4Raw. A bank is per-region scalars, not images,
+  and M4Raw is CC-BY, so derived numbers may be redistributed with attribution.
+* **never fastMRI-derived.** The NYU agreement forbids redistribution and whether that
+  reaches a derived score bank is unanswered — T2.1 §7 flags it for confirmation before
+  the O7 release. Until then the Week 3 fastMRI bank stays local and is copied by hand.
+* **never `recons/`.** Cached posterior samples are images, far larger than the table, and
+  the release rule is code, configs and score banks — never images.
+
+*Why commit one at all:* spec §3 says a bank is self-describing so another track can work
+from a copied directory. This is the first time that has been needed, and a file that only
+exists on one laptop is not a shared interface. P-24 is the argument in miniature: that
+laptop cannot currently reproduce this bank.
+
+*Cost:* one float32 column per row, and 35 KB in the repository.
+
+*Affects:* D-038, D-037, O2, T1.1, T2.3, `score_bank_spec.md`, O7 release scope.
+
+---
+
 ## Template
 
 ```

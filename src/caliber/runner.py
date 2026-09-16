@@ -278,6 +278,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                     "s_free": components.s_free.tolist(),
                     "s_disagree": components.s_disagree.tolist(),
                     "s_residual": components.s_residual.tolist(),
+                    "s_range": components.s_range.tolist(),
                     "err_total": truth.err_total.tolist(),
                     "err_free": truth.err_free.tolist(),
                     "free_content": truth.free_content.tolist(),

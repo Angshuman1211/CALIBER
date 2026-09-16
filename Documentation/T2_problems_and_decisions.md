@@ -209,75 +209,9 @@ where it fails.
 
 ---
 
-#### P-21 - The ground-truth label is itself operator-dependent, so the coverage-failure experiment cannot mean what it is supposed to mean
-
-**Blocks:** the O3 reading of any coverage curve - **See:** D-034, D-028, D-020, P-02
-
-On the Week 3 fastMRI bank (23,040 regions, DDNM, three accelerations), naive
-transfer does **not** lose coverage. It gains it:
-
-| tau | metric | R=2 (calib) | R=4 | R=8 |
-|---|---|---|---|---|
-| 1.75 | coverage | 0.851 | 1.000 | 1.000 |
-| 1.75 | flag area | 0.676 | 0.999 | 0.990 |
-| 3.00 | coverage | 0.914 | 0.915 | 0.955 |
-| 3.00 | flag area | 0.244 | 0.502 | 0.668 |
-
-The direction is robust - it holds at every tau tested (1.75, 2.5, 3.0, 4.0).
-Coverage never collapses; **flag area explodes** instead. The certificate stays
-valid and becomes useless, which is a failure of efficiency, not of validity.
-
-**Why.** Both the score and the label move with the operator, in the same
-direction:
-
-| operator | label positive rate (tau=1.75) | median err_free/free_content | mean s_free |
-|---|---|---|---|
-| R=2 | 0.401 | 1.528 | 0.486 |
-| R=4 | 0.681 | 2.296 | 0.847 |
-| R=8 | 0.772 | 2.677 | 1.046 |
-
-A threshold calibrated where positives are rare and scores are low, then
-deployed where positives are common and scores are high, flags nearly
-everything - and therefore catches nearly every positive. Coverage is achieved
-trivially.
-
-**This is not a calibration failure and not a pipeline failure.** It is a
-property of the *criterion*. A coverage comparison across operators is only
-interpretable if the quantity being covered means the same thing at each
-operator, and at present it does not: the base rate of "hallucinated" nearly
-doubles between R=2 and R=8. D-034 flagged this risk on M4Raw, where the trend
-was mild (median 1.480 -> 1.645). On fastMRI knees with a face prior it is
-severe (1.528 -> 2.677), and it has crossed from a caution into a blocker.
-
-**Where it stands: open, and it is Track 1's to rule on (O2).** Track 2's part
-is measured and delivered. The options, none of them Track 2's to choose:
-
-1. **Set tau per calibration group** so the label base rate is matched across
-   operators. Makes coverage comparable, but "hallucination" then means
-   something slightly different at each acceleration, which has to be defended.
-2. **Make flag area the headline** rather than coverage, with coverage reported
-   alongside. Sec. 15.2 already requires flag area as a reported metric, and the
-   over-flagging result above is a perfectly good demonstration of operator
-   shift mattering - it is just not the *coverage* story O3 is written around.
-3. **Redefine the criterion to be operator-invariant by construction.** Cleanest
-   scientifically, most expensive, and it invalidates nothing already cached
-   because the bank stores continuous quantities (D-002).
-
-**Not a wasted run.** The bank is real, cached, and re-thresholdable without a
-GPU (Sec. 17), so whichever option Track 1 picks is a re-analysis, not a
-re-reconstruction.
-
-**Read with P-23.** The coverage rows in the first table above are point
-estimates from 12 test volumes, and P-23 shows intervals that wide cannot carry a
-claim. The *diagnosis* does not depend on them: the label base rate
-(0.401 -> 0.772) is measured over every region in the bank, and flag area is a
-fraction of all regions, not of the few positive ones.
-
----
-
 #### P-02 - The v0 label threshold marks everything as hallucinated
 
-**Blocks:** region FDR / power on any real substrate - **See:** D-020, D-003, D-009
+**Closed** - tau ruled by Track 1 - **See:** D-037, D-038, D-020, D-003, D-009
 
 At the v0 criterion `err_free > 0.10`, 100% of MRI regions on real M4Raw
 k-space label as hallucinated. Region FDR is then identically zero and the flag
@@ -291,9 +225,11 @@ than a smooth phantom, so the whole `err_free` distribution shifts up: M4Raw's
 1st percentile (0.116) already clears a threshold set at 0.10. The constant had
 been calibrated against phantoms without anyone deciding that it had been.
 
-**Where it stands:** the relative criterion agreed at the Week 1 sign-off is now
-**implemented and measured** (D-034), and what remains is Track 1's choice of
-tau, not a missing component. Until Week 2 the form had been agreed and the
+**Where it stands: closed.** The relative criterion agreed at the Week 1 sign-off
+is implemented and measured (D-034), and Track 1 has now set the value:
+**tau = 1.75, global across operators, chosen on a design split** (D-037/D-038).
+Nothing is outstanding here - the absolute criterion that flagged 100% of regions
+is superseded, and the relative one has a ratified threshold. Until Week 2 the form had been agreed and the
 denominator column (`free_content`) written, but the only criterion anything
 could actually apply was still the broken absolute one.
 
@@ -304,12 +240,22 @@ absolute one cannot - it separates:
 |---|---|---|---|---|---|---|
 | positive rate | 100% | 92.4% | 60.2% | 25.5% | 10.7% | 0.8% |
 
-against a flat 100% for `err_free > 0.10`. A usable operating range is roughly
-tau 1.75-2.0. Two cautions travel with it: the ratio exceeds 1 in *every*
-region, which is a face prior on brain anatomy showing through as much as it is
-a criterion; and the median ratio rises with acceleration (1.480 at R=4, 1.645
-at R=8), so a single global tau is not operator-neutral and may have to be set
-per calibration group.
+against a flat 100% for `err_free > 0.10`. Track 1 has since set **tau = 1.75,
+global** (D-037/D-038).
+
+> **Correction.** This entry originally read "the ratio exceeds 1 in *every*
+> region" as a face prior on brain anatomy showing through. **That was unsound**,
+> and Track 1's D-038 shows why: by the D-037 identity, with `cos θ = 0` the
+> ratio is `sqrt(1 + u²)` for `u = s_free/free_content`, which exceeds 1 for any
+> `u > 0`. It is what *any* prior whose hidden content is uncorrelated with the
+> truth's produces - including the reference sampler, which is not a prior at
+> all. The observation said nothing about mismatch. The quantity that does is
+> `cos θ`, which their `content_alignment()` now reports per region.
+
+The second caution stands as a measurement and falls as an inference: the median
+ratio does rise with acceleration (1.480 at R=4, 1.645 at R=8), but per the
+ruling above that is a reason to read *flag area* per operator with care, not a
+reason to set tau per group.
 
 What was already established stands: the criterion cannot be a shared absolute
 constant - it fails to transfer across modalities *and* across substrates within
@@ -997,6 +943,74 @@ Pinned by `tests/test_reproducibility.py`, whose central test runs the pipeline 
 requires identical banks. It fails against the old derivation and passes against
 the new one.
 
+---
+
+#### P-21 - The ground-truth label is operator-dependent - ruled, and one inference of mine was unsound
+
+**Ruled by Track 1** (tau = 1.75 global) - **See:** D-037, D-038, D-034, D-028, D-020, P-02
+
+On the Week 3 fastMRI bank (23,040 regions, DDNM, three accelerations), naive
+transfer does **not** lose coverage. It gains it:
+
+| tau | metric | R=2 (calib) | R=4 | R=8 |
+|---|---|---|---|---|
+| 1.75 | coverage | 0.851 | 1.000 | 1.000 |
+| 1.75 | flag area | 0.676 | 0.999 | 0.990 |
+| 3.00 | coverage | 0.914 | 0.915 | 0.955 |
+| 3.00 | flag area | 0.244 | 0.502 | 0.668 |
+
+The direction is robust - it holds at every tau tested (1.75, 2.5, 3.0, 4.0).
+Coverage never collapses; **flag area explodes** instead. The certificate stays
+valid and becomes useless, which is a failure of efficiency, not of validity.
+
+**Why.** Both the score and the label move with the operator, in the same
+direction:
+
+| operator | label positive rate (tau=1.75) | median err_free/free_content | mean s_free |
+|---|---|---|---|
+| R=2 | 0.401 | 1.528 | 0.486 |
+| R=4 | 0.681 | 2.296 | 0.847 |
+| R=8 | 0.772 | 2.677 | 1.046 |
+
+A threshold calibrated where positives are rare and scores are low, then
+deployed where positives are common and scores are high, flags nearly
+everything - and therefore catches nearly every positive. Coverage is achieved
+trivially.
+
+**This is not a calibration failure and not a pipeline failure.** It is a
+property of the *criterion*. A coverage comparison across operators is only
+interpretable if the quantity being covered means the same thing at each
+operator, and at present it does not: the base rate of "hallucinated" nearly
+doubles between R=2 and R=8. D-034 flagged this risk on M4Raw, where the trend
+was mild (median 1.480 -> 1.645). On fastMRI knees with a face prior it is
+severe (1.528 -> 2.677), and it has crossed from a caution into a blocker.
+
+**RULED by Track 1 (D-037/D-038 cross-track, their D37): option 1 rejected,
+`tau = 1.75` global across operators, chosen on a design split.** Their argument
+is the one Track 2 did not make: region coverage is **conditional**,
+`P(flag | hallucinated)`, so a base rate that differs between operators does not
+by itself bias it. A *global* tau keeps "hallucinated" meaning the same thing at
+every acceleration; a per-group tau tuned to equalise base rates would make it
+mean something different at each, which is the worse trade. The three options
+Track 2 listed were the wrong menu - the premise that a varying base rate must
+be equalised was itself wrong.
+
+What survives from this entry is narrower and still true: the *label* varies
+strongly with the operator (0.401 -> 0.772), so **flag area and region FDR are
+not comparable across operators at face value** even though coverage is. The
+Week 3 tables should be read that way.
+
+**Not a wasted run.** The bank is real, cached, and re-thresholdable without a
+GPU (Sec. 17), so whichever option Track 1 picks is a re-analysis, not a
+re-reconstruction.
+
+**Read with P-23.** The coverage rows in the first table above are point
+estimates from 12 test volumes, and P-23 shows intervals that wide cannot carry a
+claim. The *diagnosis* does not depend on them: the label base rate
+(0.401 -> 0.772) is measured over every region in the bank, and flag area is a
+fraction of all regions, not of the few positive ones.
+
+---
 ---
 
 ### Adding an entry

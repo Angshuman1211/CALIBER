@@ -27,7 +27,7 @@ from caliber.scorebank.schema import (
     coerce,
     validate,
 )
-from caliber.scoring import RegionGrid, compute_region_truth
+from caliber.scoring import RegionGrid, compute_region_truth, compute_score_components
 from caliber.solvers.reference import NullSpaceNoiseSampler, PseudoInverseSampler
 
 SHAPE = (64, 64)
@@ -244,3 +244,65 @@ def test_free_content_is_nullable_so_older_banks_still_validate():
     assert "free_content" in conformed.columns
     assert conformed["free_content"].isna().all()
     validate(conformed, strict=True)
+
+
+# -- s_range: the deployment-available denominator (D-038 ask (b)) -------------
+
+
+def test_s_range_is_recorded_and_is_the_reconstruction_s_measured_content():
+    """``‖P_R x̂‖`` per region, under the same reduction and ref as ``s_free``."""
+    op = MRIUndersamplingOperator(SHAPE, family="random1d", acceleration=4)
+    gen = torch.Generator().manual_seed(0)
+    x = torch.rand(SHAPE, generator=gen) + 0.5
+    y = op.forward(x)
+    grid = RegionGrid(SHAPE, region_size=16)
+    samples = PseudoInverseSampler().sample(y, op, n_samples=2, seed=0)
+
+    comps = compute_score_components(samples, y, op, grid)
+    assert comps.s_range is not None
+    assert comps.s_range.shape == comps.s_free.shape
+    assert torch.isfinite(comps.s_range).all()
+    assert (comps.s_range >= 0).all()
+
+    mean = samples.mean(dim=0)
+    measured = op.project_range(mean)
+    measured = measured.abs() if measured.is_complex() else measured.abs()
+    expected = grid.reduce(measured, how="rms") / comps.ref_intensity
+    assert torch.allclose(comps.s_range, expected.to(torch.float32), atol=1e-6)
+
+
+def test_s_range_needs_no_ground_truth():
+    """The whole point: `free_content` needs the truth, `s_range` does not.
+
+    Computed from two different ground truths with identical measurements, it is
+    unchanged — so it is available at deployment, where no truth exists.
+    """
+    op = MRIUndersamplingOperator(SHAPE, family="random1d", acceleration=4)
+    grid = RegionGrid(SHAPE, region_size=16)
+    gen = torch.Generator().manual_seed(1)
+    x = torch.rand(SHAPE, generator=gen) + 0.5
+    y = op.forward(x)
+    samples = PseudoInverseSampler().sample(y, op, n_samples=2, seed=0)
+    assert torch.equal(
+        compute_score_components(samples, y, op, grid).s_range,
+        compute_score_components(samples, y, op, grid).s_range,
+    )
+
+
+def test_s_range_does_not_enter_the_score():
+    """It is a denominator Track 1 may use, not a fourth component (D25)."""
+    op = MRIUndersamplingOperator(SHAPE, family="random1d", acceleration=4)
+    grid = RegionGrid(SHAPE, region_size=16)
+    gen = torch.Generator().manual_seed(2)
+    x = torch.rand(SHAPE, generator=gen) + 0.5
+    y = op.forward(x)
+    comps = compute_score_components(
+        PseudoInverseSampler().sample(y, op, n_samples=2, seed=0), y, op, grid
+    )
+    assert comps.stack().shape[0] == 3
+
+
+def test_s_range_is_nullable_so_older_banks_still_validate():
+    from caliber.scorebank.schema import NULLABLE_COLUMNS
+
+    assert "s_range" in NULLABLE_COLUMNS

@@ -55,6 +55,12 @@ runs/<run_id>/
   manifest.partial.json      ditto; carries "complete": false
 ```
 
+**Shared banks (D-045).** `runs/` is gitignored; a bank another track needs is copied
+into `banks/<name>/` and committed — manifest, operator registry and `scores.parquet`,
+never `recons/`. Only banks from **open** substrates (phantom, M4Raw) may be committed;
+fastMRI-derived banks stay local until the licensing question in T2.1 §7 is answered.
+See `banks/README.md`.
+
 **Complete and partial banks (D-040).** A finished bank's manifest carries
 `"complete": true`. A run with `run.checkpoint_every: N` also writes the two
 `*.partial.*` files every N items and removes them once the finished bank is on disk.
@@ -124,6 +130,7 @@ One row per **(item, operator, solver, region)**.
 | `s_free` | float32 | RMS energy of the null-space component |
 | `s_disagree` | float32 | Cross-sample spread, free component only |
 | `s_residual` | float32 | Backprojected measurement residual |
+| `s_range` | float32 | `‖P_R x̂‖` per region / `ref_intensity` — the region's *measured* content. Nullable (D-045); needs no ground truth, so unlike `free_content` it is available at deployment |
 
 ### Ground truth — Rule 2
 | Column | Type | Notes |
