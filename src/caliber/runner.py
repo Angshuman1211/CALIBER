@@ -191,11 +191,11 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
             "reportable": reportable,
         },
     )
-    # P-24 / D-041: a pass that does not fit can segfault rather than raise, so check
+    # P-24 / D-043: a pass that does not fit can segfault rather than raise, so check
     # before spending hours. The estimate is fitted to measurements on this machine, so a
     # refusal is overridable -- being wrong here must cost a flag, not a week.
     # The peak is set by how many draws go through the UNet at once, which is the whole
-    # draw count unless the solver was told to chunk them (D-042).
+    # draw count unless the solver was told to chunk them (D-044).
     draws_per_batch = min(n_posterior, getattr(solver, "max_draws_per_batch", 0) or n_posterior)
     memory = memory_preflight(
         image_shape, draws_per_batch,
@@ -204,7 +204,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     if draws_per_batch < n_posterior:
         print(
             f"[caliber] draw batching    {draws_per_batch} of {n_posterior} draws per forward "
-            "pass (D-042); the bank is identical either way"
+            "pass (D-044); the bank is identical either way"
         )
     if memory["verdict"] != "unknown":
         print(
@@ -230,12 +230,12 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     started = time.time()
     n_total = len(items) * len(registry)
 
-    # D-040: pick up an interrupted run of this same config instead of redoing it.
+    # D-042: pick up an interrupted run of this same config instead of redoing it.
     done = writer.resume_from_checkpoint()
     if done:
         print(
             f"[caliber] resuming         {len(done)}/{n_total} (item, operator) pairs "
-            "recovered from the checkpoint (D-040)"
+            "recovered from the checkpoint (D-042)"
         )
     n_done = n_new = len(done)
 

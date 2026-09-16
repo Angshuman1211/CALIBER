@@ -1,4 +1,4 @@
-"""The memory preflight (P-24, D-041).
+"""The memory preflight (P-24, D-043).
 
 A run whose allocations do not fit can segfault instead of raising, so the runner refuses
 to start one. That makes the estimate load-bearing in both directions: too low and it
@@ -119,7 +119,7 @@ def test_a_tight_run_warns_but_proceeds(tmp_path, monkeypatch, capsys):
 
 
 def test_the_preflight_uses_the_chunked_batch_not_the_draw_count(tmp_path, monkeypatch):
-    """Chunking is what makes a big run fit, so the estimate must reflect it (D-042).
+    """Chunking is what makes a big run fit, so the estimate must reflect it (D-044).
 
     Without this the runner would keep refusing a run that chunking has made feasible.
     """

@@ -1,11 +1,11 @@
-"""Will this run fit in memory? — the preflight check (P-24, D-041).
+"""Will this run fit in memory? — the preflight check (P-24, D-043).
 
 P-24: on this project's CPU-only machine, a solver pass whose allocation does not fit
 does not always raise. Sometimes torch raises ``RuntimeError: DefaultCPUAllocator: not
 enough memory``; sometimes the process simply segfaults, with no traceback and no output.
 A run that dies that way at hour seven looks, in the log, like a job that stopped.
 
-Checkpointing (D-038) and resume (D-040) limit what such a death costs. This module is
+Checkpointing (D-040) and resume (D-042) limit what such a death costs. This module is
 the cheaper half: refuse to start a run that cannot finish, before any time is spent.
 
 **The estimate is measured, not derived.** Peak commit charge of one UNet pass, on

@@ -221,7 +221,7 @@ def test_solvers_refuse_a_modality_they_do_not_support(setup):
         solver.sample(y, op, n_samples=1)
 
 
-# -- draws are independent of how they are batched (P-24, D-042) ---------------
+# -- draws are independent of how they are batched (P-24, D-044) ---------------
 
 
 def test_draw_seed_is_a_function_of_seed_and_index_only():

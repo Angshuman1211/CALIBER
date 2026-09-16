@@ -28,7 +28,7 @@ SMOKE = REPO_ROOT / "configs/experiments/w01_smoke_phantom.yaml"
 
 
 def test_item_seed_is_pinned():
-    """The derivation itself, frozen. Changing it changes every bank's draws (D-039)."""
+    """The derivation itself, frozen. Changing it changes every bank's draws (D-041)."""
     assert item_seed(0, "file1000022", 18, "mri.random1d.R4.c0.08.s0") == 777145
     assert item_seed(7, "file1000022", 18, "mri.random1d.R8.c0.08.s0") == 898317
 

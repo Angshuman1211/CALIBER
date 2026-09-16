@@ -158,12 +158,12 @@ class ScoreBankWriter:
         }
 
     def resume_from_checkpoint(self) -> set[tuple[str, int, str]]:
-        """Load a checkpoint left by an interrupted run of *this* config (D-040).
+        """Load a checkpoint left by an interrupted run of *this* config (D-042).
 
         Returns the ``(sample_id, slice_idx, operator_id)`` pairs already finished,
         for the runner to skip; returns an empty set when there is no checkpoint.
 
-        Resuming is only safe because a bank is now a function of its config (D-039):
+        Resuming is only safe because a bank is now a function of its config (D-041):
         each pair's draws are identical in any process, so a resumed run produces the
         bank an uninterrupted run would have. A checkpoint from a *different* config
         is refused rather than merged — two runs' rows in one bank would be

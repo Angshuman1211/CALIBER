@@ -67,7 +67,7 @@ class FlowDPSSampler(PosteriorSampler):
         self.checkpoint = checkpoint
         self.n_steps = int(n_steps)
         self.device = device
-        # See _DiffusionSampler: draws per forward batch, 0 = all (P-24, D-042).
+        # See _DiffusionSampler: draws per forward batch, 0 = all (P-24, D-044).
         self.max_draws_per_batch = int(max_draws_per_batch)
         self.schedule = schedule or NoiseSchedule()
         if denoiser is not None:
@@ -140,7 +140,7 @@ class FlowDPSSampler(PosteriorSampler):
         self, y: Tensor, operator: ForwardOperator, draw_seeds: list[int]
     ) -> Tensor:
         shape = tuple(operator.image_shape)
-        # Per draw, so that a draw is the same alone as in a batch (D-042). FlowDPS is a
+        # Per draw, so that a draw is the same alone as in a batch (D-044). FlowDPS is a
         # deterministic ODE, so this initial noise is its *only* source of spread.
         x = torch.stack([
             torch.randn(*shape, generator=torch.Generator(device="cpu").manual_seed(int(s)),

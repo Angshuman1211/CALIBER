@@ -82,7 +82,7 @@ draws through the UNet as one batch, and `w03_mri_fixed_operator.yaml` uses four
 That is the batch-4 row: **the Week 3 config cannot run on this machine with
 today's memory load** — it completed a week earlier only because more was free.
 
-**That lever is now built (D-042).** Seeding each draw from `(seed, index)` rather
+**That lever is now built (D-044).** Seeding each draw from `(seed, index)` rather
 than sharing one generator across the batch decoupled the result from the batch
 size, and the back-ends take `max_draws_per_batch`. Measured: the Week 3 config at
 256² with four draws needs **6.0 GB chunked to one draw, against ~18 GB batched**,
@@ -95,8 +95,8 @@ hour 7, it would have died with no error, no traceback and no partial output,
 and the log would have looked like a job that simply stopped. Nothing in the
 pipeline would have said why.
 
-**Where it stands: mitigated, Track 2's — all three are in** (D-038, D-040,
-D-041), and D-042 removes the constraint for this config rather than only
+**Where it stands: mitigated, Track 2's — all three are in** (D-040, D-042,
+D-043), and D-044 removes the constraint for this config rather than only
 reporting it: **the Week 3 config runs on this machine again** when its draws are
 chunked. What remains is the underlying scarcity — a 256² pass needs ~6 GB
 whatever the batching, so a long run still competes with whatever else is open.
@@ -107,22 +107,22 @@ In order of cost:
    otherwise.
 2. **A preflight check** in the runner that compares free commit against an
    estimate for the configured resolution and batch, and refuses to start a job
-   that cannot finish. **Done (D-041):** the estimate is
+   that cannot finish. **Done (D-043):** the estimate is
    `max(2.8, 2.0 + 6.1e-5 x pixels x draws)` GB, fitted to eleven measured points
    and accurate on all of them to within 0.4 GB; it calls both observed failures.
    Overridable with `run.skip_memory_check`, and silent where the available
    memory cannot be read.
 3. **Incremental bank writes**, so a job killed at hour 7 keeps seven hours of
    rows. This is the one that turns a silent total loss into a partial result,
-   and it also serves P-16, where every long job is a risk. **Done (D-038):**
+   and it also serves P-16, where every long job is a risk. **Done (D-040):**
    `run.checkpoint_every: N` rewrites every finished row to a partial bank each
    N items, atomically; `read_bank` refuses a partial bank unless asked. Tested
    by crashing a run part-way and recovering exactly the rows it finished — and
    that test fails against the previous runner.
 
-**Resume is also in (D-040):** a restarted run of the same config continues from
+**Resume is also in (D-042):** a restarted run of the same config continues from
 its checkpoint, and the result is tested to equal an uninterrupted run exactly.
-**The preflight check is in too (D-041):** the runner estimates the run's peak
+**The preflight check is in too (D-043):** the runner estimates the run's peak
 commit charge, compares it with what the machine has, and refuses to start a run
 that cannot finish - overridable, because the estimate is a fit to one machine.
 All three mitigations are now built.
@@ -924,7 +924,7 @@ nothing in the project performed one until this.
 
 #### P-22 - Two split implementations passed every test and disagreed on half the patients
 
-**Fixed** - **See:** D-037, P-20, D-036, D-022, D-027
+**Fixed** - **See:** D-039, P-20, D-036, D-022, D-027
 
 While `splits.py` was missing from `main` (P-20), Track 1 wrote a stand-in to the
 same contract so their work could continue - a reasonable thing to do, and its
@@ -939,7 +939,7 @@ satisfy every one of those properties and share almost no assignments. Banks
 built from the two would have been silently non-comparable, which is exactly what
 D-022's "identical across every run" requirement forbids.
 
-Resolved at the merge by keeping Track 2's version (D-037), for the two reasons above.
+Resolved at the merge by keeping Track 2's version (D-039), for the two reasons above.
 **Anything Track 1 or Track 3 built from a `split: auto` bank on `main` between
 PR #21 and the Week 3 merge used the other split**; nothing in git can show
 whether that happened, because run outputs are not committed.
@@ -956,7 +956,7 @@ explicit: bump `DEFAULT_SALT`, regenerate the pins, record it.
 
 #### P-25 - No bank the project had produced could be regenerated from its config
 
-**Fixed going forward; not recoverable backward** - **See:** D-039
+**Fixed going forward; not recoverable backward** - **See:** D-041
 
 The runner's own docstring says a run is "fully determined by its config plus its
 seed". It was not. Each (item, operator) seed came from
@@ -972,7 +972,7 @@ for identical inputs. `scripts/stage2_decomposition.py` copied the same line.
 
 **Why the test suite never saw it.** Every determinism test compared two runs
 *inside one pytest process*, where the salt is shared, so the bug could not show.
-Checkpointing's "does not change the bank" test (D-038) passed for the same reason.
+Checkpointing's "does not change the bank" test (D-040) passed for the same reason.
 A determinism test that runs in a single process cannot detect a per-process
 source of non-determinism — the check has to cross a process boundary.
 
@@ -990,7 +990,7 @@ cosmetic fix.
   guaranteed to be comparable at the level of individual draws. Aggregates over many
   items are unaffected in expectation; single-item comparisons are not.
 
-**The fix** (D-039) derives the seed from a BLAKE2b digest of
+**The fix** (D-041) derives the seed from a BLAKE2b digest of
 `sample_id|slice_idx|operator_id` - the approach `splits.py` already used correctly.
 Pinned by `tests/test_reproducibility.py`, whose central test runs the pipeline in
 **two separate processes with deliberately different `PYTHONHASHSEED` values** and
@@ -1057,9 +1057,9 @@ traced to the decision that settled it without opening the log.
 | [D-034](decision_log.md) | Relative criterion implemented and its tau curve measured; tau stays Track 1's | Week 2 | ACCEPTED — Track 2's half discharged |
 | [D-035](decision_log.md) | The prior's training domain is a third reportability gate | Week 3 | ACCEPTED |
 | [D-036](decision_log.md) | A bare `data/` in .gitignore also ignored `src/caliber/data/` | Week 2 | FIXED — Track 1's entry; see P-20 |
-| [D-037](decision_log.md) | Track 2's `splits.py` is canonical, and the split mapping itself is pinned | Week 3 | ACCEPTED — Track 1 to confirm no bank used the stand-in |
-| [D-038](decision_log.md) | An interrupted run leaves a partial bank that readers refuse by default | Week 3 | ACCEPTED |
-| [D-039](decision_log.md) | Item seeds come from a stable digest, not Python's salted `hash()` | Week 3 | ACCEPTED |
-| [D-040](decision_log.md) | A restarted run resumes from its checkpoint — only for the same config | Week 3 | ACCEPTED |
-| [D-041](decision_log.md) | A run that cannot fit in memory is refused before it starts | Week 3 | ACCEPTED |
-| [D-042](decision_log.md) | Each posterior draw is seeded independently, so draws can be batched in any size | Week 3 | ACCEPTED |
+| [D-039](decision_log.md) | Track 2's `splits.py` is canonical, and the split mapping itself is pinned | Week 3 | ACCEPTED — Track 1 to confirm no bank used the stand-in |
+| [D-040](decision_log.md) | An interrupted run leaves a partial bank that readers refuse by default | Week 3 | ACCEPTED |
+| [D-041](decision_log.md) | Item seeds come from a stable digest, not Python's salted `hash()` | Week 3 | ACCEPTED |
+| [D-042](decision_log.md) | A restarted run resumes from its checkpoint — only for the same config | Week 3 | ACCEPTED |
+| [D-043](decision_log.md) | A run that cannot fit in memory is refused before it starts | Week 3 | ACCEPTED |
+| [D-044](decision_log.md) | Each posterior draw is seeded independently, so draws can be batched in any size | Week 3 | ACCEPTED |

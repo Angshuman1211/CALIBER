@@ -57,7 +57,7 @@ class SolverInfo:
 
 
 def draw_seed(seed: int, index: int) -> int:
-    """The seed for one posterior draw — a function of ``(seed, index)`` alone (D-042).
+    """The seed for one posterior draw — a function of ``(seed, index)`` alone (D-044).
 
     Draws used to share one generator across the whole batch, so the noise a draw
     received depended on how many draws were requested alongside it. That made batching a
@@ -74,7 +74,7 @@ class PosteriorSampler(ABC):
 
     family: str = "unknown"
     supports_modalities: tuple[str, ...] = ()
-    #: Draws per forward batch; 0 means all at once. Lower it to fit memory (P-24, D-041)
+    #: Draws per forward batch; 0 means all at once. Lower it to fit memory (P-24, D-043)
     #: without changing the result — see :func:`draw_seed`.
     max_draws_per_batch: int = 0
 

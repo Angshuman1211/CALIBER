@@ -40,7 +40,7 @@ def _cfg(out: Path, *extra: str) -> dict:
             "run.limit=3",
             "experiment.n_posterior=2",
             "run.cache_reconstructions=0",
-            # See test_analyse_bank: logic under test, not the machine's memory (D-041).
+            # See test_analyse_bank: logic under test, not the machine's memory (D-043).
             "run.skip_memory_check=true",
             f"run.output_root={out.as_posix()}",
             *extra,
@@ -150,13 +150,13 @@ def test_a_bank_without_a_complete_key_still_reads_as_complete(tmp_path):
     assert len(read_bank(bank)) > 0
 
 
-# -- resume (D-040) ------------------------------------------------------------
+# -- resume (D-042) ------------------------------------------------------------
 
 
 def test_a_resumed_run_produces_exactly_the_uninterrupted_bank(tmp_path, monkeypatch):
     """Crash, restart the same config, and get the bank a clean run would have made.
 
-    Only possible because draws no longer depend on the process (D-039): the pairs
+    Only possible because draws no longer depend on the process (D-041): the pairs
     computed after the restart come out identical to the ones a single run computes.
     """
     from caliber.solvers.reference import NullSpaceNoiseSampler

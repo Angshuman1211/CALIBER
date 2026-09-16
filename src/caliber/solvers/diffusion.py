@@ -72,7 +72,7 @@ class _DiffusionSampler(PosteriorSampler):
         self.eta = float(eta)
         self.device = device
         # 0 = all draws in one forward batch. Lower it to fit memory (P-24); the result
-        # is unchanged either way, because each draw carries its own seed (D-042).
+        # is unchanged either way, because each draw carries its own seed (D-044).
         self.max_draws_per_batch = int(max_draws_per_batch)
         self.schedule = schedule or NoiseSchedule()
         if denoiser is not None:
@@ -100,7 +100,7 @@ class _DiffusionSampler(PosteriorSampler):
 
     def _init_latents(self, draw_seeds: list[int], shape: tuple[int, int]) -> Tensor:
         # Per draw, not per batch: a draw's starting point must not depend on how many
-        # other draws were asked for at the same time (D-042).
+        # other draws were asked for at the same time (D-044).
         return torch.stack([
             torch.randn(*shape, generator=g, dtype=torch.float32)
             for g in self._draw_generators(draw_seeds)

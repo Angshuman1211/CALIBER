@@ -1245,6 +1245,36 @@ read off it is provisional and must be re-measured when medical weights land.
 
 ---
 
+### Track 1 ruling on tau — **RESOLVED**, full entry D37
+
+**tau = 1.75 provisionally, global across operators, selected on the design split.**
+
+**Global, not per-group — the opposite of this entry's suggested fallback.** Coverage
+is conditional, `P(flag | hallucinated)`, so a base rate that varies across operators
+does not by itself bias it. With a global tau, "hallucinated" means the same thing at
+every operator and the positive rate is free to rise with acceleration — which it
+*should*, since a larger null space permits more invention (D2, and §12.2's L2). With a
+per-group tau tuned to equalise rates, "hallucinated" means something different at each
+operator, and the headline coverage-vs-distance curve would compare incommensurable
+quantities. That is the confound worth avoiding. The rising positive rate is a result to
+report, not an artefact to normalise away.
+
+**1.75 over 2.0 on calibration arithmetic.** D32 needs 9 positives per group to certify
+at alpha=0.1. On the 384-region bank, 1.75 gives ~98 positives (~16 per group over ~6
+groups); 2.0 gives ~41 (~7 per group) — below the floor, which would make Mondrian
+unreportable everywhere. The label threshold and the calibration floor are coupled.
+
+**Selected on the design split and frozen**, same rule as D28's weights: choosing tau on
+the data you then calibrate against couples the label to the threshold.
+
+**Provisional, and the caution is accepted in full** — a face prior on brain anatomy
+(D-016, D-035). Re-measure with medical weights, against this pass/fail condition: with a
+matched prior, *some* regions should show ratio < 1. If the ratio still exceeds 1
+everywhere, the fault is not the prior and either the criterion or `free_content` needs
+re-examining.
+
+---
+
 ## D-035 · The prior's training domain is a third reportability gate
 **Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
 
@@ -1310,7 +1340,88 @@ as someone else forgetting to add a file rather than as a config error.
 
 ---
 
-## D-037 · Track 2's `splits.py` is canonical, and the split mapping itself is pinned
+## D-037 · The bank's three free-component columns satisfy an exact identity
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.1, Q6)
+
+`runner.py` passes `components.ref_intensity` into `compute_region_truth`, so
+`s_free`, `free_content` and `err_free` are three reductions of the same two
+fields under one normalisation. Therefore, per region and exactly:
+
+```
+err_free² = s_free² + free_content² − 2 · s_free · free_content · cos θ
+```
+
+where `cos θ` is the angle between the reconstruction's hidden content and the
+truth's. Verified at **0.00e+00 median and max relative residual** over the
+4,608 regions of a `w01_smoke_phantom` bank. `caliber.scoring.attribution`
+implements it; `scripts/q6_attribution.py` checks it before reading anything
+else and refuses to continue if it fails.
+
+**This is now a cheap integrity check on any bank, and it is worth running.** A
+non-zero residual means the score components and the truth columns were scaled
+by different reference intensities — a defect that is otherwise invisible, since
+every column looks individually reasonable while every *ratio* between them is
+in mixed units. It is also a constraint on future changes: the shared
+`ref_intensity` is load-bearing and must not be refactored apart.
+
+**Two results that matter outside Track 1:**
+
+- *For Track 3 (T3.4):* `cos θ` has median **0.000** on the reference-sampler
+  bank, which independently confirms §2's analytic finding that the placeholder
+  harness's null-space fill is injected white noise carrying no image content.
+  T3.4 derived it from the code; this measures it from the bank, and the two
+  agree. The same column is the natural test of T3.4's prediction that a real
+  learned prior will *stop* behaving this way — `cos θ` moving away from zero is
+  precisely "the prior is inventing structure related to the image".
+- *For Track 2 (D-034):* see D-038.
+
+*Cost:* none — it is a property of what the runner already writes.
+*Affects:* O2, T1.1, T2.3, T3.4, D-034, D21.
+
+---
+
+## D-038 · "ratio > 1 everywhere" says nothing about prior mismatch; and two asks
+**Date:** Week 3 · **Status:** ACCEPTED (correction) · **OPEN** (asks) · **Proposed by:** Track 1
+
+D-034 reported `err_free / free_content > 1` in every region of the M4Raw bank
+and read it as "what a face prior on brain anatomy should do". Track 1's D37
+repeated that reading and built a pass/fail check on it. **Both were unsound.**
+By D-037's identity, with `cos θ = 0` the ratio is `sqrt(1 + u²)` for
+`u = s_free/free_content`, which exceeds 1 for *any* `u > 0`. In general
+`ratio > 1 ⟺ cos θ < u/2`. So the observation is what **any** prior whose hidden
+content is uncorrelated with the truth's produces, matched or not — the
+reference sampler, which is not a prior at all, does it too.
+
+The check D-034 and D37 wanted is kept, restated on the quantity it is really
+about: **with medical weights, some regions should show `cos θ ≥ u/2`**, and it
+is only diagnostic where `u < 2`, since an over-filling prior cannot produce
+`ratio < 1` at any alignment. `content_alignment()` and `fill_ratio()` report
+both per region.
+
+A useful side effect for τ: under orthogonal invention `τ = sqrt(1 + u²)`, so
+**τ = 1.75 means the prior put 1.44× as much energy into the null space as the
+truth had there**. Applied to D-034's quantiles, the celebahq prior's fill ratio
+on M4Raw runs 0.34 – 2.57, median ≈ 1.20.
+
+**Ask (a) — share the `w02_solver_smoke` bank.** It is the only real-prior output
+in the project and exists only on Track 2's machine. Spec §3 states the intent:
+*a bank is self-describing so another track can work from a copied directory*.
+This is the first time that has been needed. 384 rows — tens of kilobytes.
+
+**Ask (b) — one nullable column `s_range` = `‖P_R x̂‖` per region /
+`ref_intensity`.** Same mechanics as A1: additive, nullable, backwards
+compatible, no `SCHEMA_VERSION` bump (spec §6), one line beside the existing
+`s_free` in `compute_score_components`. It is the deployment-available
+denominator — the region's *measured* content, no ground truth — that D-037
+shows the score needs, and without it the fix cannot be tested against anything
+real.
+
+*Cost:* (a) none; (b) one float32 column per row.
+*Affects:* O2, T1.1, T1.4, T2.3, D-034, D21, D37.
+
+---
+
+## D-039 · Track 2's `splits.py` is canonical, and the split mapping itself is pinned
 **Date:** Week 3 · **Status:** ACCEPTED — Track 1 to confirm no bank was built on the stand-in
 **Proposed by:** Track 2
 
@@ -1341,7 +1452,7 @@ same commit, recorded here. Anything else that moves the mapping fails the golde
 
 ---
 
-## D-038 · An interrupted run leaves a partial bank that readers refuse by default
+## D-040 · An interrupted run leaves a partial bank that readers refuse by default
 **Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
 
 With `run.checkpoint_every: N`, the runner rewrites every finished row to
@@ -1368,7 +1479,7 @@ set of fragments that a crash could leave inconsistent.
 key and is read as complete, so no existing bank changes meaning. The schema of
 `scores.parquet` is untouched.
 
-*Resume:* added by D-040 — a restarted run of the same config now continues from the
+*Resume:* added by D-042 — a restarted run of the same config now continues from the
 checkpoint instead of recomputing from the first item.
 
 *Alternative rejected:* setting a default `checkpoint_every` in `base.yaml`. It would
@@ -1378,7 +1489,7 @@ change the config hash, and therefore the run id, of every existing bank.
 
 ---
 
-## D-039 · Item seeds come from a stable digest, not Python's salted `hash()`
+## D-041 · Item seeds come from a stable digest, not Python's salted `hash()`
 **Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
 
 `caliber.runner.item_seed(base_seed, sample_id, slice_idx, operator_id)` returns
@@ -1407,20 +1518,20 @@ Changing the derivation again requires changing the pinned values in
 
 ---
 
-## D-040 · A restarted run resumes from its checkpoint — only for the same config
+## D-042 · A restarted run resumes from its checkpoint — only for the same config
 **Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
 
-When the runner starts and finds a checkpoint (D-038) whose config hash matches its own,
+When the runner starts and finds a checkpoint (D-040) whose config hash matches its own,
 it loads the finished rows and skips those (item, operator) pairs. A checkpoint from a
 different config makes the run refuse to start.
 
-*Reason:* D-038 made a crash cost the tail of a run instead of all of it, but a restart
+*Reason:* D-040 made a crash cost the tail of a run instead of all of it, but a restart
 still recomputed everything. At 256² on this CPU that is hours per restart, and P-24 shows
 restarts are not hypothetical.
 
 *Why it is safe now and was not before:* a resumed bank is only correct if the pairs
 computed after the restart are exactly what an uninterrupted run would have drawn. Until
-D-039 each process drew different seeds, so a resumed bank would have been a splice of two
+D-041 each process drew different seeds, so a resumed bank would have been a splice of two
 different random streams — valid-looking and not reproducible. With digest seeds it is
 exact. Tested directly: crash a run part-way, restart it, and require the resulting bank to
 equal one from a single uninterrupted run, and require the restart to call the sampler only
@@ -1435,18 +1546,18 @@ overridden.
 *Automatic, not opt-in:* the alternative — recomputing and overwriting unless a flag says
 otherwise — makes the destructive path the default.
 
-*Affects:* D-038, D-039, P-24, P-16, T2.3, T2.4 onward.
+*Affects:* D-040, D-041, P-24, P-16, T2.3, T2.4 onward.
 
 ---
 
-## D-041 · A run that cannot fit in memory is refused before it starts
+## D-043 · A run that cannot fit in memory is refused before it starts
 **Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
 
 `caliber.resources` estimates the peak commit charge of a run from its image shape and
 draw count, compares it with what the machine has, and the runner **raises rather than
 starts** when the estimate exceeds availability. `run.skip_memory_check: true` overrides.
 
-*Reason:* P-24's third mitigation. Checkpointing (D-038) and resume (D-040) make a
+*Reason:* P-24's third mitigation. Checkpointing (D-040) and resume (D-042) make a
 memory death survivable; this makes the common case not happen. The failure it prevents is
 particularly bad because it is often silent — a segfault with no traceback, hours in.
 
@@ -1474,11 +1585,11 @@ run.
 that raises out-of-memory today. The Week 3 bank exists because more memory was free when
 it ran.
 
-*Affects:* P-24, P-16, D-038, D-040, T2.3, every config's runnability.
+*Affects:* P-24, P-16, D-040, D-042, T2.3, every config's runnability.
 
 ---
 
-## D-042 · Each posterior draw is seeded independently, so draws can be batched in any size
+## D-044 · Each posterior draw is seeded independently, so draws can be batched in any size
 **Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
 
 Draw *i* of a sample is a function of ``(seed, i)`` alone —
@@ -1499,10 +1610,10 @@ produced.
 
 *Cost:* the draws differ from those of any bank produced before this entry, because the
 noise each draw receives is now derived differently. That costs nothing that was not
-already lost: no bank before D-039 was reproducible at all, and D-039 had already reset
+already lost: no bank before D-041 was reproducible at all, and D-041 had already reset
 the draws this week. Doing both resets in one week is deliberate.
 
-*Not changed:* no committed config sets `max_draws_per_batch`, for the reason D-038 gives
+*Not changed:* no committed config sets `max_draws_per_batch`, for the reason D-040 gives
 about `checkpoint_every` — it would alter the config hash, and therefore the run id, of a
 bank that already exists. Pass `--set experiment.solver.max_draws_per_batch=1` on a run
 that needs it.
@@ -1510,7 +1621,11 @@ that needs it.
 *Speed:* a smaller batch gives up some of the CPU's parallelism across draws. On this
 machine that is a modest cost against not being able to run at all.
 
-*Affects:* P-24, P-16, D-039, D-041, T2.3, Week 4 grid sizing.
+*Affects:* P-24, P-16, D-041, D-043, T2.3, Week 4 grid sizing.
+
+---
+
+## Template
 
 ```
 ## D-0NN · <one-line decision>

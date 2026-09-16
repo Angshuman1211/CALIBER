@@ -51,18 +51,18 @@ runs/<run_id>/
   scores.parquet             the long-format table below
   recons/                    OPTIONAL float16 posterior samples, small subset only
 
-  scores.partial.parquet     ONLY while running or after a crash (D-038)
+  scores.partial.parquet     ONLY while running or after a crash (D-040)
   manifest.partial.json      ditto; carries "complete": false
 ```
 
-**Complete and partial banks (D-038).** A finished bank's manifest carries
+**Complete and partial banks (D-040).** A finished bank's manifest carries
 `"complete": true`. A run with `run.checkpoint_every: N` also writes the two
 `*.partial.*` files every N items and removes them once the finished bank is on disk.
 A directory holding **only** partial files is an interrupted run: `read_bank` refuses
 it unless called with `allow_partial=True`, because a partial bank is a valid table
 whose rows give no sign the run stopped early. Restarting the same config resumes
-from the checkpoint; a checkpoint from a different config is refused (D-040). Banks
-written before D-038 have no `complete` key and are read as complete. The table schema
+from the checkpoint; a checkpoint from a different config is refused (D-042). Banks
+written before D-040 have no `complete` key and are read as complete. The table schema
 below is unchanged.
 
 A bank is **self-describing**: the manifest embeds the operator registry, so
