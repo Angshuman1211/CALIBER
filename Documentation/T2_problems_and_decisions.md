@@ -23,69 +23,195 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
-#### P-21 - The ground-truth label is itself operator-dependent, so the coverage-failure experiment cannot mean what it is supposed to mean
+#### P-24 - At 256² the solver dies with a silent segfault when the machine is short of memory
 
-**Blocks:** the O3 reading of any coverage curve - **See:** D-034, D-028, D-020, P-02
+**Blocks:** reliable 256² runs of any length; DPS at 256² entirely - **See:** P-16, P-10, D-033
 
-On the Week 3 fastMRI bank (23,040 regions, DDNM, three accelerations), naive
-transfer does **not** lose coverage. It gains it:
+The Week 3 D-033 sweep on the real UNet ran DDNM at 256² cleanly, then every DPS
+job printed its header, loaded the checkpoint, and **ended ten seconds later with
+no traceback and no output file**. The sweep log said `exit=0` for each - which
+was a bug in the logging, not a result: `exit=$?` was expanded after a `$(date)`
+substitution on the same line, so it recorded `date`'s status. The real exit
+code, captured properly, is **139: segmentation fault**.
 
-| tau | metric | R=2 (calib) | R=4 | R=8 |
-|---|---|---|---|---|
-| 1.75 | coverage | 0.851 | 1.000 | 1.000 |
-| 1.75 | flag area | 0.676 | 0.999 | 0.990 |
-| 3.00 | coverage | 0.914 | 0.915 | 0.955 |
-| 3.00 | flag area | 0.244 | 0.502 | 0.668 |
+Isolating it took three wrong turns worth recording, because each looked like an
+answer:
 
-The direction is robust - it holds at every tau tested (1.75, 2.5, 3.0, 4.0).
-Coverage never collapses; **flag area explodes** instead. The certificate stays
-valid and becomes useless, which is a failure of efficiency, not of validity.
+- **Not the DPS algorithm.** DPS at 256² with one draw and two steps ran and
+  produced a result.
+- **Not batch size.** Batch 1 then crashed too.
+- **Not a deterministic torch bug.** The identical batch-1 256² backward passed
+  twice in a row, then crashed five times out of five minutes later - and
+  finally even a **forward-only** pass at 256² segfaulted, which is the exact
+  operation that had just run for 7.2 hours to build the Week 3 bank.
 
-**Why.** Both the score and the label move with the operator, in the same
-direction:
+Nothing in the code had changed between the runs that worked and the runs that
+did not. The machine had.
 
-| operator | label positive rate (tau=1.75) | median err_free/free_content | mean s_free |
+**Measured**, peak commit charge of one UNet pass, via `GetProcessMemoryInfo`:
+
+| resolution | pass | peak working set | peak commit |
 |---|---|---|---|
-| R=2 | 0.401 | 1.528 | 0.486 |
-| R=4 | 0.681 | 2.296 | 0.847 |
-| R=8 | 0.772 | 2.677 | 1.046 |
+| 128² | forward, 1 image | 1.45 GB | 2.99 GB |
+| 128² | forward + backward, 1 image | 1.58 GB | 3.42 GB |
+| 128² | forward + backward, 2 images | 2.17 GB | 4.12 GB |
+| 192² | forward, 1 image | 2.27 GB | 4.20 GB |
+| 256² | forward, 1 image | 3.44 GB | **5.99 GB** |
+| 256² | forward, 2 images | - | segfault |
+| 256² | forward, 4 images | - | `RuntimeError: DefaultCPUAllocator: not enough memory` |
 
-A threshold calibrated where positives are rare and scores are low, then
-deployed where positives are common and scores are high, flags nearly
-everything - and therefore catches nearly every positive. Coverage is achieved
-trivially.
+and at the time of the crashes, **5.1–5.3 GB of commit was free** out of a
+~26 GB limit (15.7 GB RAM plus pagefile), with other applications holding the
+rest. The single-image forward peak is linear in pixel count — about 2.0 GB of
+fixed overhead plus 0.061 GB per thousand pixels, which predicts the 192² point
+to within 0.04 GB.
 
-**This is not a calibration failure and not a pipeline failure.** It is a
-property of the *criterion*. A coverage comparison across operators is only
-interpretable if the quantity being covered means the same thing at each
-operator, and at present it does not: the base rate of "hallucinated" nearly
-doubles between R=2 and R=8. D-034 flagged this risk on M4Raw, where the trend
-was mild (median 1.480 -> 1.645). On fastMRI knees with a face prior it is
-severe (1.528 -> 2.677), and it has crossed from a caution into a blocker.
+*A correction to this entry's first version:* it estimated ~8 GB for a 256²
+forward, because that pass would not run at the time. Measured once headroom
+allowed, it is **6.0 GB**. The estimate was 2 GB high.
 
-**Where it stands: open, and it is Track 1's to rule on (O2).** Track 2's part
-is measured and delivered. The options, none of them Track 2's to choose:
+**What the batch-4 row settles.** The same forward pass that segfaults at
+batch 2 raises an explicit out-of-memory error at batch 4. Allocation failure
+is the cause; whether it surfaces as a Python exception or a segfault depends on
+where in torch's native code the failing allocation happens. 256² succeeds when
+other applications leave headroom and fails when they do not; 128² fits either
+way (5 of 5).
 
-1. **Set tau per calibration group** so the label base rate is matched across
-   operators. Makes coverage comparable, but "hallucination" then means
-   something slightly different at each acceleration, which has to be defended.
-2. **Make flag area the headline** rather than coverage, with coverage reported
-   alongside. Sec. 15.2 already requires flag area as a reported metric, and the
-   over-flagging result above is a perfectly good demonstration of operator
-   shift mattering - it is just not the *coverage* story O3 is written around.
-3. **Redefine the criterion to be operator-invariant by construction.** Cleanest
-   scientifically, most expensive, and it invalidates nothing already cached
-   because the bank stores continuous quantities (D-002).
+**It bites the Week 3 config directly.** The samplers pass all `n_posterior`
+draws through the UNet as one batch, and `w03_mri_fixed_operator.yaml` uses four.
+That is the batch-4 row: **the Week 3 config cannot run on this machine with
+today's memory load** — it completed a week earlier only because more was free.
 
-**Not a wasted run.** The bank is real, cached, and re-thresholdable without a
-GPU (Sec. 17), so whichever option Track 1 picks is a re-analysis, not a
-re-reconstruction.
+**That lever is now built (D-044).** Seeding each draw from `(seed, index)` rather
+than sharing one generator across the batch decoupled the result from the batch
+size, and the back-ends take `max_draws_per_batch`. Measured: the Week 3 config at
+256² with four draws needs **6.0 GB chunked to one draw, against ~18 GB batched**,
+and it runs. The bank is bit-identical either way, which is the property that
+makes the chunking a memory setting rather than an experimental choice.
+
+**Why it is serious rather than inconvenient.** The runner writes the bank only
+at the end. The Week 3 run took 7.2 hours; had the machine's memory filled at
+hour 7, it would have died with no error, no traceback and no partial output,
+and the log would have looked like a job that simply stopped. Nothing in the
+pipeline would have said why.
+
+**Where it stands: mitigated, Track 2's — all three are in** (D-040, D-042,
+D-043), and D-044 removes the constraint for this config rather than only
+reporting it: **the Week 3 config runs on this machine again** when its draws are
+chunked. What remains is the underlying scarcity — a 256² pass needs ~6 GB
+whatever the batching, so a long run still competes with whatever else is open.
+In order of cost:
+
+1. **Operational now:** close memory-heavy applications before a 256² run, and
+   capture exit codes correctly - a 139 is a memory problem until proven
+   otherwise.
+2. **A preflight check** in the runner that compares free commit against an
+   estimate for the configured resolution and batch, and refuses to start a job
+   that cannot finish. **Done (D-043):** the estimate is
+   `max(2.8, 2.0 + 6.1e-5 x pixels x draws)` GB, fitted to eleven measured points
+   and accurate on all of them to within 0.4 GB; it calls both observed failures.
+   Overridable with `run.skip_memory_check`, and silent where the available
+   memory cannot be read.
+3. **Incremental bank writes**, so a job killed at hour 7 keeps seven hours of
+   rows. This is the one that turns a silent total loss into a partial result,
+   and it also serves P-16, where every long job is a risk. **Done (D-040):**
+   `run.checkpoint_every: N` rewrites every finished row to a partial bank each
+   N items, atomically; `read_bank` refuses a partial bank unless asked. Tested
+   by crashing a run part-way and recovering exactly the rows it finished — and
+   that test fails against the previous runner.
+
+**Resume is also in (D-042):** a restarted run of the same config continues from
+its checkpoint, and the result is tested to equal an uninterrupted run exactly.
+**The preflight check is in too (D-043):** the runner estimates the run's peak
+commit charge, compares it with what the machine has, and refuses to start a run
+that cannot finish - overridable, because the estimate is a fit to one machine.
+All three mitigations are now built.
+
+**No existing config sets `checkpoint_every`**, deliberately: adding it changes
+the config hash and therefore the run id of a bank that already exists. Set it
+with `--set run.checkpoint_every=10` on any long run, and in every new config.
+
+This also bears on D-033: DPS was measured on the real UNet at **128²** instead,
+because at 256² it cannot run here at all. Whether its step budget transfers to
+256² is unmeasured.
+
+---
+
+#### P-23 - Two of the three Week 3 baselines were in-sample, and held out, 30 volumes cannot measure coverage at all
+
+**The bug is fixed; the consequence is open** - **See:** P-19, P-16, P-21, D-022, D-027
+
+**The bug.** P-19's fix to `analyse_bank.py` held out the *naive* threshold -
+fitted on `split=calib`, scored on `split=test` - but still fitted the
+matched-per-operator and group-conditional thresholds on the evaluation rows
+themselves. Split conformal scored on its own calibration rows lands on nominal
+by construction, which is why the T2.3 record reported both at **exactly
+0.900 at every operator**. It also meant a held-out method was being compared
+against two in-sample ones. That number was wrong and was written into the
+Week 3 record as a result.
+
+What gave it away was the exactness: held-out conformal coverage lands *near*
+nominal, not *on* it, three operators in a row.
+
+**Held out properly** (tau=3.0, calibration operator R=2, thresholds fitted on
+13,824 `split=calib` rows from 18 volumes, scored on 9,216 `split=test` rows
+from 12 volumes):
+
+| method | R=2 | R=4 | R=8 |
+|---|---|---|---|
+| naive transferred | 0.914 | 0.915 | 0.955 |
+| matched / group-conditional | 0.914 | 0.874 | **0.779** |
+
+**Then the part that matters more.** A volume-level bootstrap (2,000 resamples)
+puts 95% intervals on those numbers:
+
+| method | operator | coverage | 95% CI |
+|---|---|---|---|
+| matched | R=2 | 0.914 | [0.000, 1.000] |
+| matched | R=4 | 0.874 | [0.509, 0.985] |
+| matched | R=8 | 0.779 | [0.457, 0.919] |
+| naive | R=8 | 0.955 | [0.871, 0.989] |
+
+**With 12 test volumes, per-operator coverage is essentially unmeasured.** The
+bank cannot show that coverage holds - the in-sample 0.900 falsely suggested it
+did - and it cannot show that it fails. At tau=3.0 the positives concentrate in
+a handful of volumes, which is how R=2's interval spans the entire unit
+interval. The bootstrap resamples volumes, and volumes from one patient are
+correlated (D-027), so the true intervals are if anything *wider*.
+
+**What stands and what does not.** P-21 stands: it rests on the label base rate
+over all 23,040 regions and on flag area, which is a fraction of every region
+rather than of the few positive ones, and neither is a small-sample coverage
+estimate. Every *coverage* number in the Week 3 record does not stand as
+evidence of anything, in either direction.
+
+**Why this is open, and whose.** Scaling SE ~ 1/sqrt(n) from these intervals,
+order of magnitude only:
+
+| target CI half-width per operator | test volumes | items per operator (60% calib) | CPU hours per operator |
+|---|---|---|---|
+| ~0.10 | ~70 | ~170 | ~6.5 |
+| ~0.05 | ~270 | ~700 | ~26 |
+
+Two walls, not one. **Compute** (P-16): the ~0.05 row is ~26 CPU hours *per
+operator*, so a Week 4 grid at useful precision is not a CPU job. **Data**, and
+this one no hardware fixes: the unit of exchangeability is the patient, and
+fastMRI `singlecoil_val` has **96**. At the default split that is ~44 test
+patients, which caps precision near SE ~0.06 per operator no matter how long the
+solver runs. The protocol (T1.4, Track 1) has to be designed against that
+ceiling - pooled estimates, fewer and larger groups, or coverage reported with
+intervals rather than as point values.
+
+**The regression is pinned.** `test_every_threshold_is_fitted_on_calibration_
+rows_and_scored_on_test_rows` spies on every fitting and scoring call and asserts
+the split of the rows each receives. It was checked against the buggy version,
+where it fails.
 
 ---
 
 #### P-02 - The v0 label threshold marks everything as hallucinated
 
-**Blocks:** region FDR / power on any real substrate - **See:** D-020, D-003, D-009
+**Closed** - tau ruled by Track 1 - **See:** D-037, D-038, D-020, D-003, D-009
 
 At the v0 criterion `err_free > 0.10`, 100% of MRI regions on real M4Raw
 k-space label as hallucinated. Region FDR is then identically zero and the flag
@@ -99,9 +225,11 @@ than a smooth phantom, so the whole `err_free` distribution shifts up: M4Raw's
 1st percentile (0.116) already clears a threshold set at 0.10. The constant had
 been calibrated against phantoms without anyone deciding that it had been.
 
-**Where it stands:** the relative criterion agreed at the Week 1 sign-off is now
-**implemented and measured** (D-034), and what remains is Track 1's choice of
-tau, not a missing component. Until Week 2 the form had been agreed and the
+**Where it stands: closed.** The relative criterion agreed at the Week 1 sign-off
+is implemented and measured (D-034), and Track 1 has now set the value:
+**tau = 1.75, global across operators, chosen on a design split** (D-037/D-038).
+Nothing is outstanding here - the absolute criterion that flagged 100% of regions
+is superseded, and the relative one has a ratified threshold. Until Week 2 the form had been agreed and the
 denominator column (`free_content`) written, but the only criterion anything
 could actually apply was still the broken absolute one.
 
@@ -112,12 +240,22 @@ absolute one cannot - it separates:
 |---|---|---|---|---|---|---|
 | positive rate | 100% | 92.4% | 60.2% | 25.5% | 10.7% | 0.8% |
 
-against a flat 100% for `err_free > 0.10`. A usable operating range is roughly
-tau 1.75-2.0. Two cautions travel with it: the ratio exceeds 1 in *every*
-region, which is a face prior on brain anatomy showing through as much as it is
-a criterion; and the median ratio rises with acceleration (1.480 at R=4, 1.645
-at R=8), so a single global tau is not operator-neutral and may have to be set
-per calibration group.
+against a flat 100% for `err_free > 0.10`. Track 1 has since set **tau = 1.75,
+global** (D-037/D-038).
+
+> **Correction.** This entry originally read "the ratio exceeds 1 in *every*
+> region" as a face prior on brain anatomy showing through. **That was unsound**,
+> and Track 1's D-038 shows why: by the D-037 identity, with `cos θ = 0` the
+> ratio is `sqrt(1 + u²)` for `u = s_free/free_content`, which exceeds 1 for any
+> `u > 0`. It is what *any* prior whose hidden content is uncorrelated with the
+> truth's produces - including the reference sampler, which is not a prior at
+> all. The observation said nothing about mismatch. The quantity that does is
+> `cos θ`, which their `content_alignment()` now reports per region.
+
+The second caution stands as a measurement and falls as an inference: the median
+ratio does rise with acceleration (1.480 at R=4, 1.645 at R=8), but per the
+ruling above that is a reason to read *flag area* per operator with care, not a
+reason to set tau per group.
 
 What was already established stands: the criterion cannot be a shared absolute
 constant - it fails to transfer across modalities *and* across substrates within
@@ -680,7 +818,7 @@ added to the criterion cannot repeat this.
 
 #### P-20 - An unanchored `data/` ignore rule shipped a `main` that could not be imported
 
-**Fixed** - **See:** D-025, reported by Track 3
+**Fixed** - **See:** D-036 (Track 1's entry for the same bug), D-025 - reported by Track 3, found independently by Track 1
 
 `main` raised `ModuleNotFoundError: No module named 'caliber.data.splits'` on
 `import caliber.data`. Because `caliber/data/__init__.py` imports it too, the
@@ -700,6 +838,18 @@ machine that wrote it. That is exactly why it survived two weeks: nothing in a
 local workflow can see it. It took someone checking out the repository
 elsewhere - Track 3, working on T3.4 - to surface it.
 
+**Whose it was, accurately.** Two failures had to coincide. The ignore rule was
+widened by Track 1 in the D-025 consolidation, which replaced `data/*` plus
+`!data/README.md` with a bare `data/`; the original contained an internal slash
+and was therefore anchored, the replacement was not (Track 1 records this in
+D-036 as self-inflicted). And Track 2 added `splits.py` after that change and
+never checked that it had actually been committed. Neither alone would have
+shipped a broken `main`. An earlier Track 2 note called this Track 2's bug
+outright; that was half the story.
+
+Track 1 hit the same failure independently, anchored the rule themselves, and
+wrote a stand-in `splits.py` to keep working - which is what led to P-22.
+
 **A second consequence of the same rule.** `ruff` also respects `.gitignore`, so
 the linter had been skipping all six files in that package for as long as the
 rule existed. Anchoring it revealed two pre-existing `E501`s in `fastmri.py`,
@@ -716,6 +866,151 @@ loss - `splits.py` was the only casualty.
 repository. The check that matters is an export of the committed tree, and
 nothing in the project performed one until this.
 
+---
+
+#### P-22 - Two split implementations passed every test and disagreed on half the patients
+
+**Fixed** - **See:** D-039, P-20, D-036, D-022, D-027
+
+While `splits.py` was missing from `main` (P-20), Track 1 wrote a stand-in to the
+same contract so their work could continue - a reasonable thing to do, and its
+docstring said to take Track 2's file when it landed. It used the **same salt**,
+passed **all 21 split tests** and the full suite. On the 96 real fastMRI patients
+it put **48 on the opposite side** from the version that built the Week 3 bank.
+
+The tests could not see it because they check what a correct split must
+*satisfy* - deterministic, operator-independent, stable as patients are added,
+balanced - and never *which side any patient lands on*. Two implementations can
+satisfy every one of those properties and share almost no assignments. Banks
+built from the two would have been silently non-comparable, which is exactly what
+D-022's "identical across every run" requirement forbids.
+
+Resolved at the merge by keeping Track 2's version (D-039), for the two reasons above.
+**Anything Track 1 or Track 3 built from a `split: auto` bank on `main` between
+PR #21 and the Week 3 merge used the other split**; nothing in git can show
+whether that happened, because run outputs are not committed.
+
+**The fix makes the mapping itself the contract.** `tests/test_split_golden.py`
+pins the assignment of 40 fixed synthetic keys at two fractions, and the SHA-256
+of the real 96-patient assignment - a digest, so no patient identifier is
+committed and the NYU agreement is not engaged. The real-data test skips cleanly
+where fastMRI is absent. Checked against Track 1's version: 3 of 5 fail, as they
+should. Redrawing the split on purpose is still possible and now has to be
+explicit: bump `DEFAULT_SALT`, regenerate the pins, record it.
+
+---
+
+#### P-25 - No bank the project had produced could be regenerated from its config
+
+**Fixed going forward; not recoverable backward** - **See:** D-041
+
+The runner's own docstring says a run is "fully determined by its config plus its
+seed". It was not. Each (item, operator) seed came from
+
+```python
+seed + abs(hash((item.sample_id, item.slice_idx, desc.operator_id))) % 10**6
+```
+
+and Python salts `hash()` for strings **per process** unless `PYTHONHASHSEED` is
+set. Nothing set it. Three invocations for the same item gave **77818, 549586 and
+104573**. Every run therefore drew different noise and different posterior samples
+for identical inputs. `scripts/stage2_decomposition.py` copied the same line.
+
+**Why the test suite never saw it.** Every determinism test compared two runs
+*inside one pytest process*, where the salt is shared, so the bug could not show.
+Checkpointing's "does not change the bank" test (D-040) passed for the same reason.
+A determinism test that runs in a single process cannot detect a per-process
+source of non-determinism — the check has to cross a process boundary.
+
+It was found reading `stage2_decomposition.py` line by line for an unrelated
+cosmetic fix.
+
+**Consequences, stated plainly.**
+
+- **No existing bank can be regenerated**, including the 7.2-hour Week 3 bank. Its
+  rows are still correct and interpretable - the `seed` column records the value
+  each row was actually drawn with - but re-running its config produces different
+  draws, not the same bank.
+- The Week 10 reproducibility package (O7) was built on a false premise until now.
+- Numbers quoted across two separate runs of "the same" config were never
+  guaranteed to be comparable at the level of individual draws. Aggregates over many
+  items are unaffected in expectation; single-item comparisons are not.
+
+**The fix** (D-041) derives the seed from a BLAKE2b digest of
+`sample_id|slice_idx|operator_id` - the approach `splits.py` already used correctly.
+Pinned by `tests/test_reproducibility.py`, whose central test runs the pipeline in
+**two separate processes with deliberately different `PYTHONHASHSEED` values** and
+requires identical banks. It fails against the old derivation and passes against
+the new one.
+
+---
+
+#### P-21 - The ground-truth label is operator-dependent - ruled, and one inference of mine was unsound
+
+**Ruled by Track 1** (tau = 1.75 global) - **See:** D-037, D-038, D-034, D-028, D-020, P-02
+
+On the Week 3 fastMRI bank (23,040 regions, DDNM, three accelerations), naive
+transfer does **not** lose coverage. It gains it:
+
+| tau | metric | R=2 (calib) | R=4 | R=8 |
+|---|---|---|---|---|
+| 1.75 | coverage | 0.851 | 1.000 | 1.000 |
+| 1.75 | flag area | 0.676 | 0.999 | 0.990 |
+| 3.00 | coverage | 0.914 | 0.915 | 0.955 |
+| 3.00 | flag area | 0.244 | 0.502 | 0.668 |
+
+The direction is robust - it holds at every tau tested (1.75, 2.5, 3.0, 4.0).
+Coverage never collapses; **flag area explodes** instead. The certificate stays
+valid and becomes useless, which is a failure of efficiency, not of validity.
+
+**Why.** Both the score and the label move with the operator, in the same
+direction:
+
+| operator | label positive rate (tau=1.75) | median err_free/free_content | mean s_free |
+|---|---|---|---|
+| R=2 | 0.401 | 1.528 | 0.486 |
+| R=4 | 0.681 | 2.296 | 0.847 |
+| R=8 | 0.772 | 2.677 | 1.046 |
+
+A threshold calibrated where positives are rare and scores are low, then
+deployed where positives are common and scores are high, flags nearly
+everything - and therefore catches nearly every positive. Coverage is achieved
+trivially.
+
+**This is not a calibration failure and not a pipeline failure.** It is a
+property of the *criterion*. A coverage comparison across operators is only
+interpretable if the quantity being covered means the same thing at each
+operator, and at present it does not: the base rate of "hallucinated" nearly
+doubles between R=2 and R=8. D-034 flagged this risk on M4Raw, where the trend
+was mild (median 1.480 -> 1.645). On fastMRI knees with a face prior it is
+severe (1.528 -> 2.677), and it has crossed from a caution into a blocker.
+
+**RULED by Track 1 (D-037/D-038 cross-track, their D37): option 1 rejected,
+`tau = 1.75` global across operators, chosen on a design split.** Their argument
+is the one Track 2 did not make: region coverage is **conditional**,
+`P(flag | hallucinated)`, so a base rate that differs between operators does not
+by itself bias it. A *global* tau keeps "hallucinated" meaning the same thing at
+every acceleration; a per-group tau tuned to equalise base rates would make it
+mean something different at each, which is the worse trade. The three options
+Track 2 listed were the wrong menu - the premise that a varying base rate must
+be equalised was itself wrong.
+
+What survives from this entry is narrower and still true: the *label* varies
+strongly with the operator (0.401 -> 0.772), so **flag area and region FDR are
+not comparable across operators at face value** even though coverage is. The
+Week 3 tables should be read that way.
+
+**Not a wasted run.** The bank is real, cached, and re-thresholdable without a
+GPU (Sec. 17), so whichever option Track 1 picks is a re-analysis, not a
+re-reconstruction.
+
+**Read with P-23.** The coverage rows in the first table above are point
+estimates from 12 test volumes, and P-23 shows intervals that wide cannot carry a
+claim. The *diagnosis* does not depend on them: the label base rate
+(0.401 -> 0.772) is measured over every region in the bank, and flag area is a
+fraction of all regions, not of the few positive ones.
+
+---
 ---
 
 ### Adding an entry
@@ -735,7 +1030,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 35 entries, so a problem in Part I can be
+What lives here instead is the index — 42 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -770,8 +1065,15 @@ traced to the decision that settled it without opening the log.
 | [D-028](decision_log.md) | Fixing D-024 reversed the direction of the naive-transfer coverage failure | Week 1 | ACCEPTED — recorded, not yet re-measured on a real solver |
 | [D-029](decision_log.md) | Solver algorithms are separated from the network that drives them | Week 2 | ACCEPTED |
 | [D-030](decision_log.md) | The flow-matching family uses diffusion-derived velocities, not a FlowDPS checkpoint | Week 2 | ACCEPTED — scope limitation, must appear in the write-up |
-| [D-031](decision_log.md) | Guidance strength is a fixed solver constant, never tuned per operator | Week 2 | ACCEPTED |
+| [D-031](decision_log.md) | Guidance strength is a fixed solver constant, never tuned per operator | Week 2 | ACCEPTED — **the value 5.0 is wrong for the real prior**; optimum above 20, unbracketed (Week 3) |
 | [D-032](decision_log.md) | Stage-2 decomposition diagnostics are a run artefact, not score-bank columns | Week 2 | ACCEPTED |
-| [D-033](decision_log.md) | The null-error share is a per-solver step-budget precondition on a bank | Week 2 | ACCEPTED |
+| [D-033](decision_log.md) | The null-error share is a per-solver step-budget precondition on a bank | Week 2 | ACCEPTED — re-measured on the real UNet; DPS diverges at 8 steps, admissible from 24 (Week 3) |
 | [D-034](decision_log.md) | Relative criterion implemented and its tau curve measured; tau stays Track 1's | Week 2 | ACCEPTED — Track 2's half discharged |
 | [D-035](decision_log.md) | The prior's training domain is a third reportability gate | Week 3 | ACCEPTED |
+| [D-036](decision_log.md) | A bare `data/` in .gitignore also ignored `src/caliber/data/` | Week 2 | FIXED — Track 1's entry; see P-20 |
+| [D-039](decision_log.md) | Track 2's `splits.py` is canonical, and the split mapping itself is pinned | Week 3 | ACCEPTED — Track 1 to confirm no bank used the stand-in |
+| [D-040](decision_log.md) | An interrupted run leaves a partial bank that readers refuse by default | Week 3 | ACCEPTED |
+| [D-041](decision_log.md) | Item seeds come from a stable digest, not Python's salted `hash()` | Week 3 | ACCEPTED |
+| [D-042](decision_log.md) | A restarted run resumes from its checkpoint — only for the same config | Week 3 | ACCEPTED |
+| [D-043](decision_log.md) | A run that cannot fit in memory is refused before it starts | Week 3 | ACCEPTED |
+| [D-044](decision_log.md) | Each posterior draw is seeded independently, so draws can be batched in any size | Week 3 | ACCEPTED |

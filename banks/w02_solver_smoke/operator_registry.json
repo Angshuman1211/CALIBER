@@ -1,0 +1,53 @@
+{
+  "image_shape": [
+    128,
+    128
+  ],
+  "n_operators": 2,
+  "operators": [
+    {
+      "operator_id": "mri.random1d.R4.c0.08.s0",
+      "modality": "mri",
+      "family": "random1d",
+      "image_shape": [
+        128,
+        128
+      ],
+      "measurement_dim": 4096,
+      "ambient_dim": 16384,
+      "null_space_dim": 12288,
+      "undersampling_ratio": 0.25,
+      "exact_pinv": true,
+      "calib_group": "mri/random1d/R4",
+      "params": {
+        "family": "random1d",
+        "acceleration": 4.0,
+        "center_fraction": 0.08,
+        "mask_seed": 0,
+        "noise_sigma": 0.0
+      }
+    },
+    {
+      "operator_id": "mri.random1d.R8.c0.08.s0",
+      "modality": "mri",
+      "family": "random1d",
+      "image_shape": [
+        128,
+        128
+      ],
+      "measurement_dim": 2048,
+      "ambient_dim": 16384,
+      "null_space_dim": 14336,
+      "undersampling_ratio": 0.125,
+      "exact_pinv": true,
+      "calib_group": "mri/random1d/R8",
+      "params": {
+        "family": "random1d",
+        "acceleration": 8.0,
+        "center_fraction": 0.08,
+        "mask_seed": 0,
+        "noise_sigma": 0.0
+      }
+    }
+  ]
+}

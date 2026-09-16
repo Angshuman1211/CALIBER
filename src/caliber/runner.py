@@ -26,6 +26,7 @@ scope affordable.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -37,6 +38,7 @@ import torch
 from .config import ConfigError, load_config
 from .data import build_dataset
 from .operators.registry import OperatorRegistry
+from .resources import memory_preflight
 from .scorebank.io import ScoreBankWriter, save_reconstructions
 from .scoring.labels import CRITERION_VERSION, compute_region_truth
 from .scoring.regions import RegionGrid
@@ -55,6 +57,24 @@ def add_measurement_noise(y: torch.Tensor, sigma: float, seed: int) -> torch.Ten
         imag = torch.randn(y.shape, generator=gen)
         return y + sigma * (real + 1j * imag) / (2**0.5)
     return y + sigma * torch.randn(y.shape, generator=gen)
+
+
+def item_seed(base_seed: int, sample_id: str, slice_idx: int, operator_id: str) -> int:
+    """The seed for one (item, operator), identical in every process on every machine.
+
+    This used to be ``base_seed + abs(hash((sample_id, slice_idx, operator_id))) % 10**6``.
+    Python salts ``hash()`` for strings per process unless ``PYTHONHASHSEED`` is set, and
+    nothing set it, so the same item drew a different seed on every run — three
+    invocations gave 77818, 549586 and 104573 (P-25). The module docstring's promise that
+    a run is "fully determined by its config plus its seed" was false for every bank the
+    project had produced.
+
+    A keyed digest has none of that. The ``seed`` column still records the value used,
+    which is why older banks remain interpretable even though they cannot be regenerated.
+    """
+    key = f"{sample_id}|{int(slice_idx)}|{operator_id}".encode()
+    digest = hashlib.blake2b(key, digest_size=8).digest()
+    return int(base_seed) + int.from_bytes(digest, "big") % 10**6
 
 
 def calibration_group(operator) -> str:
@@ -153,6 +173,10 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     n_posterior = int(experiment.get("n_posterior", 8))
     seed = int(run_cfg.get("seed", 0))
     cache_recons = int(run_cfg.get("cache_reconstructions", 0))
+    # Items between checkpoints; 0 writes nothing until the end, as before. P-24:
+    # at 256² this machine can kill the solver with a silent segfault, and the
+    # Week 3 bank took 7.2 hours to build, so a long run should always set this.
+    checkpoint_every = int(run_cfg.get("checkpoint_every", 0) or 0)
     region_rows = grid.table()
 
     writer = ScoreBankWriter(
@@ -167,18 +191,65 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
             "reportable": reportable,
         },
     )
+    # P-24 / D-043: a pass that does not fit can segfault rather than raise, so check
+    # before spending hours. The estimate is fitted to measurements on this machine, so a
+    # refusal is overridable -- being wrong here must cost a flag, not a week.
+    # The peak is set by how many draws go through the UNet at once, which is the whole
+    # draw count unless the solver was told to chunk them (D-044).
+    draws_per_batch = min(n_posterior, getattr(solver, "max_draws_per_batch", 0) or n_posterior)
+    memory = memory_preflight(
+        image_shape, draws_per_batch,
+        backward=solver.info().solver_id.startswith("diffusion.dps"),
+    )
+    if draws_per_batch < n_posterior:
+        print(
+            f"[caliber] draw batching    {draws_per_batch} of {n_posterior} draws per forward "
+            "pass (D-044); the bank is identical either way"
+        )
+    if memory["verdict"] != "unknown":
+        print(
+            f"[caliber] memory           needs ~{memory['needed_gb']} GB commit, "
+            f"{memory['available_gb']} GB available  ({memory['verdict']})"
+        )
+    if memory["verdict"] == "too_big" and not run_cfg.get("skip_memory_check", False):
+        raise ConfigError(
+            f"this run needs about {memory['needed_gb']} GB of committed memory and only "
+            f"{memory['available_gb']} GB is available. It is expected to die part-way, and "
+            "on this torch build that can be a silent segfault rather than an error (P-24). "
+            "Close other applications, lower data.image_shape or experiment.n_posterior, or "
+            "set run.skip_memory_check=true to proceed anyway."
+        )
+    if memory["verdict"] == "tight":
+        print(
+            "[caliber] WARNING          within 20% of available memory; another application "
+            "growing during the run could kill it (P-24). Checkpoints are the safety net - "
+            "set run.checkpoint_every if it is not already set.",
+            file=sys.stderr,
+        )
+
     started = time.time()
-    n_done, n_total = 0, len(items) * len(registry)
+    n_total = len(items) * len(registry)
+
+    # D-042: pick up an interrupted run of this same config instead of redoing it.
+    done = writer.resume_from_checkpoint()
+    if done:
+        print(
+            f"[caliber] resuming         {len(done)}/{n_total} (item, operator) pairs "
+            "recovered from the checkpoint (D-042)"
+        )
+    n_done = n_new = len(done)
 
     for item in items:
         for op in registry:
             desc = op.descriptor()
-            item_seed = seed + abs(hash((item.sample_id, item.slice_idx, desc.operator_id))) % 10**6
+            if (str(item.sample_id), int(item.slice_idx), desc.operator_id) in done:
+                continue
+            seed_here = item_seed(seed, item.sample_id, item.slice_idx, desc.operator_id)
 
             sigma = float(desc.params.get("noise_sigma", 0.0) or 0.0)
-            y = add_measurement_noise(op.forward(item.image), sigma, item_seed)
+            y = add_measurement_noise(op.forward(item.image), sigma, seed_here)
 
-            samples = solver.sample(y, op, n_samples=n_posterior, seed=item_seed)
+            samples = solver.sample(y, op, n_samples=n_posterior, seed=seed_here)
             components = compute_score_components(samples, y, op, grid)
             truth = compute_region_truth(
                 samples, item.image, op, grid, item.annotation, components.ref_intensity
@@ -197,7 +268,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                     "calib_group": desc.calib_group,
                     **solver.info().to_row(),
                     "n_posterior": n_posterior,
-                    "seed": item_seed,
+                    "seed": seed_here,
                     "score_version": SCORE_VERSION,
                     "criterion_version": CRITERION_VERSION,
                     "ref_intensity": components.ref_intensity,
@@ -207,6 +278,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                     "s_free": components.s_free.tolist(),
                     "s_disagree": components.s_disagree.tolist(),
                     "s_residual": components.s_residual.tolist(),
+                    "s_range": components.s_range.tolist(),
                     "err_total": truth.err_total.tolist(),
                     "err_free": truth.err_free.tolist(),
                     "free_content": truth.free_content.tolist(),
@@ -221,8 +293,12 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                 )
 
             n_done += 1
+            n_new += 1
+            if checkpoint_every and n_done % checkpoint_every == 0 and n_done < n_total:
+                writer.checkpoint(registry_descriptors=registry.descriptors())
             if n_done % max(1, n_total // 20) == 0 or n_done == n_total:
-                rate = n_done / max(1e-9, time.time() - started)
+                # Rate over pairs computed in *this* process, not recovered ones.
+                rate = (n_new - len(done)) / max(1e-9, time.time() - started)
                 print(f"[caliber] {n_done}/{n_total} items  ({rate:.1f}/s)")
 
     registry.write_manifest(out_root / "operator_registry.json")

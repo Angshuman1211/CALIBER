@@ -100,16 +100,18 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | File | Owner | What |
 |---|---|---|
 | `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D34`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-028` |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-044` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
-| `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-14`) plus an index of every decision |
+| `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-25`), unresolved first, plus an index of every decision |
 | `T1.1_score_design.md` | Track 1 | Operator-aware score design |
 | `T1.2_shift_robust_calibration.md` | Track 1 | The three calibration tools, what they control, and what they refuse |
 | `T1.3_operator_distance_formulation.md` | Track 1 | The locked operator-distance measure and why |
 | `T1.5_cross_track_integration.md` | Track 1 | Shared interfaces, sign-off record, contracts, adjudication log |
 | `T1.6_analysis_and_course_correction.md` | Track 1 | Phase gate reviews — all three fronts against the central claim, one section per checkpoint |
 | `T2.1_data_and_operator_pipeline.md` | Track 2 | Week 1 record — what was built, the numbers, honest limitations — plus dataset provenance, licensing and download (App. A) |
+| `T2.2_solver_integration.md` | Track 2 | Week 2 record — DPS, DDNM and FlowDPS behind one interface; the Stage-2 split measured on real output |
+| `T2.3_score_bank_and_baselines.md` | Track 2 | Week 3 record — the first fastMRI score bank, both baselines, and why neither can yet be read as a coverage result |
 | `T3.1`–`T3.3_*.md` | Track 3 | Formal review, distance candidates, L1 stability result |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.
@@ -166,10 +168,10 @@ Owns the reconstruction and evaluation infrastructure, and carries the study int
 |------|-------------|--------|
 | **T2.1** Data and operator pipeline | Dataset access, preprocessing, and reproducible generation of acquisition operators across both modalities | **Delivered** — both modalities, seeded registry, health checks, annotations parsed |
 | **T2.2** Solver integration | Configured, verified pretrained reconstruction back-ends behind the common interface | **Delivered** — DPS, DDNM and FlowDPS across two families, one config word apart; Stage-2 split measured on their output |
-| **T2.3** Score-bank production | Cached reconstructions and non-conformity scores across the full operator grid | **Delivered (v0)** — schema + validator; banks produced on phantom, M4Raw and LoDoPaB |
+| **T2.3** Score-bank production | Cached reconstructions and non-conformity scores across the full operator grid | **First real bank** — 23,040 fastMRI regions at three accelerations; not reportable (face prior, D-035) and too few test volumes to measure coverage (P-23) |
 | **T2.4** Evaluation harness | Coverage, efficiency, and region-level detection utilities with automated logging | **Delivered** — coverage, flag area, region FDR/power, ESS, coverage gap |
 | **T2.5** Cross-domain experiments | Execution of the protocol in the second modality and the supporting appendix domain | **In progress** — CT path runs end to end; projector fix (D-012) precedes reported curves |
-| **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | Not started — unblocked by T2.2; **Phase 1's last open artefact** |
+| **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | **First pass** — naive-transferred and matched-per-operator reproduced, held out; interpretation blocked on the criterion (P-21) and on sample size (P-23) |
 | **T2.7** Figures and packaging | Visualisations, reproducibility package, and experimental-setup write-ups | Not started |
 
 ### Track 3 — Analytical Foundations and Numerical Verification

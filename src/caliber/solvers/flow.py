@@ -62,10 +62,13 @@ class FlowDPSSampler(PosteriorSampler):
         denoiser: Denoiser | None = None,
         schedule: NoiseSchedule | None = None,
         device: str = "cpu",
+        max_draws_per_batch: int = 0,
     ):
         self.checkpoint = checkpoint
         self.n_steps = int(n_steps)
         self.device = device
+        # See _DiffusionSampler: draws per forward batch, 0 = all (P-24, D-044).
+        self.max_draws_per_batch = int(max_draws_per_batch)
         self.schedule = schedule or NoiseSchedule()
         if denoiser is not None:
             self._denoiser: Denoiser | None = denoiser
@@ -131,9 +134,19 @@ class FlowDPSSampler(PosteriorSampler):
         self, y: Tensor, operator: ForwardOperator, n_samples: int, seed: int = 0
     ) -> Tensor:
         self.check_supports(operator)
+        return self._sample_in_chunks(y, operator, n_samples, seed)
+
+    def _sample_draws(
+        self, y: Tensor, operator: ForwardOperator, draw_seeds: list[int]
+    ) -> Tensor:
         shape = tuple(operator.image_shape)
-        gen = torch.Generator(device="cpu").manual_seed(int(seed))
-        x = torch.randn(n_samples, *shape, generator=gen, dtype=torch.float32)
+        # Per draw, so that a draw is the same alone as in a batch (D-044). FlowDPS is a
+        # deterministic ODE, so this initial noise is its *only* source of spread.
+        x = torch.stack([
+            torch.randn(*shape, generator=torch.Generator(device="cpu").manual_seed(int(s)),
+                        dtype=torch.float32)
+            for s in draw_seeds
+        ])
 
         # Integrate s: 1 (noise) -> 0 (data). Euler is deliberate: the point of this
         # back-end is a different sampling *dynamic*, and a higher-order integrator would

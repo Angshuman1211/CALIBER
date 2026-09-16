@@ -7,6 +7,12 @@ A score bank on disk is a directory:
       scores.parquet     the long-format table defined in schema.py
       recons/            optional float16 posterior samples, for figures only
 
+While a run is in progress it may also hold ``scores.partial.parquet`` and
+``manifest.partial.json`` — every row finished so far, rewritten every
+``run.checkpoint_every`` items (P-24). A finished run replaces them with the two
+files above and removes them. A directory holding only partial files is an
+interrupted run, and :func:`read_bank` refuses it unless asked for explicitly.
+
 The manifest embeds the operator registry so that a bank is self-describing:
 Track 3 can compute operator distances and Track 1 can calibrate from a copied
 directory, with no access to the machine that produced it.
@@ -15,6 +21,7 @@ directory, with no access to the machine that produced it.
 from __future__ import annotations
 
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -25,6 +32,20 @@ import numpy as np
 import pandas as pd
 
 from . import schema
+
+PARTIAL_SCORES = "scores.partial.parquet"
+PARTIAL_MANIFEST = "manifest.partial.json"
+
+
+def _atomic_write_bytes(path: Path, write) -> None:
+    """Write via a sibling temp file and rename, so a crash never leaves half a file.
+
+    A checkpoint that is itself corrupted by the crash it exists to survive would
+    be worse than none: it would look like a result.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    write(tmp)
+    os.replace(tmp, path)
 
 
 def _git_sha() -> str | None:
@@ -116,15 +137,13 @@ class ScoreBankWriter:
         df["run_id"] = self.run_id
         return schema.coerce(df)
 
-    def flush(self, registry_descriptors: list[dict[str, Any]] | None = None) -> Path:
-        """Write ``scores.parquet`` and ``manifest.json``; returns the bank root."""
-        df = self.to_frame()
-        problems = schema.validate(df, strict=False)
-        df.to_parquet(self.root / "scores.parquet", index=False)
-
-        manifest = {
+    def _manifest(self, df: pd.DataFrame, registry_descriptors, problems, complete: bool):
+        return {
             "schema_version": schema.SCHEMA_VERSION,
             "run_id": self.run_id,
+            # Absent from every bank written before P-24; readers treat a missing
+            # key as complete, so none of those banks changes meaning.
+            "complete": complete,
             "n_rows": int(len(df)),
             "n_items": int(
                 df[["dataset", "sample_id", "slice_idx", "operator_id"]].drop_duplicates().shape[0]
@@ -137,16 +156,99 @@ class ScoreBankWriter:
             "environment": environment_snapshot(),
             "validation_problems": problems,
         }
-        (self.root / "manifest.json").write_text(
-            json.dumps(manifest, indent=2, default=str), encoding="utf-8"
+
+    def resume_from_checkpoint(self) -> set[tuple[str, int, str]]:
+        """Load a checkpoint left by an interrupted run of *this* config (D-042).
+
+        Returns the ``(sample_id, slice_idx, operator_id)`` pairs already finished,
+        for the runner to skip; returns an empty set when there is no checkpoint.
+
+        Resuming is only safe because a bank is now a function of its config (D-041):
+        each pair's draws are identical in any process, so a resumed run produces the
+        bank an uninterrupted run would have. A checkpoint from a *different* config
+        is refused rather than merged — two runs' rows in one bank would be
+        indistinguishable from one run's, and wrong.
+        """
+        partial = self.root / PARTIAL_SCORES
+        if not partial.is_file():
+            return set()
+        manifest_path = self.root / PARTIAL_MANIFEST
+        found = None
+        if manifest_path.is_file():
+            found = (json.loads(manifest_path.read_text(encoding="utf-8"))
+                     .get("config", {}).get("_meta", {}).get("config_hash"))
+        expected = self.config.get("_meta", {}).get("config_hash")
+        if found is None or expected is None or found != expected:
+            raise schema.SchemaError(
+                f"{self.root} holds a checkpoint from config {found!r}, not this run's "
+                f"{expected!r}. Refusing to mix two runs into one bank; move or delete "
+                "the partial files to start over."
+            )
+        rows = pd.read_parquet(partial).to_dict(orient="records")
+        self._rows.extend(rows)
+        return {(str(r["sample_id"]), int(r["slice_idx"]), str(r["operator_id"])) for r in rows}
+
+    def checkpoint(self, registry_descriptors: list[dict[str, Any]] | None = None) -> Path:
+        """Write every row so far as a *partial* bank; returns the bank root (P-24).
+
+        Rewrites the whole partial table each time rather than appending. At the
+        sizes this project produces (tens of thousands of rows) that costs well
+        under a second, and it means the partial file is always a complete,
+        valid table on its own rather than a sequence of fragments to reassemble.
+        """
+        df = self.to_frame()
+        _atomic_write_bytes(
+            self.root / PARTIAL_SCORES, lambda tmp: df.to_parquet(tmp, index=False)
+        )
+        manifest = self._manifest(df, registry_descriptors, [], complete=False)
+        _atomic_write_bytes(
+            self.root / PARTIAL_MANIFEST,
+            lambda tmp: tmp.write_text(json.dumps(manifest, indent=2, default=str),
+                                       encoding="utf-8"),
         )
         return self.root
 
+    def flush(self, registry_descriptors: list[dict[str, Any]] | None = None) -> Path:
+        """Write ``scores.parquet`` and ``manifest.json``; returns the bank root."""
+        df = self.to_frame()
+        problems = schema.validate(df, strict=False)
+        _atomic_write_bytes(
+            self.root / "scores.parquet", lambda tmp: df.to_parquet(tmp, index=False)
+        )
+        manifest = self._manifest(df, registry_descriptors, problems, complete=True)
+        _atomic_write_bytes(
+            self.root / "manifest.json",
+            lambda tmp: tmp.write_text(json.dumps(manifest, indent=2, default=str),
+                                       encoding="utf-8"),
+        )
+        # Only once the finished bank is safely on disk: removing the checkpoint
+        # first would open a window in which a crash loses both.
+        for name in (PARTIAL_SCORES, PARTIAL_MANIFEST):
+            (self.root / name).unlink(missing_ok=True)
+        return self.root
 
-def read_bank(root: str | Path, validate: bool = True) -> pd.DataFrame:
-    """Load a score bank; CPU-only, and the entry point for all downstream work."""
+
+def read_bank(
+    root: str | Path, validate: bool = True, allow_partial: bool = False
+) -> pd.DataFrame:
+    """Load a score bank; CPU-only, and the entry point for all downstream work.
+
+    A directory holding only a checkpoint is an interrupted run (P-24). It is
+    refused by default, because a partial bank is a perfectly valid table and
+    nothing about its rows says the run never finished — exactly the kind of
+    silent difference D-018 exists to make visible. Pass ``allow_partial=True``
+    to recover the rows deliberately.
+    """
     root = Path(root)
     path = root / "scores.parquet" if root.is_dir() else root
+    if root.is_dir() and not path.is_file() and (root / PARTIAL_SCORES).is_file():
+        if not allow_partial:
+            raise schema.SchemaError(
+                f"{root} holds only a checkpoint: the run that produced it is incomplete "
+                "(it was interrupted, or is still running). Pass allow_partial=True to "
+                "read the rows it finished."
+            )
+        path = root / PARTIAL_SCORES
     if not path.is_file():
         raise FileNotFoundError(f"no score bank at {path}")
     df = pd.read_parquet(path)

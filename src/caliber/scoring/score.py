@@ -68,6 +68,12 @@ class ScoreComponents:
     s_disagree: Tensor
     s_residual: Tensor
     ref_intensity: float
+    #: ``‖P_R x̂‖`` per region / ``ref_intensity`` — the *measured* content of the
+    #: region, requested by Track 1 as D-038 ask (b). Deliberately **not** part of
+    #: :meth:`stack` and so not part of the score: it is a denominator available at
+    #: deployment, standing in for ``free_content``, which needs ground truth. Optional
+    #: so that the three construction sites that predate it keep working.
+    s_range: Tensor | None = None
 
     def stack(self) -> Tensor:
         """The three components as ``(3, n_regions)``, in canonical order."""
@@ -265,6 +271,14 @@ def compute_score_components(
 
     mean_recon = samples.mean(dim=0)
 
+    # 0. The measured component's magnitude. Not a score term — the denominator the
+    #    relative criterion needs and cannot have at deployment (D-038 ask (b)). It is
+    #    the range half of the same split `s_free` takes the null half of, under the
+    #    same reduction and the same `ref`, so the two are directly comparable.
+    measured = operator.project_range(mean_recon)
+    measured = measured.abs() if measured.is_complex() else measured.abs()
+    s_range = grid.reduce(measured, how="rms") / ref
+
     # 1. Free-component structure: energy the operator cannot see.
     free = operator.project_null(mean_recon)
     free = free.abs() if free.is_complex() else free.abs()
@@ -291,4 +305,5 @@ def compute_score_components(
         s_disagree=s_disagree.to(torch.float32),
         s_residual=s_residual.to(torch.float32),
         ref_intensity=ref,
+        s_range=s_range.to(torch.float32),
     )

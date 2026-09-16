@@ -219,3 +219,54 @@ def test_solvers_refuse_a_modality_they_do_not_support(setup):
     solver.supports_modalities = ("ct",)
     with pytest.raises(ValueError, match="does not support modality"):
         solver.sample(y, op, n_samples=1)
+
+
+# -- draws are independent of how they are batched (P-24, D-044) ---------------
+
+
+def test_draw_seed_is_a_function_of_seed_and_index_only():
+    from caliber.solvers.base import draw_seed
+
+    assert draw_seed(7, 0) == draw_seed(7, 0)
+    assert draw_seed(7, 0) != draw_seed(7, 1)
+    assert draw_seed(7, 0) != draw_seed(8, 0)
+    assert draw_seed(1, 23) != draw_seed(12, 3), "digits must not run together"
+
+
+@pytest.mark.parametrize("name", ["dps", "ddnm", "flowdps"])
+@pytest.mark.parametrize("chunk", [1, 3])
+def test_chunked_draws_are_bit_identical_to_one_batch(setup, name, chunk):
+    """The property that lets a 256² run fit in memory at all.
+
+    Posterior draws used to share one generator, so a draw's noise depended on how many
+    draws were requested with it, and computing them in smaller batches would have
+    changed the bank. Per-draw seeding removes that coupling.
+    """
+    op, _x, y, denoiser = setup
+    whole = SOLVERS[name](n_steps=STEPS, denoiser=denoiser, max_draws_per_batch=0)
+    split = SOLVERS[name](n_steps=STEPS, denoiser=denoiser, max_draws_per_batch=chunk)
+    assert torch.equal(
+        whole.sample(y, op, n_samples=4, seed=7), split.sample(y, op, n_samples=4, seed=7)
+    )
+
+
+def test_a_zero_chunk_size_means_one_batch(setup):
+    op, _x, y, denoiser = setup
+    solver = DDNMSampler(n_steps=STEPS, denoiser=denoiser, max_draws_per_batch=0)
+    assert solver.sample(y, op, n_samples=3, seed=1).shape[0] == 3
+
+
+def test_a_negative_chunk_size_is_rejected(setup):
+    op, _x, y, denoiser = setup
+    solver = DDNMSampler(n_steps=STEPS, denoiser=denoiser, max_draws_per_batch=-2)
+    with pytest.raises(ValueError, match="max_draws_per_batch"):
+        solver.sample(y, op, n_samples=2, seed=0)
+
+
+@pytest.mark.parametrize("name", ["dps", "ddnm", "flowdps"])
+def test_draws_still_differ_from_each_other(setup, name):
+    """Per-draw seeding must not accidentally make every draw the same."""
+    op, _x, y, denoiser = setup
+    draws = SOLVERS[name](n_steps=STEPS, denoiser=denoiser).sample(y, op, n_samples=3, seed=0)
+    assert not torch.equal(draws[0], draws[1])
+    assert not torch.equal(draws[1], draws[2])

@@ -1104,6 +1104,22 @@ not.
 
 *Affects:* T2.2, T1.4 protocol, Weeks 4 and 10, D-028.
 
+**Re-measured on the real UNet, Week 3 — the value 5.0 does not hold for this prior.** The
+table above came from the analytic denoiser. On `ddpm-celebahq-256` (R=4, 128², 24 steps,
+two items × two draws):
+
+| ζ | 0.5 | 1 | 2 | 5 | 10 | 20 |
+|---|---|---|---|---|---|---|
+| null share of error | 0.627 | 0.707 | 0.756 | 0.817 | 0.872 | 0.931 |
+| data-consistency error | 0.454 | 0.363 | 0.305 | 0.238 | 0.182 | 0.126 |
+
+No minimum in the range: the fit is still improving at 20, so the optimum is above it and
+**unbracketed**. The analytic denoiser was never the prior, which is exactly the case this
+entry's *Cost* line anticipated. `DEFAULT_STEP_SIZE` is left at 5.0 until the optimum is
+bracketed — jointly with the step count, since strong guidance is what made DPS diverge at 8
+steps (D-033 update) — and on more than one operator's worth of items. The decision itself is
+unchanged: one value, fixed across every operator in a curve. Only the number is open.
+
 ---
 
 ## D-032 · Stage-2 decomposition diagnostics are a run artefact, not score-bank columns
@@ -1165,6 +1181,22 @@ is more confidence than the number has earned.
 machine (P-16) is most of the reason the Week 4 grid will run DDNM.
 
 *Affects:* T2.2, T2.3, T1.4 protocol, Week 4 grid sizing, D-031, P-16.
+
+**Re-measured on the real UNet, Week 3.** R=4, two items × two draws, at ζ=5.0:
+
+| solver | resolution | steps | null share of error | data-consistency error |
+|---|---|---|---|---|
+| DDNM | 256² | 8 / 24 | 0.981 / 0.990 | 0.116 / 0.067 |
+| DDNM | 128² | 8 / 24 | 0.969 / 0.986 | 0.118 / 0.068 |
+| DPS | 128² | 8 | 0.003 | **116.7 — diverged** |
+| DPS | 128² | 24 / 48 | 0.817 / 0.852 | 0.240 / 0.196 |
+
+The gate's *direction* survives and DDNM's admissibility at 8 steps is confirmed on the real
+prior, at both resolutions. DPS behaves worse than the stand-in predicted in one respect and
+better in another: at 8 steps it **diverges** rather than merely under-converging, but from 24
+steps it clears the gate — admissible at half the analytic denoiser's ~48 — and its remaining
+gap to DDNM is mostly D-031's mis-set step size rather than the step count. DPS was measured at
+128² only: at 256² it could not run on this machine at all (P-24).
 
 ---
 
@@ -1386,6 +1418,245 @@ real.
 
 *Cost:* (a) none; (b) one float32 column per row.
 *Affects:* O2, T1.1, T1.4, T2.3, D-034, D21, D37.
+
+---
+
+## D-039 · Track 2's `splits.py` is canonical, and the split mapping itself is pinned
+**Date:** Week 3 · **Status:** ACCEPTED — Track 1 to confirm no bank was built on the stand-in
+**Proposed by:** Track 2
+
+Two implementations of `caliber/data/splits.py` met when `main` was merged into `T2.3`.
+Track 2's — which built the Week 3 bank — was kept. Track 1's stand-in, written while the
+file was missing from `main` (D-036), was not. The *mapping* itself, which side each
+patient lands on, is now a tested contract (`tests/test_split_golden.py`), not only its
+properties.
+
+*Why this is a decision rather than a merge detail:* the two files share a salt and both
+pass all 21 split tests and the full suite, yet place **48 of the 96** real fastMRI
+patients on opposite sides (P-22). Picking one is picking which banks stay comparable,
+and D-022 requires the split to be identical across every run.
+
+*Reason for Track 2's:* the stand-in's own docstring says to take Track 2's file when it
+lands, and the 23,040-row Week 3 bank — 7.2 hours of CPU — was assigned under it. Nothing
+in the repository shows a bank built under the stand-in.
+
+*Cost, and the open half:* any bank Track 1 or Track 3 built with `split: auto` on `main`
+between PR #21 and the Week 3 merge used the other assignment and is not comparable with
+banks before or after. Run outputs are not committed, so git cannot show whether one
+exists. **Track 1 to confirm.**
+
+*How it changes deliberately:* bump `DEFAULT_SALT` and regenerate the pinned values in the
+same commit, recorded here. Anything else that moves the mapping fails the golden test.
+
+*Affects:* D-022, D-027, D-036, P-20, P-22, T2.3, every `split: auto` bank.
+
+---
+
+## D-040 · An interrupted run leaves a partial bank that readers refuse by default
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+With `run.checkpoint_every: N`, the runner rewrites every finished row to
+`scores.partial.parquet` and `manifest.partial.json` each N items, atomically. A finished
+run writes the normal bank, marks its manifest `"complete": true`, and only then removes
+the partial files. `read_bank` raises on a directory holding only a checkpoint unless
+called with `allow_partial=True`.
+
+*Reason:* P-24. At 256² this machine can kill the solver with a silent segfault, and the
+Week 3 bank took 7.2 hours. The runner held every row in memory and wrote once at the
+end, so a crash late in a run lost all of it, with no traceback and nothing on disk.
+
+*Why refuse partial banks rather than just read them:* a partial bank is a perfectly
+valid table. Nothing in its rows says the run stopped at item 40 of 90, and an analysis
+over it would be quietly computed on a different — and non-randomly truncated — sample
+from the one the config describes. That is the silent difference D-018 exists to prevent,
+so recovering rows has to be a deliberate act.
+
+*Why rewrite rather than append:* at this project's sizes a full rewrite is well under a
+second, and it keeps the checkpoint a single complete table at every moment instead of a
+set of fragments that a crash could leave inconsistent.
+
+*Compatibility:* `complete` is a new manifest key. Every bank written before it lacks the
+key and is read as complete, so no existing bank changes meaning. The schema of
+`scores.parquet` is untouched.
+
+*Resume:* added by D-042 — a restarted run of the same config now continues from the
+checkpoint instead of recomputing from the first item.
+
+*Alternative rejected:* setting a default `checkpoint_every` in `base.yaml`. It would
+change the config hash, and therefore the run id, of every existing bank.
+
+*Affects:* P-24, P-16, T2.3, `score_bank_spec.md`, every consumer of `read_bank`.
+
+---
+
+## D-041 · Item seeds come from a stable digest, not Python's salted `hash()`
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+`caliber.runner.item_seed(base_seed, sample_id, slice_idx, operator_id)` returns
+`base_seed + BLAKE2b("sample_id|slice_idx|operator_id") mod 10**6`. The runner and the
+Stage-2 audit both call it; nothing derives a seed from `hash()` any more.
+
+*Reason:* P-25. `hash()` on strings is salted per process, so the previous derivation
+gave a different seed for the same item on every run, and no bank could be regenerated
+from its config. A digest is the same on every process, platform and Python version.
+
+*Why not set `PYTHONHASHSEED` instead:* it has to be in the environment before the
+interpreter starts, so a script, a notebook, an IDE runner or a teammate's shell each
+has to remember it — and forgetting is silent. A derivation that does not depend on
+the environment cannot be forgotten.
+
+*The separator is load-bearing:* without it, `("a1", 0)` and `("a", 10)` style inputs
+could collide. Tested.
+
+*Cost:* every bank produced from here on draws differently from every bank before it,
+for the same config. That costs nothing that was not already lost — no earlier bank was
+reproducible even against itself — and existing banks keep their recorded per-row seeds.
+Changing the derivation again requires changing the pinned values in
+`tests/test_reproducibility.py`, deliberately, and an entry here.
+
+*Affects:* P-25, O7 (reproducibility package), T2.3, every bank, `stage2_decomposition.py`.
+
+---
+
+## D-042 · A restarted run resumes from its checkpoint — only for the same config
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+When the runner starts and finds a checkpoint (D-040) whose config hash matches its own,
+it loads the finished rows and skips those (item, operator) pairs. A checkpoint from a
+different config makes the run refuse to start.
+
+*Reason:* D-040 made a crash cost the tail of a run instead of all of it, but a restart
+still recomputed everything. At 256² on this CPU that is hours per restart, and P-24 shows
+restarts are not hypothetical.
+
+*Why it is safe now and was not before:* a resumed bank is only correct if the pairs
+computed after the restart are exactly what an uninterrupted run would have drawn. Until
+D-041 each process drew different seeds, so a resumed bank would have been a splice of two
+different random streams — valid-looking and not reproducible. With digest seeds it is
+exact. Tested directly: crash a run part-way, restart it, and require the resulting bank to
+equal one from a single uninterrupted run, and require the restart to call the sampler only
+for the pairs the checkpoint lacked. That test fails against the previous runner.
+
+*Why refuse a mismatched checkpoint rather than overwrite or merge it:* merging would put
+two runs' rows in one bank with nothing to tell them apart; overwriting silently discards
+someone's finished rows. Refusing costs one manual `rm` and cannot lose or corrupt data.
+The run directory is named by config hash, so a mismatch in practice means `run.id` was
+overridden.
+
+*Automatic, not opt-in:* the alternative — recomputing and overwriting unless a flag says
+otherwise — makes the destructive path the default.
+
+*Affects:* D-040, D-041, P-24, P-16, T2.3, T2.4 onward.
+
+---
+
+## D-043 · A run that cannot fit in memory is refused before it starts
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+`caliber.resources` estimates the peak commit charge of a run from its image shape and
+draw count, compares it with what the machine has, and the runner **raises rather than
+starts** when the estimate exceeds availability. `run.skip_memory_check: true` overrides.
+
+*Reason:* P-24's third mitigation. Checkpointing (D-040) and resume (D-042) make a
+memory death survivable; this makes the common case not happen. The failure it prevents is
+particularly bad because it is often silent — a segfault with no traceback, hours in.
+
+*The estimate is measured, not derived*, on this machine at `torch 2.13.0+cpu`:
+
+    peak commit GB  ≈  max(2.8, 2.0 + 6.1e-5 × pixels × draws)
+
+It reproduces eleven measured points within 0.4 GB, including both configurations that
+actually failed (128²×8 segfaulted with 7.6 GB free; 256²×4 raised out-of-memory). A
+backward pass (DPS) carries a flat +0.4 GB, measured at one size only.
+
+*Refuse, not warn.* A warning at the start of a seven-hour job is read once and then
+scrolls away, and the thing it warns about produces no error when it happens. Within 20%
+of the limit the run proceeds with a warning, since that case depends on what other
+applications do next.
+
+*Overridable, deliberately:* the model is a fit to one machine, one checkpoint and one
+torch build. On different hardware it will be wrong, and being wrong must cost a flag
+rather than a week. `available_commit_gb()` returns `None` off Windows and the verdict is
+then `"unknown"`, which never blocks — a check that cannot read the memory must not stop a
+run.
+
+*Consequence worth stating:* `w03_mri_fixed_operator.yaml` as written — 256², four draws,
+~18 GB — is now **refused on this machine**, which is correct: it is the configuration
+that raises out-of-memory today. The Week 3 bank exists because more memory was free when
+it ran.
+
+*Affects:* P-24, P-16, D-040, D-042, T2.3, every config's runnability.
+
+---
+
+## D-044 · Each posterior draw is seeded independently, so draws can be batched in any size
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2
+
+Draw *i* of a sample is a function of ``(seed, i)`` alone —
+``solvers/base.draw_seed`` — not of the batch it was computed in. Every pretrained
+back-end takes ``max_draws_per_batch``: the draws are computed in batches of that size
+and concatenated, and the result is **bit-identical** to computing them in one batch.
+
+*Reason:* P-24. Peak memory is set by how many draws go through the UNet at once, and the
+samplers put all of them through together, so `w03_mri_fixed_operator.yaml` (256², four
+draws, ~18 GB) could not run on this machine at all. Chunking is the obvious fix and was
+blocked by exactly one thing: draws shared a generator, so the noise a draw received
+depended on how many others were requested alongside it. Batch size was a property of the
+result.
+
+*Measured:* the Week 3 config at 256², four draws, chunked to one — **6.0 GB instead of
+~18 GB**, and it runs. The bank it produces is the bank a single batch would have
+produced.
+
+*Cost:* the draws differ from those of any bank produced before this entry, because the
+noise each draw receives is now derived differently. That costs nothing that was not
+already lost: no bank before D-041 was reproducible at all, and D-041 had already reset
+the draws this week. Doing both resets in one week is deliberate.
+
+*Not changed:* no committed config sets `max_draws_per_batch`, for the reason D-040 gives
+about `checkpoint_every` — it would alter the config hash, and therefore the run id, of a
+bank that already exists. Pass `--set experiment.solver.max_draws_per_batch=1` on a run
+that needs it.
+
+*Speed:* a smaller batch gives up some of the CPU's parallelism across draws. On this
+machine that is a modest cost against not being able to run at all.
+
+*Affects:* P-24, P-16, D-041, D-043, T2.3, Week 4 grid sizing.
+
+---
+
+## D-045 · Both of D-038's asks are answered: `s_range` shipped, and open-substrate banks are committed
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 2 · **Answers:** D-038
+
+**Ask (b), `s_range`.** `compute_score_components` now also returns
+`‖P_R x̂‖` per region / `ref_intensity`, written as a nullable `s_range` column by the
+same additive mechanism as A1 — no `SCHEMA_VERSION` bump, and every existing bank still
+validates (spec §6). It is the range half of the split `s_free` takes the null half of,
+under the same reduction and the same `ref`, so the two are directly comparable, which is
+what D-037's identity needs. It is deliberately **not** part of `ScoreComponents.stack()`
+and so cannot enter the score: it is a denominator Track 1 may use, not a fourth
+component (D25). Tested for the property it exists for — that it needs no ground truth.
+
+**Ask (a), the bank.** `banks/w02_solver_smoke/` holds the 384-row Week 2 bank: the
+manifest, the operator registry and `scores.parquet`, 35 KB. `runs/` stays gitignored;
+this is a deliberate exception with a rule, written down in `banks/README.md`:
+
+* **only open substrates** — phantom and M4Raw. A bank is per-region scalars, not images,
+  and M4Raw is CC-BY, so derived numbers may be redistributed with attribution.
+* **never fastMRI-derived.** The NYU agreement forbids redistribution and whether that
+  reaches a derived score bank is unanswered — T2.1 §7 flags it for confirmation before
+  the O7 release. Until then the Week 3 fastMRI bank stays local and is copied by hand.
+* **never `recons/`.** Cached posterior samples are images, far larger than the table, and
+  the release rule is code, configs and score banks — never images.
+
+*Why commit one at all:* spec §3 says a bank is self-describing so another track can work
+from a copied directory. This is the first time that has been needed, and a file that only
+exists on one laptop is not a shared interface. P-24 is the argument in miniature: that
+laptop cannot currently reproduce this bank.
+
+*Cost:* one float32 column per row, and 35 KB in the repository.
+
+*Affects:* D-038, D-037, O2, T1.1, T2.3, `score_bank_spec.md`, O7 release scope.
 
 ---
 

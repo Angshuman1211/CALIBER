@@ -42,6 +42,10 @@ logs/
 score_banks/
 *.parquet
 !tests/fixtures/*.parquet
+# Shared score banks: small banks from OPEN substrates, committed deliberately so
+# another track can work from a copied directory as the spec intends (D-045).
+# fastMRI-derived banks are NOT covered - see banks/README.md and T2.1 section 7.
+!banks/**/*.parquet
 
 # Calibration artefacts - derived from data/, regenerable, and can be large
 # (per-operator score caches, posterior sample banks)

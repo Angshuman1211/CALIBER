@@ -60,6 +60,7 @@ COLUMNS: dict[str, str] = {
     "s_free": "float32",
     "s_disagree": "float32",
     "s_residual": "float32",
+    "s_range": "float32",
     # -- ground truth (rule 2: re-threshold without a GPU) ------------------
     "criterion_version": "string",
     "err_total": "float32",
@@ -78,7 +79,13 @@ COLUMNS: dict[str, str] = {
 # `free_content` = ||P_N x_true|| per region / ref_intensity, requested by
 # Track 1 as A1 so the Week 2 criterion can be relative (err_free /
 # free_content) rather than an absolute constant -- see D-020, D21.
-NULLABLE_COLUMNS = frozenset({"free_content"})
+#
+# `s_range` = ||P_R x_hat|| per region / ref_intensity, requested by Track 1 as
+# D-038 ask (b): the region's *measured* content, which unlike `free_content`
+# needs no ground truth and is therefore available at deployment. Added by the
+# same additive, nullable mechanism, so every bank written before it still
+# validates and no SCHEMA_VERSION bump is needed (spec section 6).
+NULLABLE_COLUMNS = frozenset({"free_content", "s_range"})
 
 # Uniquely identifies a row; duplicates indicate a double-write.
 KEY_COLUMNS = (
