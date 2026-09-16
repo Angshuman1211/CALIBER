@@ -150,7 +150,7 @@ Owns the central claim, the design of the method, and the decisions that set dir
 
 | Task | Deliverable | Status |
 |------|-------------|--------|
-| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Blocked on T2.2** — WI-1–WI-5 done; weights unset, so the definition is not yet pinned |
+| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Blocked on T2.2** — WI-1–WI-5 done; weights unset, so the definition is not yet pinned. Q6's attribution instrument built and pre-registered (D38–D40) |
 | **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | **Implemented** — verified on synthetic banks; real banks need C2 |
 | **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19; CT cross-check pending T2.5 |
 | **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | Not started |

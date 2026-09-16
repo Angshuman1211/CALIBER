@@ -283,6 +283,94 @@ Fixed to `/data/`, verified in both directions, with a comment marking the slash
 
 **How to apply:** an over-broad ignore rule fails *silently and asymmetrically* — tracked files keep working while new ones vanish — so it disguises itself as someone forgetting `git add`. When a partner's push arrives with a missing module, check `git check-ignore -v` on the path before assuming they forgot it.
 
+### D37 — tau is global across operators, chosen on a design split; provisionally 1.75 [T1.1/O2, answers D-034]
+Track 2 discharged their half of D-034 — the relative criterion is implemented and its tau curve measured — and left the value to Track 1. Three rulings.
+
+**1. tau is global. Never per calibration group.** D-034 cautions that the median ratio rises with acceleration (1.480 at R=4, 1.645 at R=8) and suggests a per-group tau if that survives a medical prior. **Take the opposite branch**, because the reasoning inverts on inspection:
+
+- Coverage is *conditional*: `P(flag | hallucinated)`. A base rate that differs across operators does not mechanically bias it, so a rising positive rate is not by itself a confound.
+- With a **global** tau, "hallucinated" means the same thing at every operator. The positive rate is then free to vary — and *should*, because a larger null space genuinely permits more invention. That is the project's own premise (D2) and exactly what §12.2's L2 formalises: an operator that hides more permits weaker guarantees.
+- With a **per-group** tau tuned to equalise positive rates, "hallucinated" means something different at each operator. Coverage at R=8 would then be measured against a different ground truth than coverage at R=2, and the headline coverage-vs-distance curve would compare incommensurable quantities. **That** is the confound, and it is the one that would be fatal.
+
+So the rising positive rate is a **result to report, not an artefact to normalise away** — arguably independent evidence for the premise. This is D23's operator-independence principle applied to the label rather than the split: the definition must not move with the operator.
+
+**2. tau is selected on the design split, then frozen** — the same rule and the same reason as D28's weights. Picking tau by looking at the data you then calibrate on couples the label to the threshold and leaks the calibration set into the ground truth. Design split → freeze → apply unchanged to calibration and test.
+
+**3. Provisional value: tau = 1.75**, for development only, explicitly not reportable.
+
+Chosen over 2.0 on a calibration-arithmetic argument rather than taste. On the 384-region bank, tau=1.75 gives 25.5% positives (~98 regions) and tau=2.0 gives 10.7% (~41). D32 requires **9 positives per group** to certify at alpha=0.1. Spread across ~6 operator groups that is ~16 each at 1.75 — certifiable — against ~7 each at 2.0, which is *below the floor and would make Mondrian unreportable everywhere*. The label threshold and the calibration floor are coupled, and 2.0 breaks the coupling.
+
+**Not reportable, and the reason matters.** The bank is DDNM with `ddpm-celebahq-256` — a **face** prior on brain anatomy (D-016, D-035). Every region has ratio > 1, i.e. the reconstruction always puts more into the free component than the truth had there, which is what a badly mismatched prior should do. tau read off this bank measures the mismatch as much as the criterion. Re-measure when medical weights land.
+
+**A falsifiable check for that re-measurement.** With a *matched* medical prior, some regions should come back with ratio < 1 — places where the prior reconstructed the hidden content better than a shrug. If the ratio still exceeds 1 everywhere with medical weights, the fault is not the prior and either the criterion or `free_content` needs re-examining. Stating it now so the re-measurement has a pass/fail condition rather than a vibe.
+
+**Superseded in part by D40.** The "some regions should show ratio < 1" condition is right, but it was stated without its precondition, and the reading of "ratio > 1 everywhere" as evidence of a mismatched prior is wrong. See D40.
+
+---
+
+### D38 — The bank's three free-component columns satisfy an exact identity, and Q6 is answered through it [T1.1, Q6]
+`runner.py:184` passes `components.ref_intensity` into `compute_region_truth`, so `s_free`, `free_content` and `err_free` share one normalisation. All three are region-wise RMS reductions of the same posterior mean through the same projector. Writing `a = P_N x̂` and `b = P_N x_true` over one region:
+
+```
+err_free² = s_free² + free_content² − 2 · s_free · free_content · cos θ
+```
+
+exactly — not approximately, and not as a modelling assumption. **Verified at 0.00e+00 median and maximum relative residual across the 4,608 regions of a runner-produced bank**, which also makes it a cheap integrity check on any future bank: a non-zero residual means the columns were normalised differently and every ratio computed from them compares quantities in different units. `identity_residual()` runs it, and `q6_attribution.py` refuses to proceed when it fails.
+
+Three things follow, all from the algebra rather than from data:
+
+**1. The relative criterion is monotone in one ratio, and it is not `s_free`.** With `u = s_free / free_content`, the label `err_free/free_content > τ` becomes `u² + 1 − 2u·cos θ > τ²`. At fixed alignment the label is monotone in `u`. So the statistic matched to the label is **`s_free / free_content`** — and `free_content` needs ground truth. A flag built on `s_free` alone is mismatched to its own label by exactly as much as `free_content` varies across regions, which is Q6's mechanism, derived rather than suspected. Measured on the local phantom bank: the oracle ratio flags **0.717 of the area against `s_free`'s 0.843 at identical coverage** — a 15% reduction for the same guarantee.
+
+**2. `cos θ` is recoverable per region, and it is the quantity Q6 actually wants.** `cos θ → 1` means the prior *recovered* the hidden anatomy, so content in the free component is reconstruction and a flag on it is a false positive by Sec. 4's own definition; `cos θ → 0` means invention. On the phantom bank `cos θ` has median **0.000**, which independently confirms T3.4's analytic finding that the reference sampler's null-space fill is injected white noise orthogonal to image content.
+
+**3. The fix is a denominator that exists at deployment.** `‖P_R x̂‖` — the region's *measured* content — needs no ground truth, and `s_free / s_range` is then "how much did the prior invent relative to what it actually saw", dimensionless and operator-aware, the exact mirror of the label's `err_free / free_content`. Whether it is a good substitute is an empirical question (does `free_content` track `s_range`?) and is **ask A2**. Until that column exists the oracle ratio is scored alongside the raw component, clearly named, as the ceiling.
+
+*Cost:* the identity holds only while both sides share `ref_intensity`. That coupling is now load-bearing and must not be "tidied" — the same class of hazard as D36's ignore pattern.
+
+---
+
+### D39 — Component ablations report flagged area at fixed alpha, never power [T1.1/T1.4, refines Q6's requirement]
+Q6 asks T1.4's ablation to report per-component FDR and power. **Power is the wrong axis and reporting it would mislead.** A conformal threshold pins the miss rate at `α`, so every candidate score has power `≈ 1 − α` whatever it measures — the number compares calibrators, not scores.
+
+Measured, on the local phantom bank at `α=0.1`, five candidates from an excellent one to a structurally dead one:
+
+| candidate | power | flag area |
+|---|---|---|
+| oracle `s_free/free_content` | 0.9022 | **0.717** |
+| combination | 0.9022 | 0.842 |
+| `s_free` | 0.9022 | 0.843 |
+| `s_disagree` | 0.9022 | 0.873 |
+| `s_residual` (degenerate, D35) | 0.9022 | 0.949 |
+
+Power is identical to four decimal places across all five. Flag area separates them cleanly, and it is Sec. 15.2's own second metric ("flag area at fixed reliability"). FDR is reported too and moves with area, as it must at fixed coverage.
+
+**So T1.4's ablation matrix reports flagged area at fixed `α` as the comparison, with power and miss rate alongside as the check that calibration held.** Group-conditional thresholds, not a single pooled one, so coverage is equalised within each regime and the areas are like for like — D34's lesson applied to an ablation.
+
+---
+
+### D40 — "ratio > 1 in every region" is forced by orthogonal invention, not evidence of a mismatched prior [T1.1/O2, corrects part of D37]
+D-034 and D37 both read the M4Raw bank's `err_free/free_content > 1` in **every** region as what "a face prior on brain anatomy should do". The identity says otherwise: with `cos θ = 0` the ratio is `sqrt(1 + u²)`, which exceeds 1 for **any** `u > 0`. In general
+
+```
+ratio > 1   ⟺   cos θ < u / 2
+```
+
+So a ratio above 1 everywhere is exactly what *any* prior whose hidden content is uncorrelated with the truth's produces, well-matched or not. It carries no information about domain mismatch, and D37's inference from it was unsound. The local phantom bank makes the point concretely: the reference sampler is not a mismatched prior at all — it is not a prior — and its ratio also exceeds 1 in every region, at a median `u` of only 0.167.
+
+**Two corrections to D37's falsifiable check, which is otherwise kept:**
+
+- It has an unstated precondition: `u < 2`. A prior that over-fills the null space cannot produce `ratio < 1` at any alignment, so the check proves nothing where `u > 2`. `fill_ratio()` reports the fraction of regions in that regime; the check applies to the rest.
+- It should be stated on the quantity it is really about: **with medical weights, some regions should show `cos θ ≥ u/2`** — the prior recovering the hidden content rather than replacing it. That is the same condition, measured directly instead of inferred, and `content_alignment()` computes it per region.
+
+**A reading of τ that is physical rather than arithmetic.** D37 chose τ = 1.75 on positive-rate and calibration-floor arithmetic. Under orthogonal invention, τ = `sqrt(1 + u²)`, so **τ = 1.75 means "the prior put 1.44× as much energy into the null space as the truth had there"**, and τ = 2.0 means 1.73×. That is a statement a radiographer could be asked about, and it gives the medical re-measurement a target with units. Applying it to D-034's reported quantiles (and assuming `cos θ ≈ 0`, which the diagnostic will confirm or refute), the celebahq prior's fill ratio on M4Raw runs from 0.34 to 2.57 with a median of about **1.20** — so most regions sit below the `u = 2` line and the check is diagnostic there.
+
+---
+
+### A2 — Two asks to Track 2, both cheap [T1.5, for Q6]
+**(a) Share the `w02_solver_smoke` bank.** The Week 2 bank (`runs/w02_solver_smoke-56bc92fa6a76906d/`, 384 rows) is the only real-prior output in the project and it exists only on Track 2's machine. Score-bank spec §3 states the design intent — *"a bank is self-describing, so Track 1 can calibrate from a copied directory with no access to the machine that produced it"* — and Q6 is the first time that has been needed. The parquet and manifest are tens of kilobytes. Committing dev banks under a path of Track 2's choosing, or sending the directory, both work.
+
+**(b) One nullable column `s_range` = ‖P_R x̂‖ per region / `ref_intensity`.** Same shape as A1, same backwards-compatible mechanics (additive, nullable, no `SCHEMA_VERSION` bump, spec §6), and one line in `compute_score_components` beside the existing `s_free`. It is the deployment-available denominator D38 identifies: the region's measured content, needing no ground truth. Without it the per-region normalisation cannot be tested against anything real, and `s_free` stays mismatched to its own label.
+
 ---
 
 ## Open Questions
@@ -322,7 +410,27 @@ The answer exists and is defensible — weighting buys what Mondrian structurall
 ### Q5 — Scoop recheck — **done August 2026 (D30); standing, repeat at write-up**
 The two "verified empty" cells (operator-shift-robust conformal coverage; flow-matching × conformal) were verified as of **mid-2026**, and the research documents explicitly flag that absence of evidence is not proof, naming VOILA (Fridovich-Keil), Schniter/Ahmad and Sulam as the groups to monitor monthly across cs.CV, eess.IV and stat.ME. D11 already mandates an early preprint for priority. The sweep has not been repeated since the research was written. Repeat it before further design work, and again at write-up.
 
-### Q6 — Does `s_free` fire on detailed anatomy rather than on hallucination? [OPEN, owned by T1.1/T1.4]
+### Q6 — Does `s_free` fire on detailed anatomy rather than on hallucination? [OPEN — instrument built and validated, awaiting the real bank; owned by T1.1/T1.4]
+
+**Status, September 2026.** Half of Q6 turned out to be answerable from the definitions. **D38** derives the exact identity linking `s_free`, `free_content` and `err_free`, and it settles the mechanism: under the relative criterion the label is monotone in `u = s_free/free_content`, so `s_free` alone is mismatched to its own label by however much anatomical content varies between regions. The risk Q6 names is therefore real and structural, not merely possible. **D40** adds that `cos θ` — how much of the reconstruction's hidden content agrees with the truth's — is recoverable per region, which is the quantity Q6 has been circling.
+
+The empirical half still needs a real-prior bank, and is one command once A2(a) lands:
+
+```
+PYTHONPATH=src python3 scripts/q6_attribution.py runs/w02_solver_smoke-56bc92fa6a76906d --tau 1.75
+```
+
+**The verdict rule is pre-registered**, in `caliber/scoring/attribution.py`'s constants, written before the bank was available so it cannot be tuned to what the data says — the same discipline D37 applied to τ and D28 to the weights. `s_free` is declared *invention-driven* only if its detail-matched AUC clears 0.60 over at least two surviving strata, exceeds the anatomy control's own detail-matched AUC by 0.05, and keeps a partial rank correlation of 0.20 against invention with content held fixed. It is declared *anatomy-confounded* if it beats the anatomy control by less than 0.02 with no partial correlation, or if stratifying destroys its separation.
+
+**One finding from building it, which changes how the result must be read.** Stratifying on a *continuous* confound only attenuates it. A component constructed to be an exact multiple of `free_content` — a pure anatomy meter, no invention signal whatever — still scores 0.87 detail-matched with four quantile bins, which an absolute threshold would call a strong detector. Scoring `free_content` itself through the identical path gives 0.87 too, and the difference of zero is the honest answer. **The paired comparison against the anatomy control is the load-bearing instrument; the stratified AUC alone is not sufficient and would have answered Q6 wrongly.** Strong confounding also starves the strata (one of four survived in that control), so the number of surviving strata is reported beside every verdict.
+
+Validated against four banks with known answers: an anatomy-confounded control, an invention-driven control, a pure-noise control, and an identity-consistent bank where the oracle ratio must beat the raw component. `tests/test_q6_attribution.py`, 23 gates.
+
+**Known limitation of the rule, stated rather than patched.** A candidate that is *defined* as a ratio with the control (the oracle) has a partial correlation that no longer means what the rule assumes, and lands as `ambiguous` despite the best AUC and the smallest flagged area in the table. The rule is left alone — it is pre-registered — and ratio-type candidates are read off AUC and flagged area instead.
+
+---
+
+**Original entry, retained:**
 **Sharpened by D35:** with `s_residual` structurally dead for data-consistent solvers, the score is effectively `s_free` + `s_disagree`. If `s_free` also turns out to track anatomy rather than invention, the whole thing reduces to cross-sample disagreement — a posterior-spread detector, which is a *known baseline*, not this project's contribution. That makes Q6 considerably more load-bearing than when it was written.
 `s_free` measures ‖P_N x̂‖ — the magnitude of the reconstruction's hidden content. But real anatomy *has* large null-space content whether or not the prior invented any of it, which is structurally the same trap D21 identified in the label criterion. The injection test shows `s_free` alone does detect an injection **on top of** anatomy (it is the *excess* that stands out), so the component is not useless. The open risk is region-level FDR on real data: if `s_free` is uniformly high across all textured tissue, it will flag detail rather than invention, and the weighting (D28) will have to suppress it.
 
