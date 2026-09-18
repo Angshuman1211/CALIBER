@@ -1660,6 +1660,132 @@ laptop cannot currently reproduce this bank.
 
 ---
 
+## D-046 · Track 3 is unblocked on L: the weights were never needed, and the placeholder law is now measured against a real prior
+**Date:** Week 3 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.1) · **For:** Track 3 (T3.3, T3.4)
+
+Three things Track 3 has been waiting on, settled. All of it reproducible with
+`scripts/t1_component_lipschitz.py` and `scripts/q6_attribution.py` against
+`banks/w02_solver_smoke`, which D-045 committed — no GPU, no dataset.
+
+**1. `L` does not need the score weights.** T3.3 §3 reduces the Lipschitz assumption to
+`L = Σ wᵢ Lᵢ` and has been held up on D28. D25 constrains the weights to the simplex, so
+that is a **convex combination** and `L ≤ max Lᵢ` for *every* admissible weight vector.
+The bound can be stated now; D28 decides only its tightness.
+
+**Only the upper end bounds.** `min Lᵢ ≤ L` is false, and this bank shows why: components
+that move in opposite directions cancel, and the combination is then less
+operator-sensitive than any part of it — T3.4 §3's effect, here almost total (below).
+Cancellation only helps a coverage-gap bound, so nothing is lost; but **a small combined
+secant is not evidence of a small constant**, and a bound must not be read off one.
+
+**A precondition worth knowing you depend on:** the components enter standardised,
+`cᵢ/scaleᵢ`, and the reduction treats `scaleᵢ` as a constant. **D27** — scales frozen on
+the calibration operator — is what makes it one. Re-estimating scales per deployment
+operator makes `scaleᵢ` a function of `A`, and the per-component reduction stops being
+valid. D27 was argued as protecting the coverage gap from being flattened; it is
+load-bearing for T3.3 §3 as well, and should not be "simplified" by anyone.
+
+**2. The per-component constants, measured on a prior for the first time.** R=4 → R=8,
+`d_op = 0.3536` (null-space projection / ambient, D19 — and exactly `√(1/8)`, the
+fraction of k-space lines whose sampled status changed, which is a clean independent
+check on the implementation):
+
+| component | signed shift (standardised) | `ℓᵢ` |
+|---|---|---|
+| `s_free` | +0.1738 | 0.4916 |
+| `s_disagree` | +0.2021 | 0.5716 |
+| `s_residual` | **−0.3878** | 1.0970 |
+
+**These are lower bounds on `Lᵢ`, not estimates** — a mean-shift secant satisfies
+`|E[c(A')] − E[c(A)]| ≤ E|c(A') − c(A)| ≤ Lᵢ d_op`, so it is a floor, useful for saying
+how tight the final bound can ever be, and not a value to quote as `Lᵢ`.
+
+Ceiling over the full simplex: **`L ≤ 1.10`**. With Track 1's D42 ruling that `s_residual`
+carries no weight it **halves to `L ≤ 0.57`**, the two survivors move in the same direction
+so their combination is genuinely bracketed in `[0.49, 0.57]` — 16% — and the remaining
+simplex is one-dimensional.
+
+**The cancellation, measured.** `s_residual` moves *opposite* to the other two: at equal
+thirds the net standardised shift is **−0.004** against **+0.376** from `s_free` and
+`s_disagree` together. This is T3.4 §3's cross-component cancellation, on a real prior for
+the first time, and close to total. It is not an argument for keeping `s_residual`: the
+near-zero is a small difference of large opposing terms, contingent on the weights, the
+step count and a sign nothing guarantees, and it constrains the score's *mean* rather than
+its distribution, which is what coverage depends on.
+
+**3. T3.4's √null_frac law is broken by the real prior — in the direction T3.4 predicted.**
+T3.4 §5 flagged this as "the most important caveat", expecting the law to fail once a
+learned prior filled the null space, because that departure *is* the score's premise
+showing up numerically. It fails, and the test is clean because the same three items are
+reconstructed under both operators, so a paired comparison needs no model spectrum:
+`free_content` on identical images gives the √null_frac scaling factor directly.
+
+| quantity, R=8 / R=4 | value |
+|---|---|
+| √null_frac law, from `free_content` | 1.0816 |
+| the same from the dimension count, independently | 1.0801 |
+| **`s_free`, measured** | **1.1922** |
+| **`s_disagree`, measured** | **1.2279** |
+
+`s_free` grows **1.12× faster** than the law allows. The fill ratio `u = s_free/free_content`
+rises in **149 of 192 paired regions** (sign test *p* = 6.9e-15) — under the law it would be
+operator-independent. So §2's closed form is confirmed as the null hypothesis it was
+offered as, and it is now rejected on real-prior data rather than awaited.
+
+*What this means for T3.4:* the `√null_frac` result stands as a statement about the
+placeholder harness and should be written up as such, with this as the measured departure.
+The open item — deriving the cross-component correlation to turn `L` into a closed form —
+is unaffected and still Track 3's, but it now has a real-prior target to hit rather than a
+white-noise one.
+
+*Still owed to Track 3 by Track 1:* T1.4's protocol, which gates T3.6. The ruling on P-21
+follows separately.
+
+*Cost:* two operators is one secant, not a curve — these are local ratios over one pair,
+valid as the worst-observed-slope bound T3.3 §3 asks for over the tested range, and no
+more. Week 4's grid gives the curve.
+
+*Affects:* T3.3 §3, T3.4 §2/§5, T1.1, D25, D27, D28, D-033, D-045, L1, L2.
+
+---
+
+## D-047 · Config overrides are accepted silently, including typos and paths that do not exist
+**Date:** Week 3 · **Status:** OPEN · **Found by:** Track 1 (T1.1) · **For:** Track 2
+
+`load_config` accepts any `key=value` override without checking that the key resolves.
+All three of these return an unchanged config and print nothing:
+
+```
+nonsense.key.that.does.not.exist=99      -> accepted silently
+run.limitt=5                             -> accepted silently   (a typo for run.limit)
+experiment.operators[0].acceleration=[4] -> accepted silently   (list indexing unsupported)
+```
+
+**Why it matters more than it looks.** Overrides are how every experiment is varied from a
+base config, and a silently-ignored one means the run that executes is not the run that was
+asked for — while the config hash, the manifest and the provenance all agree with each
+other, because they record what ran. There is no trace to find afterwards. A mistyped
+`run.limitt` costs 7 hours of reconstruction on the wrong item count (T2.3 §3) and looks
+like a correct run.
+
+This is P-19's shape exactly: no exception, no wrong answer, just a step that quietly did
+not happen. It is also already live in the test suite — `tests/test_analyse_bank.py` and
+`tests/test_checkpointing.py` pass overrides such as `run.skip_memory_check=true`, and a
+typo in one of those would silently exercise different behaviour than the test name claims.
+
+Found while writing a one-operator bank for `tests/test_component_lipschitz.py`: the
+obvious way to build one is an override, and it produced a three-operator bank instead. The
+test now filters an existing bank rather than configuring a smaller run, which works but
+should not have been necessary.
+
+*Suggested fix, Track 2's call:* raise on an override whose key path does not exist in the
+resolved config. Adding list indexing is a separate and optional question — refusing
+unknown keys is the part that prevents silent wrong runs.
+
+*Affects:* every experiment config, T2.3, D-042 (restart-on-same-config), the test suite.
+
+---
+
 ## Template
 
 ```

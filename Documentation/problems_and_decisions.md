@@ -373,6 +373,89 @@ So a ratio above 1 everywhere is exactly what *any* prior whose hidden content i
 
 ---
 
+### D41 — The weights are not needed for a valid Lipschitz constant; D25's simplex bounds it [T1.1, frees T3.3]
+Track 3 has been unable to state a value for T3.3's Lipschitz constant because §3 reduces it to `L = Σ wᵢ Lᵢ` and the weights are Track 1's, still unset (D28). **They are not needed.** D25 constrains the weights to the simplex — non-negative, summing to one — so `L` is a *convex combination* of the per-component constants and therefore
+
+```
+L  ≤  max_i L_i     for every admissible weight vector
+```
+
+T3.3 can state a valid bound today. D28 decides only where `L` lands below that ceiling, i.e. how tight the bound is, never whether it holds.
+
+**Only the upper end bounds, and the reason is a finding rather than a technicality.** The companion `min_i Lᵢ ≤ L` looks natural and is **false**: components can move in opposite directions under the same operator change, and then they cancel and the combination is *less* operator-sensitive than any of its parts. That is T3.4 §3's cross-component cancellation, and on the real bank it is nearly total — `s_residual` falls by 0.388 (standardised) where `s_free` and `s_disagree` together rise by 0.376, leaving an equal-thirds net shift of **−0.004**. Cancellation only ever helps a coverage-gap bound, so T3.3 loses nothing; but it does mean **a small combined secant is not evidence of a small constant**, and a bound must not be read off one. `tests/test_component_lipschitz.py` pins both halves — the bound that holds over 200 random weightings, and the cancellation that breaks the other one.
+
+**D27 is a precondition of that reduction, not statistical hygiene.** Components enter the combination standardised, `cᵢ/scaleᵢ`, and the step above treats `scaleᵢ` as a constant. D27 is what makes it one — scales frozen on the calibration operator. Re-estimate them per deployment operator and `scaleᵢ` becomes a function of `A`, the standardised component stops inheriting its component's Lipschitz constant, and the per-component reduction silently stops being valid. D27 was argued as protecting the coverage gap from being shrunk away; it turns out to be load-bearing for the theory too, and anyone "simplifying" it breaks T3.3 §3.
+
+Measured on the real-prior bank (`banks/w02_solver_smoke`, DDNM + `ddpm-celebahq-256` on M4Raw), `scripts/t1_component_lipschitz.py`, R=4 → R=8 at `d_op = 0.3536`:
+
+| component | signed shift (standardised) | `ℓᵢ` |
+|---|---|---|
+| `s_free` | +0.1738 | 0.4916 |
+| `s_disagree` | +0.2021 | 0.5716 |
+| `s_residual` | **−0.3878** | **1.0970** |
+
+**These are the first per-component sensitivities measured against a prior that decided what to put in the null space** rather than against injected noise. Ceiling over the full simplex: `L ≤ 1.10`.
+
+**They are lower bounds on `Lᵢ`, not estimates of it.** If `cᵢ(A, ·)` is `Lᵢ`-Lipschitz then `|E[cᵢ(A')] − E[cᵢ(A)]| ≤ E|cᵢ(A') − cᵢ(A)| ≤ Lᵢ·d_op`, so `ℓᵢ ≤ Lᵢ`, with equality only if every region moves by the same amount in the same direction. What that buys T3.3 is a **floor**: a component whose mean already moves this much cannot have a small constant, which bounds how tight the final result can ever be. It does not license quoting `ℓᵢ` as `Lᵢ`, and this document does not.
+
+---
+
+### D42 — `s_residual` carries no weight; it is a bank-validity diagnostic, not a score component [T1.1/D28, answers part of Q6]
+**The ruling:** the score is `s_free` + `s_disagree`. `s_residual` stays computed, stays in the bank, and stays out of the score.
+
+The argument is from the project's own decisions, not from fitting a weight to 384 rows:
+
+**1. With a consistency-enforcing solver it measures step count, not invention.** D-033 states this precisely — a solver whose error is not concentrated in the null component "is not producing hallucinations to be scored; it is producing an unconverged fit" — and uses the residual as the *gate* that detects it. Using one quantity as both the admissibility gate on a bank and as evidence about a region inside it double-counts a solver property as a property of the image.
+
+**2. It is the most operator-sensitive component, by more than 2×** (D41's table), and T3.3's bound is governed by `max_i Lᵢ`. Dropping it therefore **halves the ceiling on `L`, from 1.097 to 0.572**, which is a direct improvement to the headline theoretical guarantee and costs nothing.
+
+*Note what this argument is not.* `s_residual`'s shift is also **opposite in sign** to the other two, so at equal thirds the three nearly cancel (net −0.004). It would be wrong to say including it makes the combined score more operator-sensitive — measured on the mean, it makes it much less. But that near-zero is a small difference of large opposing terms: it depends on the weights, on the step count, and on a sign that no argument guarantees, and it says nothing about the score's *distribution*, which is what conformal coverage actually depends on. A bound built on that cancellation would be a bound built on a coincidence. The ceiling argument above needs no such assumption, which is why it is the one used.
+
+**3. It is anti-informative on the one real-prior bank that exists.** AUC 0.334 against the relative label — *below* chance, so high residual predicts a region is **less** likely hallucinated. Equal thirds therefore scores 0.828 AUC / 0.549 flag area against `s_free` alone at 0.890 / 0.505: the default combination is worse than one of its own components.
+
+**And D35's guard does not catch this.** D35 excludes components at the float-noise floor, measured at 9.1e-8 on the analytic denoiser. On a real UNet at finite steps DDNM's data-consistency error is 0.07–0.12 (D-033's re-measurement), so `s_residual` here is 0.0558 — **three orders of magnitude above the degeneracy floor, and therefore fully live**. It would take a third of the weight budget silently. *`s_residual` is not degenerate on real banks; it is small, alive and unhelpful,* which is a different failure and needs a different rule. D35's guard stays as it is — it catches the structurally-zero case correctly — and this is the separate ruling for the anti-informative one.
+
+**What this frees.** With `s_residual` out, the ceiling on `L` drops from **1.097 to 0.572**, the two surviving components move in the *same* direction so their weighted combination is genuinely bracketed by `[0.49, 0.57]` — a spread of 16% — and the remaining weight simplex is one-dimensional (`w_free + w_disagree = 1`). T3.3 can quote a constant good to 16% without waiting for D28 at all.
+
+**Not a weight selection.** `w_free` itself remains unset. The sweep below is reported whole, as a diagnostic, precisely so that no one reads an argmin off three items:
+
+| `w_free` | 0.0 | 0.2 | 0.4 | 0.5 | 0.6 | 0.8 | 1.0 |
+|---|---|---|---|---|---|---|---|
+| AUC | 0.876 | 0.893 | 0.904 | 0.907 | 0.907 | 0.907 | 0.902 |
+| flag area | 0.484 | 0.453 | **0.438** | 0.443 | 0.451 | 0.492 | 0.505 |
+| `L` | 0.572 | 0.556 | 0.540 | 0.532 | 0.524 | 0.508 | **0.492** |
+
+Every two-component mix beats equal thirds on detection (0.828 AUC / 0.549 flag area), and the curve is flat across 0.3–0.6. The `L` column is a genuine convex combination here because both surviving components shift in the same direction. Note the two axes disagree at the ends — detection prefers a middling `w_free`, the bound prefers `w_free = 1` — so D28's selection on the design split has a real trade-off to resolve, and now knows what it is.
+
+---
+
+### D43 — Q6 answered on a real prior: `s_free` is invention-driven, not an anatomy meter [T1.1, resolves Q6's empirical half]
+Ran `scripts/q6_attribution.py` against `banks/w02_solver_smoke` — real M4Raw k-space, real pretrained prior, 384 regions, τ = 1.75 (D37), 98 positives.
+
+| | AUC | detail-matched | over anatomy control | ρ(·, anatomy) | verdict |
+|---|---|---|---|---|---|
+| `s_free` | 0.890 | 0.933 | **+0.715** | **−0.035** | invention-driven |
+| `s_disagree` | 0.866 | 0.848 | +0.631 | −0.155 | invention-driven |
+| `s_residual` | 0.334 | 0.490 | +0.273 | 0.090 | uninformative |
+| oracle `s_free/free_content` | 0.974 | 0.940 | +0.723 | −0.618 | invention-driven |
+
+**Q6's feared outcome does not occur.** `s_free`'s correlation with the ground truth's own null-space content is −0.035 — indistinguishable from zero — and its separation *strengthens* when anatomical content is held fixed. It is not detecting detail. The score does not reduce to a posterior-spread detector, and D31's reading stands: the contribution rests on operator shift, with the decomposition earning its place as method.
+
+**`cos θ` median 0.073, maximum 0.269, never above 0.5.** The prior's hidden content is essentially orthogonal to the truth's across every region: it invents rather than recovers. That also settles the assumption I used to read D-034's quantiles — `cos θ ≈ 0` is measured, not assumed, at least for this prior.
+
+**Two cautions, both real.** The bank is 3 items × 2 operators × 64 regions, all `split=calib`, so nothing here is held out and 3 patients is not an anatomical sample — every number above is in-sample. And it is a face prior on brain MRI (D-016, D-035), so the *magnitude* of invention is not a property of a deployable system. **The verdict is nonetheless the one Q6 asked for**, because the question is about what `s_free` responds to, and a mismatched prior inventing freely is if anything the easier case in which to mistake anatomy for invention — it is the direction that would have produced a false pass, and the test passed on the other axis (ρ ≈ 0) instead.
+
+**Still open:** the deployable version. `s_range` shipped (D-045) but this bank predates it, so `s_free/s_range` could not be scored. The oracle ratio halves the flagged area — 0.247 against 0.505 — and drops FDR from 0.53 to 0.04, so the prize is large. It needs one bank regenerated with the new column.
+
+---
+
+### D44 — Config overrides are silently ignored when the key does not resolve; referred to Track 2 as D-047 [T1.5]
+`load_config` accepts `run.limitt=5` — a typo for `run.limit` — and any other non-resolving key, changes nothing, and says nothing. Found while trying to build a one-operator bank for `tests/test_component_lipschitz.py`; the override was ignored and produced the full three-operator grid.
+
+Recorded here because it is the same shape as the two findings that have already cost this project weeks (D29's `.real` cast, P-19's broken script): **no exception, no wrong answer, just a step that quietly did not happen**, with the manifest and config hash agreeing with each other afterwards because they record what ran rather than what was asked for. Referred out rather than fixed — `config.py` is Track 2's.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
@@ -410,7 +493,9 @@ The answer exists and is defensible — weighting buys what Mondrian structurall
 ### Q5 — Scoop recheck — **done August 2026 (D30); standing, repeat at write-up**
 The two "verified empty" cells (operator-shift-robust conformal coverage; flow-matching × conformal) were verified as of **mid-2026**, and the research documents explicitly flag that absence of evidence is not proof, naming VOILA (Fridovich-Keil), Schniter/Ahmad and Sulam as the groups to monitor monthly across cs.CV, eess.IV and stat.ME. D11 already mandates an early preprint for priority. The sweep has not been repeated since the research was written. Repeat it before further design work, and again at write-up.
 
-### Q6 — Does `s_free` fire on detailed anatomy rather than on hallucination? [OPEN — instrument built and validated, awaiting the real bank; owned by T1.1/T1.4]
+### Q6 — Does `s_free` fire on detailed anatomy rather than on hallucination? [**ANSWERED on a development bank — D43**; standing until a reportable bank exists; owned by T1.1/T1.4]
+
+**Answer: no.** On the first real-prior bank, `s_free`'s correlation with the ground truth's own null-space content is **−0.035**, and its separation *strengthens* when anatomical content is held fixed (detail-matched AUC 0.933, +0.715 over the anatomy control). The component responds to invention, not to detail. Full result and its two cautions — 3 items, in-sample, face prior — in **D43**. Re-run at the first reportable bank; the command is one line and the verdict rule is pre-registered, so the re-run cannot be steered by knowing this outcome.
 
 **Status, September 2026.** Half of Q6 turned out to be answerable from the definitions. **D38** derives the exact identity linking `s_free`, `free_content` and `err_free`, and it settles the mechanism: under the relative criterion the label is monotone in `u = s_free/free_content`, so `s_free` alone is mismatched to its own label by however much anatomical content varies between regions. The risk Q6 names is therefore real and structural, not merely possible. **D40** adds that `cos θ` — how much of the reconstruction's hidden content agrees with the truth's — is recoverable per region, which is the quantity Q6 has been circling.
 
