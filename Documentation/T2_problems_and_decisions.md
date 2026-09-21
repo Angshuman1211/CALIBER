@@ -1067,6 +1067,33 @@ fraction of all regions, not of the few positive ones.
 ---
 ---
 
+#### P-26 - A mistyped override ran the wrong experiment and left no trace
+
+**Fixed** - **See:** D-047 (Track 1's report), D-048 - **Found by:** Track 1
+
+`--set run.limitt=5` was not an error. `set_by_path` created a brand-new key called
+`limitt` that nothing read, so the run used `run.limit: 30` - and the config hash, the
+manifest and the provenance all agreed with one another, because they record the run
+that happened. A mistake there costs a seven-hour run of the wrong size and cannot be
+found afterwards, because every artefact of the run is internally consistent.
+
+Track 1 found it building a one-operator bank for their Lipschitz test: the obvious
+override produced a three-operator bank instead, and they had to filter an existing bank
+to work around it. It is Track 2's config system and Track 2's bug.
+
+It is P-19's shape again - no exception, no wrong answer, just a step that quietly did
+not happen - and P-19's lesson applies: the test suite could not see it, because every
+override the suite used was spelled correctly.
+
+The fix (D-048) validates against what is *valid*, not merely what is *present*, because
+the obvious check would have refused Track 2's own legitimate optional keys.
+
+**Found while fixing it:** this index had fallen six rows behind the log - Track 1's
+D-037 and D-038 from an earlier merge, Track 2's own D-045, and the three new entries.
+Rebuilt against the log and checked: every decision now has exactly one row.
+
+---
+
 ### Adding an entry
 
 Number sequentially, state the symptom before the cause, and say plainly
@@ -1084,7 +1111,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 42 entries, so a problem in Part I can be
+What lives here instead is the index — 48 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1125,9 +1152,15 @@ traced to the decision that settled it without opening the log.
 | [D-034](decision_log.md) | Relative criterion implemented and its tau curve measured; tau stays Track 1's | Week 2 | ACCEPTED — Track 2's half discharged |
 | [D-035](decision_log.md) | The prior's training domain is a third reportability gate | Week 3 | ACCEPTED |
 | [D-036](decision_log.md) | A bare `data/` in .gitignore also ignored `src/caliber/data/` | Week 2 | FIXED — Track 1's entry; see P-20 |
+| [D-037](decision_log.md) | The bank's three free-component columns satisfy an exact identity | Week 3 | Track 1's entry |
+| [D-038](decision_log.md) | "ratio > 1 everywhere" says nothing about prior mismatch; and two asks | Week 3 | Track 1's entry — asks answered in D-045 |
 | [D-039](decision_log.md) | Track 2's `splits.py` is canonical, and the split mapping itself is pinned | Week 3 | ACCEPTED — Track 1 to confirm no bank used the stand-in |
 | [D-040](decision_log.md) | An interrupted run leaves a partial bank that readers refuse by default | Week 3 | ACCEPTED |
 | [D-041](decision_log.md) | Item seeds come from a stable digest, not Python's salted `hash()` | Week 3 | ACCEPTED |
 | [D-042](decision_log.md) | A restarted run resumes from its checkpoint — only for the same config | Week 3 | ACCEPTED |
 | [D-043](decision_log.md) | A run that cannot fit in memory is refused before it starts | Week 3 | ACCEPTED |
 | [D-044](decision_log.md) | Each posterior draw is seeded independently, so draws can be batched in any size | Week 3 | ACCEPTED |
+| [D-045](decision_log.md) | Both of D-038's asks answered: `s_range` shipped, open-substrate banks committed | Week 3 | ACCEPTED |
+| [D-046](decision_log.md) | Track 3 is unblocked on L: the weights were never needed | Week 3 | Track 1's entry |
+| [D-047](decision_log.md) | Config overrides are accepted silently, including typos | Week 3 | **RESOLVED by D-048** — Track 1's report, Track 2's bug |
+| [D-048](decision_log.md) | An override must name something the pipeline reads, or it is refused | Week 4 | ACCEPTED |
