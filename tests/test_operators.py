@@ -220,3 +220,52 @@ def test_operator_ids_are_stable_and_unique():
     ids_b = OperatorRegistry.from_specs(specs, SHAPE).ids
     assert ids_a == ids_b
     assert len(set(ids_a)) == 4
+
+
+# -- the adjoint test itself (P-27) --------------------------------------------
+
+
+def test_adjoint_test_does_not_depend_on_the_global_rng():
+    """It drew its probe from torch's global RNG, so the same operator scored
+    differently on every run and the suite failed at random (~1% of runs)."""
+    op = MRIUndersamplingOperator(SHAPE, family="equispaced1d", acceleration=4)
+    values = set()
+    for seed in range(25):
+        torch.manual_seed(seed)
+        values.add(op.adjoint_test())
+    assert len(values) == 1
+
+
+class _NoMask(MRIUndersamplingOperator):
+    def adjoint(self, y):
+        return self._ifft(y)                     # forgets the mask
+
+
+class _Scaled(MRIUndersamplingOperator):
+    def adjoint(self, y):
+        return 1.01 * super().adjoint(y)         # off by 1%
+
+
+class _NoConj(MRIUndersamplingOperator):
+    def adjoint(self, y):
+        return torch.fft.fft2(y * self.mask, norm="ortho")   # forward FFT, not inverse
+
+
+@pytest.mark.parametrize("broken", [_NoMask, _Scaled, _NoConj])
+@pytest.mark.parametrize("size", [32, 128, 256])
+def test_a_wrong_adjoint_fails_the_runner_gate_at_every_size(broken, size):
+    """The gate must catch real defects, not merely stop false alarms.
+
+    The 1% scale error is the case that matters: normalising by ||Ax||*||v|| alone
+    under-reports it by ~1/sqrt(n) and let it through the 1e-3 gate. The second probe,
+    v = Ax, reports it at its true size.
+    """
+    op = broken((size, size), family="random1d", acceleration=4)
+    assert op.adjoint_test() > 1e-3
+
+
+@pytest.mark.parametrize("size", [32, 128, 256])
+def test_a_correct_adjoint_stays_far_below_the_tolerance(size):
+    """A correct float32 operator sits near machine precision, not near the limit."""
+    op = MRIUndersamplingOperator((size, size), family="random1d", acceleration=4)
+    assert op.adjoint_test() < 1e-6

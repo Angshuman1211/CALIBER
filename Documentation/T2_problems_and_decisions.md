@@ -209,6 +209,60 @@ where it fails.
 
 ---
 
+**Week 4 update - the ceiling is lower than "more patients would fix it".**
+`scripts/sizing.py` now measures this instead of estimating it in prose. It
+derives the score and label from a bank, bootstraps coverage **over clusters**
+rather than regions - the interval over regions treats thousands of correlated
+observations as independent - and extrapolates the observed SE as `1/sqrt(n)`.
+
+On the Week 3 bank at Track 1's ratified `tau = 1.75`, per-operator SE is
+0.103-0.117 at 12 test volumes. What that implies:
+
+| target half-width | test clusters needed | as % of the ~40 test patients available |
+|---|---|---|
+| +/- 0.10 | 63 | **156%** |
+| +/- 0.05 | 251 | 623% |
+| +/- 0.02 | 1,566 | 3,884% |
+
+and, splitting the 96-patient ceiling (D-027) across a grid:
+
+| operators | test patients each | achievable half-width |
+|---|---|---|
+| 1 | 40 | **0.125** |
+| 2 | 20 | 0.176 |
+| 3 | 13 | 0.216 |
+| 6 | 7 | 0.305 |
+| 12 | 3 | 0.432 |
+
+**Read the first row of the second table.** Even spending *every* available test
+patient on a *single* operator gives +/- 0.125 - still wider than the +/- 0.10 that
+would separate "coverage restored" from "coverage failed". A six-operator Week 4
+grid gives +/- 0.305, which is not a measurement of anything.
+
+So **fastMRI `singlecoil_val` cannot support a per-operator coverage claim at any
+grid size**, and no amount of CPU time changes that; it is a property of having 96
+patients. This is not a reason to stop - it is a reason to stop reporting
+per-operator coverage as the headline. The options, all Track 1's to choose
+(T1.4), none of them Track 2's:
+
+1. **Pool across operators** - estimate one coverage with an operator term, rather
+   than k independent estimates from k small samples.
+2. **Lead with flag area**, which is a fraction of *every* region rather than of
+   the few positive ones, and is correspondingly far better determined. The
+   over-flagging result (0.244 -> 0.668) does not depend on the coverage precision
+   at all.
+3. **Report intervals, never points.** If per-operator coverage stays in the
+   write-up, it has to carry its interval, and those intervals will overlap.
+4. **Add patients** - fastMRI `singlecoil_train` is 72.7 GB and was skipped as "not
+   needed" (D-013, P-14). It is the only lever that raises the ceiling, and it is a
+   disk and time cost, not a licensing one.
+
+The caveats travel with the numbers: the SE is extrapolated from 12 clusters, and
+clustering is by *volume* rather than patient, so the true intervals are wider
+still (fastMRI has ~2 volumes per patient).
+
+---
+
 #### P-02 - The v0 label threshold marks everything as hallucinated
 
 **Closed** - tau ruled by Track 1 - **See:** D-037, D-038, D-020, D-003, D-009
@@ -1013,6 +1067,89 @@ fraction of all regions, not of the few positive ones.
 ---
 ---
 
+#### P-26 - A mistyped override ran the wrong experiment and left no trace
+
+**Fixed** - **See:** D-047 (Track 1's report), D-048 - **Found by:** Track 1
+
+`--set run.limitt=5` was not an error. `set_by_path` created a brand-new key called
+`limitt` that nothing read, so the run used `run.limit: 30` - and the config hash, the
+manifest and the provenance all agreed with one another, because they record the run
+that happened. A mistake there costs a seven-hour run of the wrong size and cannot be
+found afterwards, because every artefact of the run is internally consistent.
+
+Track 1 found it building a one-operator bank for their Lipschitz test: the obvious
+override produced a three-operator bank instead, and they had to filter an existing bank
+to work around it. It is Track 2's config system and Track 2's bug.
+
+It is P-19's shape again - no exception, no wrong answer, just a step that quietly did
+not happen - and P-19's lesson applies: the test suite could not see it, because every
+override the suite used was spelled correctly.
+
+The fix (D-048) validates against what is *valid*, not merely what is *present*, because
+the obvious check would have refused Track 2's own legitimate optional keys.
+
+**Found while fixing it:** this index had fallen six rows behind the log - Track 1's
+D-037 and D-038 from an earlier merge, Track 2's own D-045, and the three new entries.
+Rebuilt against the log and checked: every decision now has exactly one row.
+
+---
+
+#### P-27 - The adjoint test failed at random, and fixing it naively would have hidden real bugs
+
+**Fixed** - **See:** D-012, D-043
+
+The pre-push checklist (`GIT_RULES.md` §16) failed on one test out of 325, then passed
+on the next run with nothing changed. The push was held. A 20-run loop caught it again,
+with a traceback:
+
+```
+test_mri_adjoint_is_exact[variable_density2d]
+assert 1.158e-05 < 1e-05
+```
+
+*A wrong turn, worth recording:* the first diagnosis, read off pytest's `lastfailed`
+cache, named a different test (`test_registry_health_check_passes_for_all_operators`).
+That cache mixes stale entries with live ones, and the reading was wrong. Only catching
+the failure with its traceback settled which test it was.
+
+**Two causes, both in `ForwardOperator.adjoint_test`:**
+
+1. **The probe vector came from torch's *global* RNG.** `x` was drawn from a seeded
+   generator, but `v` used `torch.randn_like`, which ignores it. So the same operator gave
+   a different error on every run, depending on what earlier code had consumed. This was
+   not only a test problem: the runner runs this check as a gate before every bank, so a
+   correct operator could fail the gate at random.
+2. **The error was divided by `max(|<Ax,v>|, |<x,A^H v>|)`**, which is small whenever the
+   inner product happens to be small. Over 400 draws a *correct* float32 operator scored
+   median 5.4e-7 but up to **1.7e-5** - straddling the unit test's 1e-5 limit.
+
+**The obvious fix would have been wrong.** Normalising by the Cauchy-Schwarz scale
+`||Ax||*||v||` removes the false-alarm tail - and silently weakens the gate. Checked
+against deliberately broken operators, an adjoint off by just **1%** scored 4.8e-5 at
+256^2, **under the runner's 1e-3 gate**. The old normalisation reported it at ~1e-2.
+
+**The fix uses two probes**, each covering the other's blind spot: a random `v`
+normalised by `||Ax||*||v||` (catches structural errors, cannot false-alarm), and `v = Ax`,
+whose inner product is `||Ax||^2` and cannot collapse (reports a scale error at its true
+size, but is blind to a missing mask, since `Ax` is already masked). Measured:
+
+| | 32^2 | 128^2 | 256^2 |
+|---|---|---|---|
+| correct operator | 6.4e-08 | 1.1e-07 | 1.2e-07 |
+| missing mask | 8.9e-02 | 3.1e-02 | 4.4e-03 |
+| **1% scale error** | **1.0e-02** | **1.0e-02** | **1.0e-02** |
+| missing conjugate | 9.7e-01 | 1.0e+00 | 1.0e+00 |
+
+Correct operators now sit ~100x under the 1e-5 limit and give one value regardless of the
+global RNG; every broken operator is caught above the 1e-3 gate at every size. Both
+directions are pinned by tests, including the three broken operators at three sizes.
+
+**Lesson:** a check that only ever sees correct inputs cannot tell you it still detects
+incorrect ones. There was no test that a *wrong* adjoint fails; there is now, and it is
+the test that caught the regression the obvious fix would have introduced.
+
+---
+
 ### Adding an entry
 
 Number sequentially, state the symptom before the cause, and say plainly
@@ -1030,7 +1167,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 42 entries, so a problem in Part I can be
+What lives here instead is the index — 48 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1071,9 +1208,15 @@ traced to the decision that settled it without opening the log.
 | [D-034](decision_log.md) | Relative criterion implemented and its tau curve measured; tau stays Track 1's | Week 2 | ACCEPTED — Track 2's half discharged |
 | [D-035](decision_log.md) | The prior's training domain is a third reportability gate | Week 3 | ACCEPTED |
 | [D-036](decision_log.md) | A bare `data/` in .gitignore also ignored `src/caliber/data/` | Week 2 | FIXED — Track 1's entry; see P-20 |
+| [D-037](decision_log.md) | The bank's three free-component columns satisfy an exact identity | Week 3 | Track 1's entry |
+| [D-038](decision_log.md) | "ratio > 1 everywhere" says nothing about prior mismatch; and two asks | Week 3 | Track 1's entry — asks answered in D-045 |
 | [D-039](decision_log.md) | Track 2's `splits.py` is canonical, and the split mapping itself is pinned | Week 3 | ACCEPTED — Track 1 to confirm no bank used the stand-in |
 | [D-040](decision_log.md) | An interrupted run leaves a partial bank that readers refuse by default | Week 3 | ACCEPTED |
 | [D-041](decision_log.md) | Item seeds come from a stable digest, not Python's salted `hash()` | Week 3 | ACCEPTED |
 | [D-042](decision_log.md) | A restarted run resumes from its checkpoint — only for the same config | Week 3 | ACCEPTED |
 | [D-043](decision_log.md) | A run that cannot fit in memory is refused before it starts | Week 3 | ACCEPTED |
 | [D-044](decision_log.md) | Each posterior draw is seeded independently, so draws can be batched in any size | Week 3 | ACCEPTED |
+| [D-045](decision_log.md) | Both of D-038's asks answered: `s_range` shipped, open-substrate banks committed | Week 3 | ACCEPTED |
+| [D-046](decision_log.md) | Track 3 is unblocked on L: the weights were never needed | Week 3 | Track 1's entry |
+| [D-047](decision_log.md) | Config overrides are accepted silently, including typos | Week 3 | **RESOLVED by D-048** — Track 1's report, Track 2's bug |
+| [D-048](decision_log.md) | An override must name something the pipeline reads, or it is refused | Week 4 | ACCEPTED |

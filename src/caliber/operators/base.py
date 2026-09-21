@@ -189,15 +189,37 @@ class ForwardOperator(ABC):
         for _ in range(n_trials):
             x = torch.randn(*self.image_shape, generator=gen)
             y = self.forward(x)
-            v = torch.randn_like(y.real if y.is_complex() else y)
+            # Drawn from the SEEDED generator. It used to be `torch.randn_like`, which
+            # ignores `gen` and reads torch's global RNG, so the probe depended on
+            # whatever earlier code had consumed: the same operator gave a different
+            # error on every run, in the test suite and in the runner's health gate
+            # before every bank alike (P-27).
+            real = y.real if y.is_complex() else y
+            v = torch.randn(real.shape, generator=gen, dtype=real.dtype)
             if y.is_complex():
-                v = v + 1j * torch.randn_like(y.real)
-            lhs = torch.vdot(y.flatten(), v.flatten())
-            rhs = torch.vdot(
-                x.flatten().to(lhs.dtype), self.adjoint(v).flatten().to(lhs.dtype)
-            )
-            scale = max(abs(lhs), abs(rhs), 1e-12)
-            worst = max(worst, float(abs(lhs - rhs) / scale))
+                v = v + 1j * torch.randn(real.shape, generator=gen, dtype=real.dtype)
+            # Two probes, because each normalisation is blind to something (P-27).
+            #
+            # (1) A random v, normalised by the Cauchy-Schwarz scale ||Ax||*||v||. This
+            #     catches *structural* errors - a missing mask, a missing conjugate -
+            #     and cannot false-alarm, whereas dividing by max(|lhs|, |rhs|), as this
+            #     used to, inflates the ratio whenever the inner product happens to be
+            #     small: a correct float32 operator scored anywhere from 5e-7 to 1.7e-5.
+            #     But on its own it under-reports a *scale* error, by ~1/sqrt(n): an
+            #     adjoint off by 1% scored 5e-5 at 256^2, under the runner's 1e-3 gate.
+            # (2) v = Ax, whose inner product is ||Ax||^2 and so can never be near zero.
+            #     A scale error shows up at its true size. It is blind to a missing
+            #     mask, since Ax is already masked - which is what probe (1) is for.
+            for probe, is_range_probe in ((v, False), (y, True)):
+                lhs = torch.vdot(y.flatten(), probe.flatten())
+                rhs = torch.vdot(
+                    x.flatten().to(lhs.dtype), self.adjoint(probe).flatten().to(lhs.dtype)
+                )
+                if is_range_probe:
+                    scale = float(torch.linalg.vector_norm(y)) ** 2
+                else:
+                    scale = float(torch.linalg.vector_norm(y) * torch.linalg.vector_norm(probe))
+                worst = max(worst, float(abs(lhs - rhs)) / max(scale, 1e-12))
         return worst
 
     def projection_idempotence_error(self, seed: int = 0) -> float:

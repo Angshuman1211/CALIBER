@@ -100,10 +100,10 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | File | Owner | What |
 |---|---|---|
 | `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D44`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-047` |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-048` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
-| `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-25`), unresolved first, plus an index of every decision |
+| `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-27`), unresolved first, plus an index of every decision |
 | `T1.1_score_design.md` | Track 1 | Operator-aware score design |
 | `T1.2_shift_robust_calibration.md` | Track 1 | The three calibration tools, what they control, and what they refuse |
 | `T1.3_operator_distance_formulation.md` | Track 1 | The locked operator-distance measure and why |

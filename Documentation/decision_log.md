@@ -1784,6 +1784,56 @@ unknown keys is the part that prevents silent wrong runs.
 
 *Affects:* every experiment config, T2.3, D-042 (restart-on-same-config), the test suite.
 
+**Resolved by D-048.**
+
+---
+
+## D-048 · An override must name something the pipeline reads, or it is refused
+**Date:** Week 4 · **Status:** ACCEPTED · **Proposed by:** Track 2 · **Answers:** D-047
+
+`load_config` now checks every override key before the run starts. A key is accepted if:
+
+1. it already exists in the resolved config; or
+2. it is one of the runner's **declared optional keys** — `run.checkpoint_every`,
+   `run.id`, `run.skip_memory_check`, `experiment.n_posterior` — which the runner reads but
+   which are deliberately absent from `base.yaml`; or
+3. it is a parameter the **configured** solver or dataset actually takes, checked against
+   the class's constructor, after every override has been applied.
+
+Anything else raises, naming the nearest real keys. List indexing (`operators[0]`) raises
+with a pointer to overriding the whole list.
+
+*Why not Track 1's simpler suggestion,* "raise if the key is not in the resolved config":
+it would have refused three of Track 2's own legitimate overrides. `run.checkpoint_every`
+and `run.skip_memory_check` are not in `base.yaml` on purpose — a default there would change
+the config hash, and so the run id, of every existing bank (D-040) — and solver parameters
+such as `max_draws_per_batch` are valid for one solver and not another. The check has to
+know what is *valid*, not merely what is *present*.
+
+*Two details that make it hold:*
+
+* `DPSSampler` and `DDNMSampler` take `**kwargs` and forward them, so their own signatures
+  understate what they accept. Parameters are collected across the class hierarchy.
+* A catch-all `**_` — the reference sampler has one — is **not** read as "accepts
+  anything". That is exactly how a typo slips through one level further down.
+
+*A case D-047 did not list:* `experiment.solver.step_size=20` on a DDNM config. A real key,
+for the wrong solver — DDNM has no guidance step. It used to be accepted and do nothing; it
+is now refused, while the same key after `experiment.solver.name=dps` is accepted.
+
+*Measured before the change:* the old loader accepted all of D-047's examples, and
+`--set run.limitt=5` left `run.limit` at **30** — a seven-hour run of the wrong size.
+
+*Verified not to break anything:* all 300 existing tests pass, including every override
+they use; and all 10 distinct `--set` keys documented across `Documentation/`, `configs/`,
+`scripts/` and the READMEs are still accepted.
+
+*Guard against drift:* a test reads `runner.py`'s source for `run_cfg.get(...)` and
+requires every such key to be declared, so a new optional key cannot be added to the runner
+without being added here.
+
+*Affects:* D-047, D-040, every experiment config, the test suite.
+
 ---
 
 ## Template
