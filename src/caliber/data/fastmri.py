@@ -140,6 +140,7 @@ class FastMRIDataset(SliceDataset):
         limit_volumes: int | None = None,
         annotation_grid: tuple[int, int] = ANNOTATION_GRID,
         calib_fraction: float = 0.5,
+        design_fraction: float = 0.0,
         split_salt: str = DEFAULT_SALT,
     ):
         self.root = Path(root)
@@ -151,6 +152,10 @@ class FastMRIDataset(SliceDataset):
         self.split = split
         self.auto_split = split == "auto"
         self.calib_fraction = float(calib_fraction)
+        # Nonzero only when a run needs patients held out for choices made by looking
+        # at scores -- Track 1's weight and threshold selection (D-051). It is taken
+        # from the calibration range, so the test side is the same set either way.
+        self.design_fraction = float(design_fraction)
         self.split_salt = split_salt
         self._patient_cache: dict[str, str] = {}
         self.image_shape = tuple(image_shape)
@@ -234,7 +239,12 @@ class FastMRIDataset(SliceDataset):
 
         self._patient_cache[path.stem] = patient
         split = (
-            split_for(patient, calib_fraction=self.calib_fraction, salt=self.split_salt)
+            split_for(
+                patient,
+                calib_fraction=self.calib_fraction,
+                design_fraction=self.design_fraction,
+                salt=self.split_salt,
+            )
             if self.auto_split
             else self.split
         )
