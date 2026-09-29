@@ -99,14 +99,15 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 
 | File | Owner | What |
 |---|---|---|
-| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D44`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-048` |
+| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D46`, open questions, cross-track contracts |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-050` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
 | `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-27`), unresolved first, plus an index of every decision |
 | `T1.1_score_design.md` | Track 1 | Operator-aware score design |
 | `T1.2_shift_robust_calibration.md` | Track 1 | The three calibration tools, what they control, and what they refuse |
 | `T1.3_operator_distance_formulation.md` | Track 1 | The locked operator-distance measure and why |
+| `T1.4_experimental_design.md` | Track 1 | The estimand, the paired intervals, and what the design can and cannot measure |
 | `T1.5_cross_track_integration.md` | Track 1 | Shared interfaces, sign-off record, contracts, adjudication log |
 | `T1.6_analysis_and_course_correction.md` | Track 1 | Phase gate reviews — all three fronts against the central claim, one section per checkpoint |
 | `T2.1_data_and_operator_pipeline.md` | Track 2 | Week 1 record — what was built, the numbers, honest limitations — plus dataset provenance, licensing and download (App. A) |
@@ -152,10 +153,10 @@ Owns the central claim, the design of the method, and the decisions that set dir
 
 | Task | Deliverable | Status |
 |------|-------------|--------|
-| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Blocked on T2.2** — WI-1–WI-5 done; weights unset, so the definition is not yet pinned. Q6's attribution instrument built and pre-registered (D38–D40) |
+| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Near complete** — Q6 answered on a real prior (D43); `s_residual` ruled out of the score (D42); only `w_free` remains unset, pending a design split |
 | **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | **Implemented** — verified on synthetic banks; real banks need C2 |
 | **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19; CT cross-check pending T2.5 |
-| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | Not started |
+| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | **Started** — statistical-validation methodology settled (D45: paired estimand, crossed design); operator grids and ablation matrix open |
 | **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | **Week 1 sign-off delivered** (D19–D24); standing |
 | **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | **Phase 1 gate delivered**; standing |
 | **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | Not started |

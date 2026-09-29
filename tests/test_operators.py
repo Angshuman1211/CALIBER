@@ -7,6 +7,9 @@ that stops that, and they run before any score-bank production job.
 
 from __future__ import annotations
 
+import math
+
+import numpy as np
 import pytest
 import torch
 
@@ -266,6 +269,19 @@ def test_a_wrong_adjoint_fails_the_runner_gate_at_every_size(broken, size):
 
 @pytest.mark.parametrize("size", [32, 128, 256])
 def test_a_correct_adjoint_stays_far_below_the_tolerance(size):
-    """A correct float32 operator sits near machine precision, not near the limit."""
+    """A correct float32 operator sits near machine precision, not near the limit.
+
+    The bound scales with the problem size rather than being a constant, because the error
+    being bounded is float32 summation over ``N`` terms and grows like ``sqrt(N)·eps``. A
+    flat ``1e-6`` was a knife edge: measured at 128², a correct operator scatters between
+    3.6e-7 and 1.3e-6 across accelerations and mask seeds, so whether the gate passed
+    depended on which combination it hit and on the platform's FFT summation order. It
+    passed on the machine where it was written and failed at 128² on another (D-050).
+
+    The size-aware bound keeps the test strict where it matters: at 256² it is 3.1e-5,
+    still 30× below the ~1e-3 a genuinely broken adjoint produces in the test above, and
+    the correct operator sits at 2–8% of it at every size.
+    """
     op = MRIUndersamplingOperator((size, size), family="random1d", acceleration=4)
-    assert op.adjoint_test() < 1e-6
+    bound = math.sqrt(size * size) * float(np.finfo(np.float32).eps)
+    assert op.adjoint_test() < bound
