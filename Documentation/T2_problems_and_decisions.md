@@ -226,18 +226,29 @@ On the Week 3 bank at Track 1's ratified `tau = 1.75`, per-operator SE is
 
 and, splitting the 96-patient ceiling (D-027) across a grid:
 
-| operators | test patients each | achievable half-width |
-|---|---|---|
-| 1 | 40 | **0.125** |
-| 2 | 20 | 0.176 |
-| 3 | 13 | 0.216 |
-| 6 | 7 | 0.305 |
-| 12 | 3 | 0.432 |
+> **WRONG — corrected by Track 1 (D-049), and the error was Track 2's.** The table below
+> divides the test patients by the number of operators. **The design is crossed:**
+> retrospective undersampling applies every mask to the *same* volume, so every operator
+> sees every patient. Verified independently on both banks in the repository - 3 operators
+> x 30 items and 2 operators x 3 items, each operator seeing the identical item set. The
+> corrected reading is the one `sizing.py` now prints: the per-operator half-width is
+> **0.125 at every grid size**, and adding operators costs compute, not precision. That
+> reverses the advice this entry gave. The table is kept, struck through, because the
+> recommendation built on it went to Track 1 in writing.
 
-**Read the first row of the second table.** Even spending *every* available test
-patient on a *single* operator gives +/- 0.125 - still wider than the +/- 0.10 that
-would separate "coverage restored" from "coverage failed". A six-operator Week 4
-grid gives +/- 0.305, which is not a measurement of anything.
+| ~~operators~~ | ~~test patients each~~ | ~~achievable half-width~~ |
+|---|---|---|
+| ~~1~~ | ~~40~~ | ~~0.125~~ |
+| ~~2~~ | ~~20~~ | ~~0.176~~ |
+| ~~3~~ | ~~13~~ | ~~0.216~~ |
+| ~~6~~ | ~~7~~ | ~~0.305~~ |
+| ~~12~~ | ~~3~~ | ~~0.432~~ |
+
+**What survives the correction.** Even spending every available test patient on a
+single operator gives +/- 0.125 - still wider than the +/- 0.10 that would separate
+"coverage restored" from "coverage failed". That number is unaffected by D-049 and
+Track 1 confirms it: *"Contrast A really is capped at +/- 0.125 and this does not
+change it."* What does not survive is the claim that a larger grid makes it worse.
 
 So **fastMRI `singlecoil_val` cannot support a per-operator coverage claim at any
 grid size**, and no amount of CPU time changes that; it is a property of having 96
@@ -260,6 +271,58 @@ per-operator coverage as the headline. The options, all Track 1's to choose
 The caveats travel with the numbers: the SE is extrapolated from 12 clusters, and
 clustering is by *volume* rather than patient, so the true intervals are wider
 still (fastMRI has ~2 volumes per patient).
+
+---
+
+**Measured, Week 4, on the fastMRI bank** - the run Track 1 asked for in D-049, which
+only this machine can do because the bank is not shareable (D-045, T2.1 §7).
+
+Track 1's answer is **option 2** (flag area co-headline) with the estimand changed to the
+**paired** coverage gap, on the argument that the same patient appears at both operators
+so the patient's own difficulty cancels. The mechanism is real and the sanity check is
+clean: the gap of an operator against *itself* comes back as exactly 0.0000 with SE 0,
+where differencing two independent bootstraps gives SE 0.168 for a quantity that cannot
+vary.
+
+**The pairing factor on real knee anatomy is smaller than the illustration suggests:**
+
+| deployment operator | gap | paired SE | unpaired SE | narrower by |
+|---|---|---|---|---|
+| R=4 | 0.112 | 0.110 | 0.161 | **1.46x** |
+| R=8 | 0.127 | 0.124 | 0.160 | **1.29x** |
+
+D-049's table reaches 2.9x, at a between-patient SD of 0.20. This substrate gives
+1.29-1.46x, which is what D-049 itself says should happen - *"the number that matters is
+the one your bank gives"*. Reported, not assumed.
+
+**It helps, and it is not enough on its own.** Scaling the paired SE by 1/sqrt(n):
+
+| test patients | paired gap half-width |
+|---|---|
+| 12 (this bank) | 0.216 |
+| 38 (today's split) | 0.121 |
+| 58 | 0.099 |
+| 72 | 0.088 |
+
+At today's split the interval is **about as wide as the gap it measures** (0.121 against
+gaps of 0.112 and 0.127). The paired estimand moves the headline from impossible to
+marginal, not to comfortable.
+
+**A lever cheaper than option 4, and Track 2's to offer.** The ~40-patient test side is not
+a property of the dataset, it is `calib_fraction`. The 96 patients are currently split
+about 60/40; moving to 40/60 or 30/70 gives:
+
+| calib fraction | calib patients | test patients | paired half-width |
+|---|---|---|---|
+| 0.6 (today) | 58 | 38 | 0.121 |
+| 0.4 | 38 | 58 | 0.099 |
+| 0.3 | 29 | 67 | 0.091 |
+
+That is most of what `singlecoil_train` would buy, for the cost of a config value and no
+72 GB download. **The caveat is real and unmeasured:** a smaller calibration side makes the
+*threshold* noisier, and that feeds back into coverage in a way this arithmetic does not
+capture, so there is an optimum somewhere rather than a monotone gain. Track 2 can measure
+the trade on the existing bank if Track 1 wants the curve before choosing.
 
 ---
 
