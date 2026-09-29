@@ -55,6 +55,11 @@ from caliber.scorebank import read_bank, read_manifest
 
 #: fastMRI singlecoil_val, measured: 199 volumes from 96 distinct patients (D-027).
 FASTMRI_PATIENTS = 96
+#: How many of those land on the test side at the default ``calib_fraction`` -- counted
+#: on the real patient list, not assumed. ``test_split_golden.py`` pins the calibration
+#: side at 52, so the test side is 44. The earlier ``96 * 0.42 = 40`` here was a guess,
+#: and it under-reported the achievable half-width by about 6%.
+FASTMRI_TEST_PATIENTS = 44
 #: Interval half-widths worth asking about. 0.10 distinguishes "restored" from "failed";
 #: 0.05 is what a published coverage claim would want.
 TARGETS = (0.10, 0.05, 0.02)
@@ -129,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
               f"{'as % of test patients':>26}")
     print("\n" + header)
     print("-" * len(header))
-    budget = FASTMRI_PATIENTS * 0.42          # the test side, at this project's split
+    budget = FASTMRI_TEST_PATIENTS            # the test side, at this project's split
     needs = {}
     for target in TARGETS:
         n = clusters_for_precision(worst["se"], worst["n_clusters"], target)

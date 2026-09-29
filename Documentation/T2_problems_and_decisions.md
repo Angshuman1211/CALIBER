@@ -245,10 +245,16 @@ and, splitting the 96-patient ceiling (D-027) across a grid:
 | ~~12~~ | ~~3~~ | ~~0.432~~ |
 
 **What survives the correction.** Even spending every available test patient on a
-single operator gives +/- 0.125 - still wider than the +/- 0.10 that would separate
-"coverage restored" from "coverage failed". That number is unaffected by D-049 and
+single operator gives **+/- 0.119** - still wider than the +/- 0.10 that would separate
+"coverage restored" from "coverage failed". That conclusion is unaffected by D-049 and
 Track 1 confirms it: *"Contrast A really is capped at +/- 0.125 and this does not
 change it."* What does not survive is the claim that a larger grid makes it worse.
+
+*(The cap reads 0.119 rather than the 0.125 both this entry and D-049 quote. `sizing.py`
+had the test side hardcoded as `96 * 0.42 = 40` patients, a guess; the real draw at the
+default `calib_fraction` puts 44 there, counted from the patient list and pinned by
+`test_split_golden.py`. The script now uses the measured number. The cap moves by 0.006
+and nothing that was concluded from it changes.)*
 
 So **fastMRI `singlecoil_val` cannot support a per-operator coverage claim at any
 grid size**, and no amount of CPU time changes that; it is a property of having 96
@@ -295,34 +301,50 @@ D-049's table reaches 2.9x, at a between-patient SD of 0.20. This substrate give
 1.29-1.46x, which is what D-049 itself says should happen - *"the number that matters is
 the one your bank gives"*. Reported, not assumed.
 
-**It helps, and it is not enough on its own.** Scaling the paired SE by 1/sqrt(n):
+**It helps, and it is not enough on its own.** Scaling the worst paired SE (0.124, the
+R=8 deployment) by 1/sqrt(n):
 
 | test patients | paired gap half-width |
 |---|---|
-| 12 (this bank) | 0.216 |
-| 38 (today's split) | 0.121 |
-| 58 | 0.099 |
-| 72 | 0.088 |
+| 12 (this bank) | 0.243 |
+| **44 (today's split)** | **0.127** |
+| 49 | 0.120 |
+| 58 | 0.111 |
+| 72 | 0.099 |
 
-At today's split the interval is **about as wide as the gap it measures** (0.121 against
+At today's split the interval is **about as wide as the gap it measures** (0.127 against
 gaps of 0.112 and 0.127). The paired estimand moves the headline from impossible to
-marginal, not to comfortable.
+marginal, not to comfortable. ±0.10 needs 72 test patients, which is more than the
+dataset has on the test side at any split.
 
-**A lever cheaper than option 4, and Track 2's to offer.** The ~40-patient test side is not
-a property of the dataset, it is `calib_fraction`. The 96 patients are currently split
-about 60/40; moving to 40/60 or 30/70 gives:
+**A lever cheaper than option 4, and Track 2's to offer — but a smaller one than first
+reported.** The test side is not a property of the dataset, it is `calib_fraction`.
+Counted on the real 96-patient list rather than assumed:
 
 | calib fraction | calib patients | test patients | paired half-width |
 |---|---|---|---|
-| 0.6 (today) | 58 | 38 | 0.121 |
-| 0.4 | 38 | 58 | 0.099 |
-| 0.3 | 29 | 67 | 0.091 |
+| **0.5 (today)** | **52** | **44** | **0.127** |
+| 0.4 | 47 | 49 | 0.120 |
+| 0.3 | 38 | 58 | 0.111 |
 
-That is most of what `singlecoil_train` would buy, for the cost of a config value and no
-72 GB download. **The caveat is real and unmeasured:** a smaller calibration side makes the
-*threshold* noisier, and that feeds back into coverage in a way this arithmetic does not
-capture, so there is an optimum somewhere rather than a monotone gain. Track 2 can measure
-the trade on the existing bank if Track 1 wants the curve before choosing.
+Spending the whole lever — 0.5 down to 0.3, giving up 14 calibration patients — buys
+0.127 → 0.111. That is real but it does not reach ±0.10, so it is a contribution to
+option 4 rather than a substitute for it.
+
+**Two corrections to the first version of this addendum, both Track 2's.** It reported
+0.121 at "38 test patients, today's split, calib_fraction 0.6". Neither figure was
+checked: no config sets `calib_fraction`, so every run uses the 0.5 default, and the real
+draw at 0.5 is 52/44 — the numbers above are counted from the patient list. It also
+scaled the R=4 paired SE (0.110) while calling it the sized quantity, where `sizing.py`
+sizes on the widest operator (R=8, 0.124). Both errors ran in the flattering direction,
+which is the direction P-19 and P-23 have each already cost this project once.
+
+**The caveat is real and unmeasured:** a smaller calibration side makes the *threshold*
+noisier, and that feeds back into coverage in a way this arithmetic does not capture, so
+there is an optimum somewhere rather than a monotone gain. It also now competes with the
+design side (D-051), which draws from the same calibration pool — the two should be chosen
+together rather than one at a time. Track 2 can measure the trade on the existing bank if
+Track 1 wants the curve before choosing.
 
 ---
 
@@ -1230,7 +1252,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 50 entries, so a problem in Part I can be
+What lives here instead is the index — 51 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1285,3 +1307,4 @@ traced to the decision that settled it without opening the log.
 | [D-048](decision_log.md) | An override must name something the pipeline reads, or it is refused | Week 4 | ACCEPTED |
 | [D-049](decision_log.md) | P-23 answered: the headline estimand is paired, and the crossed design does not divide the patient budget | Week 4 | Track 1's entry — answers P-23 |
 | [D-050](decision_log.md) | The adjoint gate is size-aware, because a flat 1e-6 was a knife edge | Week 4 | Track 1's fix to a non-portable test |
+| [D-051](decision_log.md) | A third split side, for the choices made by looking at scores | Week 4 | PROPOSED — unblocks T1.1 |

@@ -1938,6 +1938,83 @@ instead of that one, and would silently loosen the 32² case by 20×.
 
 ---
 
+## D-051 · A third split side, for the choices made by looking at scores
+**Date:** Week 4 · **Status:** PROPOSED · **Proposed by:** Track 2 · **Unblocks:** T1.1
+
+D28 (score component weights) and D37 (the criterion threshold) are both *selected* by
+looking at scores. Until now there was nowhere to select them from: `SPLITS` was
+`("calib", "test")`, so any selection had to come out of one of the two sides that the
+coverage guarantee depends on being untouched.
+
+Both failure modes are silent:
+
+* **Selecting on calibration data** biases the conformal threshold. The calibration
+  scores are no longer exchangeable with the test scores, and coverage degrades by an
+  amount nothing in the pipeline reports.
+* **Selecting on test data** biases the coverage number directly — the familiar one, and
+  the one a reviewer will ask about first.
+
+**Decision:** `split_for()` gains `design_fraction`, and patients below it land on a
+third side, `"design"`. T1.1's weight selection and D37's threshold are fitted there and
+nowhere else.
+
+**It is carved out of the calibration range, not the test range.** That is the part worth
+arguing about, and there are three reasons:
+
+1. **The test side never moves.** For *any* `design_fraction`, a patient lands on `test`
+   exactly when it would have under the two-way split. So a design split can be
+   introduced after coverage has already been measured without invalidating the
+   measurement, and two banks built with different design fractions remain comparable on
+   the test side. `tests/test_design_split.py` asserts the set equality rather than
+   trusting the arithmetic.
+2. **The cost lands where it hurts least.** P-23 measured the binding constraint on the
+   headline to be *test* patients: the paired gap half-width is ±0.121 against gaps of
+   0.112 and 0.127. Calibration patients are not the scarce resource; test patients are.
+3. **Nothing existing is disturbed.** `design_fraction=0.0` is the default and reproduces
+   the two-way assignment exactly — same salt, same pins, same banks. The golden test
+   (`test_split_golden.py`, including the real-fastMRI digest) passes unchanged, which is
+   the evidence rather than the claim.
+
+Asking for more design patients than there are calibration patients is refused with a
+message naming `calib_fraction`, rather than quietly shrinking test.
+
+**What Track 1 needs to pick.** The fraction itself is a protocol choice, not Track 2's.
+T1.4 currently reads *"T1.1 is complete pending the weight selection in D28, which needs
+the design split and therefore real data (C2)"* — the design split was the missing half of
+that, and it was missing from **Track 2's** module, so the blocker was never only data.
+Counted on the real 96-patient list at the default `calib_fraction=0.5`, with the test
+side unchanged at 44 in every row:
+
+| design_fraction | design | calib | test |
+|---|---|---|---|
+| 0.0 (today) | 0 | 52 | 44 |
+| 0.10 | 8 | 44 | 44 |
+| 0.15 | 19 | 33 | 44 |
+| 0.20 | 25 | 27 | 44 |
+
+**The draw is lumpy at this size** — 0.15 yields 19 rather than the nominal 14, and 0.10
+yields 8 rather than 10. At 96 patients the fraction should be chosen by the count it
+actually produces, which is why the measured table is here instead of the arithmetic.
+
+*Alternative 1:* carve the design side out of the test range instead. Rejected — it
+shrinks the one side P-23 identified as binding, and it would silently invalidate every
+coverage number measured before the design side existed.
+
+*Alternative 2:* carve proportionally from both. Rejected — it moves test patients, which
+forfeits property (1) for no gain the project can currently use.
+
+*Alternative 3:* select weights on calibration data and accept the bias. Rejected — the
+bias is invisible and runs in the direction that flatters our own coverage, which P-19 and
+P-23 have both already cost this project once each.
+
+*Cost:* calibration patients, which makes the threshold slightly noisier. Unmeasured, and
+it interacts with the `calib_fraction` rebalance offered at the end of P-23 — both draw on
+the same pool, so they should be chosen together rather than one at a time.
+
+*Affects:* T1.1, D28, D37, T2.1 §D-022, the fastMRI loader, Sec. 19.
+
+---
+
 ## Template
 
 ```
