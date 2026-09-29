@@ -43,19 +43,24 @@ def estimate_spectrum(
     k = n_components + n_oversample
     probes = [torch.randn(*op.image_shape, generator=gen) for _ in range(k)]
 
-    sketch = torch.stack([op.forward(p).flatten() for p in probes], dim=1)
+    # Carry the sketch in the operator's *own* measurement domain, complex or not,
+    # and flatten to real only for the linear algebra at the end (P-28).
+    #
+    # The earlier version flattened to real up front, which doubled the row count
+    # for a complex operator and then tried to reshape those rows back into the
+    # measurement shape on the next power iteration: at 256^2 that is 131,072
+    # values into a [256, 256] slot, and it raised. Every MRI operator is complex,
+    # so `spectral_divergence` could not be computed for any of them -- the one
+    # candidate distance that is not degenerate on mask operators (D-052).
+    ys = [op.forward(probe) for probe in probes]
+    for _ in range(n_power_iters):
+        # (A A^H)^q A Omega -- the same iteration as before, without a round trip
+        # through a real view that does not survive being reshaped back.
+        ys = [op.forward(op.adjoint(y)) for y in ys]
+
+    sketch = torch.stack([y.flatten() for y in ys], dim=1)
     if sketch.is_complex():
         sketch = torch.view_as_real(sketch).reshape(-1, k)
-
-    for _ in range(n_power_iters):
-        images = []
-        for j in range(k):
-            col = sketch[:, j]
-            y = col.reshape(op.forward(probes[0]).shape) if not col.is_complex() else col
-            images.append(op.adjoint(y.reshape(op.forward(probes[0]).shape)))
-        sketch = torch.stack([op.forward(im).flatten() for im in images], dim=1)
-        if sketch.is_complex():
-            sketch = torch.view_as_real(sketch).reshape(-1, k)
 
     q, _ = torch.linalg.qr(sketch.to(torch.float32))
     svals = torch.linalg.svdvals(q.T @ sketch.to(torch.float32))

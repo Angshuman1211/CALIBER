@@ -1179,6 +1179,48 @@ Rebuilt against the log and checked: every decision now has exactly one row.
 
 ---
 
+#### P-28 - The only non-degenerate distance measure could not be computed for any MRI operator
+
+**Fixed** - **See:** D-011, D-052
+
+Computing all five candidate operator distances across the Week 4 grid, to choose the
+axis for the coverage-failure figure, raised on the fifth:
+
+```
+RuntimeError: shape '[256, 256]' is invalid for input of size 131072
+  caliber/operators/spectrum.py:54 in estimate_spectrum
+```
+
+**Cause.** `estimate_spectrum` flattened its sketch to a real view up front —
+`torch.view_as_real(...).reshape(-1, k)` — which doubles the row count for a complex
+operator. The power iteration then took a column of that real matrix and reshaped it
+back into the *measurement* shape. At 256² that is 131,072 real values into a 65,536
+complex slot, and it raised every time.
+
+Every MRI forward operator is complex, so `spectral_divergence` had never once been
+computable for one. It worked for CT, which is real, and CT is what the tests covered.
+
+**Fix.** Carry the sketch in the operator's own domain and flatten to real only for the
+QR and SVD at the end, so no reshape back is needed:
+
+```python
+ys = [op.forward(probe) for probe in probes]
+for _ in range(n_power_iters):
+    ys = [op.forward(op.adjoint(y)) for y in ys]        # (A A^H)^q A Omega
+```
+
+Bit-identical on real operators — checked against the old code path on a CT operator,
+max difference 0.0 — and working on complex ones.
+
+**Why this one mattered more than an ordinary crash.** D-052 measures the other four
+candidate distances to be *the same function* on binary-mask operators. Spectral
+divergence is the only one that could have distinguished them, and it was the only one
+that could not run. The gap in the tests and the gap in the measurement coincided
+exactly, which is the pattern worth noticing: the untested path was the one carrying
+the information.
+
+---
+
 #### P-27 - The adjoint test failed at random, and fixing it naively would have hidden real bugs
 
 **Fixed** - **See:** D-012, D-043
@@ -1252,7 +1294,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 51 entries, so a problem in Part I can be
+What lives here instead is the index — 52 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1308,3 +1350,4 @@ traced to the decision that settled it without opening the log.
 | [D-049](decision_log.md) | P-23 answered: the headline estimand is paired, and the crossed design does not divide the patient budget | Week 4 | Track 1's entry — answers P-23 |
 | [D-050](decision_log.md) | The adjoint gate is size-aware, because a flat 1e-6 was a knife edge | Week 4 | Track 1's fix to a non-portable test |
 | [D-051](decision_log.md) | A third split side, for the choices made by looking at scores | Week 4 | PROPOSED — unblocks T1.1 |
+| [D-052](decision_log.md) | Four of the five candidate operator distances are one measure on mask operators | Week 4 | ACCEPTED — measured, 153 pairs |

@@ -2041,6 +2041,58 @@ the same pool, so they should be chosen together rather than one at a time.
 
 ---
 
+## D-052 · Four of the five candidate operator distances are one measure on mask operators
+**Date:** Week 4 · **Status:** ACCEPTED · **Measured by:** Track 2 · **For:** T1.3, T3.2, Week 6
+
+Choosing the distance axis for the Week 4 coverage-failure figure meant computing all
+five candidates across the MRI grid. They are not five measures. Over **all 153 pairs**
+of a 3-family × 6-acceleration grid at 256²:
+
+| pair | agreement |
+|---|---|
+| `null_space_projection` vs `sampling_support` | identical to **1.1e-16** |
+| `chordal_subspace` × √2 vs `sampling_support` | identical to **1.1e-16** |
+| `operator_norm` vs `sampling_support` | within **9.1e-4**, Spearman ρ = 0.999915 |
+
+**This is a property of the operator class, not of the implementations.** An MRI
+undersampling operator is a diagonal projection in k-space. Which frequencies it keeps
+*is* its range, so "how much do the sampling supports differ" and "how much do the null
+spaces differ" are the same question asked twice, and the chordal distance between two
+coordinate subspaces is that quantity over √2 by construction.
+
+**Consequence, and it is a research one rather than a cleanup.** The MRI grid cannot
+rank these measures against each other. T1.3 asks which distance best predicts the
+coverage gap and T3.2 lists candidates to compare; on this operator class any ranking
+among these four is numerical noise, and a Week 6 result that picked a winner here would
+not survive a reviewer who noticed they are the same function. The comparison needs an
+operator class where range and null space are not determined by a coordinate mask — CT
+view subsampling (Week 7), where the projection is not diagonal.
+
+**The fifth candidate could not be computed at all.** `spectral_divergence` raised for
+every complex operator, which is every MRI operator (P-28, now fixed). So the one measure
+that might have separated them was also the one nothing had ever run on this class.
+
+**A second finding, for the grid design.** Distance from `mri.random1d.R2`:
+
+| | R2 | R4 | R8 |
+|---|---|---|---|
+| `random1d` | 0.000 | 0.500 | 0.612 |
+| `equispaced1d` | 0.644 | 0.656 | **0.650** |
+| `variable_density2d` | 0.681 | 0.687 | 0.693 |
+
+Changing the mask family **saturates** the distance: any family change costs ~0.65 at
+once, after which acceleration contributes ~0.01 and not even monotonically — equispaced
+R4 sits *above* R8. So the graded part of the axis is entirely within-family, and a
+denser acceleration sweep across families buys near-duplicate points. This is why the
+Week 4 config is 3 × 3 rather than the drafted 3 × 6, quite apart from the compute.
+
+*Alternative:* report a single distance and drop the others. Rejected — the degeneracy
+is the finding, and recording only one measure would hide it from Week 6.
+
+*Affects:* T1.3, T3.2, T3.4 (L2 prefers `null_space_dim`), Week 6 Tool 2, Week 7 CT.
+
+---
+
 ## Template
 
 ```
