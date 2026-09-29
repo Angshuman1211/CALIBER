@@ -42,7 +42,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from caliber.calibration import apply_threshold, split_conformal_threshold
+from caliber.calibration import apply_threshold, split_threshold
+from caliber.calibration.conformal import min_positives
 from caliber.evaluation import (
     cluster_bootstrap_coverage,
     clusters_for_paired_precision,
@@ -107,8 +108,15 @@ def main(argv: list[str] | None = None) -> int:
     flagged_parts = []
     for oid, part in evaluate.groupby("operator_id", observed=True):
         own = calib_pool[calib_pool["operator_id"] == oid]
-        tau = split_conformal_threshold(own["score"], own["label"], alpha=args.alpha)
-        flagged = apply_threshold(part, tau, "score")
+        result = split_threshold(own["score"], own["label"], alpha=args.alpha)
+        if not result.certifiable:
+            print(
+                f"[sizing] NOT CERTIFIABLE  {oid} has {result.n_positives} positives, "
+                f"under the {min_positives(args.alpha)} needed at alpha={args.alpha}; "
+                "it flags everything and its coverage is not a guarantee (D-026)",
+                file=sys.stderr,
+            )
+        flagged = apply_threshold(part, result.threshold, "score")
         flagged_parts.append(flagged)
         stats = cluster_bootstrap_coverage(
             flagged["flag"], flagged["label"], flagged[args.cluster]

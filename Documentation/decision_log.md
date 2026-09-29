@@ -897,7 +897,7 @@ inventory should live back in `data/` and it goes back.
 ---
 
 ## D-026 · Reference `split_conformal_threshold` over-certifies thin groups
-**Date:** Week 2 · **Status:** OPEN · **Raised by:** Track 1 (T1.2) · **Owner:** Track 2 · **Track 1 entry:** D32
+**Date:** Week 2 · **Status:** RESOLVED (Week 4) · **Raised by:** Track 1 (T1.2) · **Owner:** Track 2 · **Track 1 entry:** D32
 
 Two issues in `calibration/__init__.py`, found while T1.2 superseded it.
 
@@ -920,6 +920,32 @@ now floors and returns `certifiable=False` for thin groups.
 floor and fix the docstring. Worth doing before someone reuses it in good faith.
 
 *Affects:* T1.2, `calibration/__init__.py`, Week 4 harness.
+
+**Resolved, Week 4, by taking the suggested fix.** Both reference functions are now thin
+wrappers over `conformal.split_threshold` rather than a second implementation of the same
+rule, which is what let the two drift in the first place.
+
+Two behaviours changed, both toward correctness:
+
+* **`ceil` to `floor`.** Thin groups now come back `certifiable=False` instead of a
+  plausible-looking threshold. On the Week 3 bank the thresholds move by about **0.001**
+  and no reported coverage number changes, because every group there carries 2,000–3,800
+  positives. That is precisely why this survived four weeks: the defect is invisible where
+  the data is thick and wrong where a reviewer would look hardest.
+* **The empty case flipped sign.** With no positives at all the old code returned `+inf` —
+  flag nothing, a 100% miss rate presented as a successful calibration. The delegate
+  returns `-inf`: flag everything, valid and visibly useless. This was not in the original
+  report and is the more dangerous of the two, since `+inf` fails in the flattering
+  direction.
+
+The float return cannot carry `certifiable`, so `mondrian_calibration_results` was added
+alongside it, and `analyse_bank.py` and `sizing.py` now print a **NOT CERTIFIABLE** line
+naming any group with fewer than `min_positives(alpha)` positives. Flooring alone would
+have made the numbers correct while leaving them just as silent.
+
+Pinned by four tests in `test_calibration.py`, including the `n=1, alpha=0.1` case from
+this entry and an equivalence check against the delegate across three sizes and three
+alphas — so the two cannot drift apart again.
 
 ---
 

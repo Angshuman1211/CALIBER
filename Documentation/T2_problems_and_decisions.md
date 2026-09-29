@@ -1282,7 +1282,7 @@ traced to the decision that settled it without opening the log.
 | [D-023](decision_log.md) | One calibration group per (family, acceleration); seeds are members | Week 1 | RESOLVED |
 | [D-024](decision_log.md) | `NullSpaceNoiseSampler` leaks ~4% of its "hallucination" into the measured component | Week 2 | RESOLVED — fixed, and it moved a headline number |
 | [D-025](decision_log.md) | `data/README.md` removed; all data documentation consolidated into `data_access.md` | Week 2 | DONE |
-| [D-026](decision_log.md) | Reference `split_conformal_threshold` over-certifies thin groups | Week 2 | OPEN |
+| [D-026](decision_log.md) | Reference `split_conformal_threshold` over-certifies thin groups | Week 2 | RESOLVED Week 4 — delegates to `conformal.split_threshold` |
 | [D-027](decision_log.md) | fastMRI `singlecoil_val` has 199 volumes but only 96 patients; the split must be by `patient_id` | Week 1 | ACCEPTED — fixed |
 | [D-028](decision_log.md) | Fixing D-024 reversed the direction of the naive-transfer coverage failure | Week 1 | ACCEPTED — recorded, not yet re-measured on a real solver |
 | [D-029](decision_log.md) | Solver algorithms are separated from the network that drives them | Week 2 | ACCEPTED |
