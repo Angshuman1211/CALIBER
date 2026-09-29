@@ -456,6 +456,40 @@ Recorded here because it is the same shape as the two findings that have already
 
 ---
 
+### D45 — The headline estimand is a paired within-patient difference; the design is crossed, so the patient budget is not divided [T1.4, answers P-23]
+Track 2's P-23 concluded that fastMRI `singlecoil_val` "cannot support a per-operator coverage claim at any grid size", handed Track 1 four options, and stopped. **The conclusion is right about per-operator coverage and wrong about the project's claim.** Full working in `T1.4_experimental_design.md`; three rulings.
+
+**1. Three contrasts, and the headline is not the one P-23 sized.** (A) coverage at one operator vs nominal — capped at ±0.125 by the patient count, unrescuable, kept as descriptive with its interval. (B) coverage at the deployment operator minus at the calibration operator — the headline figure's y-axis. (C) coverage under two calibrations at one operator — the central claim, "the remedy restores what naive transfer loses". A varies nothing and cancels nothing; B cancels the patient; C cancels the patient *and* the operator. P-23 sized A.
+
+**2. The design is fully crossed, so the budget is not divided.** Retrospective undersampling applies every mask to the same volume (Sec. 13) — verified on both banks in the repo, every operator sees every item. P-23's grid table divides ~40 test patients by `k` and concludes six operators give ±0.305; each operator in fact sees all ~40, so the per-operator half-width stays put whatever the grid holds. **Adding operators costs compute, not precision.** `scripts/sizing.py` fixed; `is_crossed()` checks it per bank rather than asserting it, since a split design would make the division correct again.
+
+**3. B and C are paired, and the patient's difficulty cancels.** `Var(A−B) = Var(A)+Var(B)−2Cov(A,B)`, and the dominant term in each variance is how hard that patient's anatomy is — shared, so it cancels. Measured on a controlled sweep, with `σ` the between-patient SD:
+
+| `σ` | 0.00 | 0.05 | 0.10 | 0.20 |
+|---|---|---|---|---|
+| paired SE | 0.0130 | 0.0128 | 0.0130 | 0.0132 |
+| unpaired SE | 0.0131 | 0.0181 | 0.0251 | 0.0385 |
+| narrower by | 1.00× | 1.41× | 1.93× | **2.92×** |
+
+**The paired SE is flat** — it does not grow with heterogeneity at all, because heterogeneity is what the pairing removes.
+
+**The gain is a property of the substrate, so it is reported per bank and never assumed.** On phantoms it is 1.0–1.25×, correctly, because Shepp-Logan variants are nearly identical. On the Week 3 fastMRI bank it is **unmeasured here** — that bank is not redistributable and stays on Track 2's machine; it is one `sizing.py` command for them. I am not claiming the gain, I am claiming the estimand.
+
+**The demonstration that needs no substrate:** coverage at an operator minus coverage at the *same* operator is zero with no uncertainty. The paired estimator returns exactly that; differencing two independent bootstraps returns SE ≈ 0.014 for a quantity that cannot vary. That is the error P-23's grid table was propagating, isolated.
+
+**What this does not fix, stated so the reprieve is not over-read:** contrast A is still capped; this is not more data; clustering is still by volume not patient (D-027), so every interval is optimistic by ~2×; and nothing becomes reportable, since the prior is still a face model (D-016).
+
+**Adopted from P-23's own menu:** option 2 — flag area becomes co-headline rather than a footnote, for exactly the reason Track 2 gave, and reinforced by P-21's finding that the failure mode under operator shift is efficiency rather than validity.
+
+---
+
+### D46 — The adjoint gate was calibrated to one machine's rounding; fixed as D-050 [T1.5]
+`test_a_correct_adjoint_stays_far_below_the_tolerance` asserted a flat `1e-6` and failed here at 128² (1.265e-06). The adjoint is correct — a correct operator scatters 3.6e-07 to 1.3e-06 across accelerations and mask seeds at that size, and 256² scores *lower* than 128², so there is no structural trend. The constant sat in the middle of the scatter. Bounded by `sqrt(N)·eps_float32` instead, which is the size the float32 summation error actually has; the correct operator now sits at 2–8% of the bound at every size and the broken-adjoint case is still separated by 30×.
+
+Recorded on this side because it is the third instance of the same shape in this project — a number calibrated to one environment and read as a property of the code (D29's `.real` cast, D36's ignore pattern, now a tolerance). P-27 had already made the *probe* deterministic; the *tolerance* was still machine-specific, one layer out.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)

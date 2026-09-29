@@ -1836,6 +1836,108 @@ without being added here.
 
 ---
 
+## D-049 · P-23 answered: the headline estimand is paired, and the crossed design does not divide the patient budget
+**Date:** Week 4 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.4) · **Answers:** P-23
+
+P-23 concluded that fastMRI `singlecoil_val` cannot support a per-operator coverage claim at
+any grid size, listed four options and left the choice to Track 1. **The measurement is
+right, the conclusion is right about per-operator coverage, and it is the estimand that was
+wrong.** Full working in `T1.4_experimental_design.md`; Track 1's entry is D45.
+
+**Two corrections to the Week 4 sizing table, one of them pure arithmetic.**
+
+**(a) The design is crossed, so the budget is not divided.** Retrospective undersampling
+applies every mask to the *same* volume (Sec. 13). Verified on both banks in the repository:
+every operator sees every item. `sizing.py` divided ~40 test patients by `k` operators and
+concluded a six-operator grid reaches ±0.305; each operator in fact sees all ~40, so the
+per-operator half-width is unchanged by grid size. **Adding operators costs compute, not
+precision** — which reverses the script's headline advice. Now branched on `is_crossed()`
+rather than assumed, because a design that reconstructed different patients at different
+operators would make the division correct again.
+
+**(b) The headline is a difference, and differences pair.** The central figure is coverage
+*gap* against operator distance, not k coverages side by side. The same patient at both
+operators makes it a within-patient contrast, and the patient's own difficulty — the dominant
+variance term — cancels:
+
+| between-patient SD `σ` | 0.00 | 0.05 | 0.10 | 0.20 |
+|---|---|---|---|---|
+| paired SE | 0.0130 | 0.0128 | 0.0130 | 0.0132 |
+| unpaired SE | 0.0131 | 0.0181 | 0.0251 | 0.0385 |
+| narrower by | 1.00× | 1.41× | 1.93× | 2.92× |
+
+The paired SE is **flat in `σ`**. Cleanest demonstration, no substrate needed: coverage at an
+operator minus coverage at the *same* operator is zero with no uncertainty, and the paired
+estimator returns exactly that where differencing two independent bootstraps returns
+SE ≈ 0.014 for a quantity that cannot vary.
+
+**What Track 2 should run.** `scripts/sizing.py` now reports the crossed-design check, the
+paired gap curve, the pairing factor, and paired sizing alongside the per-operator numbers.
+On the Week 3 bank — which only exists on your machine (D-045), so this is not measured here:
+
+```
+PYTHONPATH=src python3 scripts/sizing.py runs/w03_mri_fixed_operator-fc534c8f4d898e1b \
+    --calibration-operator mri.random1d.R2.c0.08.s0
+```
+
+**The pairing factor is a property of the substrate and is reported per bank, never assumed.**
+On phantoms it is 1.0–1.25× because Shepp-Logan variants are nearly identical; real knee
+anatomy across 30 patients is the opposite case, and the number that matters is the one your
+bank gives.
+
+**Adopted from P-23's menu:** option 2. Flag area becomes co-headline rather than a footnote —
+your reasoning, reinforced by P-21's finding that the failure mode is efficiency rather than
+validity.
+
+**Not adopted:** option 1 (pooling with an operator term) is the regression form of the same
+cancellation and is kept in reserve — the paired bootstrap is assumption-lighter and needs no
+model of the operator effect. Option 4 (add `singlecoil_train`) stays the only lever on
+contrast A and is unaffected by any of this.
+
+*Cost:* nothing in the pipeline; it is a change of reported quantity and one script fix.
+Contrast A really is capped at ±0.125 and this does not change it.
+
+*Affects:* P-23, P-21, T1.4, T2.5, T2.6, T3.6, O3, Sec. 12, Sec. 15.2, Week 4 grid sizing.
+
+---
+
+## D-050 · The adjoint gate is size-aware, because a flat 1e-6 was a knife edge
+**Date:** Week 4 · **Status:** ACCEPTED · **Found by:** Track 1 · **Fixes:** a non-portable test
+
+`test_a_correct_adjoint_stays_far_below_the_tolerance` asserted
+`adjoint_test() < 1e-6` at 32², 128² and 256². It passes on the machine it was written on
+and **fails at 128² here** (1.265e-06).
+
+**The adjoint is correct; the gate is wrong.** Measured at 128², a correct operator scatters
+across accelerations and mask seeds:
+
+| | seed 0 | seed 1 | seed 2 |
+|---|---|---|---|
+| R=2 | 5.40e-07 | 5.37e-07 | 5.88e-07 |
+| R=4 | **1.26e-06** | 6.10e-07 | 7.09e-07 |
+| R=8 | 3.57e-07 | 8.41e-07 | 8.06e-07 |
+
+The constant sits in the middle of the scatter, so whether it passes depends on the
+acceleration, the mask seed and the platform's FFT summation order. There is no size trend
+that would suggest a structural error — 256² scores 5.95e-07, *lower* than 128².
+
+**Fix:** bound it by `sqrt(N)·eps_float32`, which is the size the error being measured
+actually has — float32 summation over `N` terms. Still strict: the correct operator sits at
+2–8% of the bound at every size, and at 256² the bound is 3.1e-5, some 30× below the ~1e-3
+that the adjacent broken-adjoint test requires. So it separates the two cases by more than
+the flat constant did, while no longer depending on the machine.
+
+This is P-27's lesson one layer out. That entry made the *probe* deterministic; the
+*tolerance* was still calibrated to one platform's rounding, which is the same class of
+hidden dependency one level up.
+
+*Alternative:* raise the constant to 2e-6. Rejected — it would be calibrated to this machine
+instead of that one, and would silently loosen the 32² case by 20×.
+
+*Affects:* T2.1, the runner's health gate, P-27.
+
+---
+
 ## Template
 
 ```

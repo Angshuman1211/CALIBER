@@ -1167,7 +1167,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 48 entries, so a problem in Part I can be
+What lives here instead is the index — 50 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1220,3 +1220,5 @@ traced to the decision that settled it without opening the log.
 | [D-046](decision_log.md) | Track 3 is unblocked on L: the weights were never needed | Week 3 | Track 1's entry |
 | [D-047](decision_log.md) | Config overrides are accepted silently, including typos | Week 3 | **RESOLVED by D-048** — Track 1's report, Track 2's bug |
 | [D-048](decision_log.md) | An override must name something the pipeline reads, or it is refused | Week 4 | ACCEPTED |
+| [D-049](decision_log.md) | P-23 answered: the headline estimand is paired, and the crossed design does not divide the patient budget | Week 4 | Track 1's entry — answers P-23 |
+| [D-050](decision_log.md) | The adjoint gate is size-aware, because a flat 1e-6 was a knife edge | Week 4 | Track 1's fix to a non-portable test |
