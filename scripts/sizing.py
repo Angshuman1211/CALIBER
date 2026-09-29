@@ -10,11 +10,25 @@ Two constraints decide the grid, and only one of them is compute:
 * **Precision** — how many patients per operator a target interval needs, measured from a
   real bank rather than assumed.
 * **A hard ceiling** — fastMRI ``singlecoil_val`` has **96 patients**, so the test side
-  holds roughly 40. No amount of CPU time moves that. Splitting it across *k* operators
-  divides it.
+  holds roughly 40. No amount of CPU time moves that.
 
-This script reports both, for a given bank, so the choice is made with numbers. It decides
-nothing: how to spend the budget is the protocol's call (T1.4, Track 1).
+**Two corrections from T1.4 (D45), and the reason this script no longer says the grid is
+hopeless.** Its first version divided the patient budget by the number of operators and
+concluded that a six-operator grid could only reach ±0.305.
+
+1. **The design is fully crossed, so the budget is not divided.** Retrospective
+   undersampling applies every mask to the *same* volume (Sec. 13), so every operator sees
+   every patient — verified on both banks in the repository, and now checked here rather
+   than assumed (`is_crossed`). Each operator gets all ~40 test patients whatever the grid
+   size, so the per-operator half-width stays where one operator puts it.
+2. **The headline estimand is the coverage *gap*, and it is paired.** The same patient
+   appears at both operators, so the difference is a within-patient contrast and the
+   patient's own difficulty — the dominant variance term — cancels. Sizing the study
+   against a single operator's SE asks for a precision the claim never needed. The paired
+   row below is the one the protocol is sized against.
+
+This script reports all of it, for a given bank, so the choice is made with numbers. It
+decides nothing: how to spend the budget is the protocol's call (T1.4, Track 1).
 
     python scripts/sizing.py runs/<run_id> --calibration-operator mri.random1d.R2.c0.08.s0
 """
@@ -26,11 +40,16 @@ import json
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 from caliber.calibration import apply_threshold, split_conformal_threshold
 from caliber.evaluation import (
     cluster_bootstrap_coverage,
+    clusters_for_paired_precision,
     clusters_for_precision,
     derive_score_and_label,
+    is_crossed,
+    paired_gap_curve,
 )
 from caliber.scorebank import read_bank, read_manifest
 
@@ -75,11 +94,17 @@ def main(argv: list[str] | None = None) -> int:
         print("[sizing] WARNING          single-split bank; thresholds are in-sample "
               "(P-23)", file=sys.stderr)
 
+    crossing = is_crossed(evaluate, cluster_col=args.cluster)
+    print(f"[sizing] design           {'CROSSED' if crossing['crossed'] else 'NOT crossed'} "
+          f"— {crossing['reason']} ({crossing['n_shared']} shared clusters)")
+
     rows = []
+    flagged_parts = []
     for oid, part in evaluate.groupby("operator_id", observed=True):
         own = calib_pool[calib_pool["operator_id"] == oid]
         tau = split_conformal_threshold(own["score"], own["label"], alpha=args.alpha)
         flagged = apply_threshold(part, tau, "score")
+        flagged_parts.append(flagged)
         stats = cluster_bootstrap_coverage(
             flagged["flag"], flagged["label"], flagged[args.cluster]
         )
@@ -115,10 +140,43 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{'operators':>12}{'test patients each':>22}{'achievable half-width':>24}")
     print("-" * 58)
     for k in (1, 2, 3, 6, 12):
-        per_op = budget / k
-        # invert the same 1/sqrt(n) scaling
+        # In a crossed design every operator sees every test patient, so the budget is
+        # NOT divided by k (D45). The earlier version of this table divided it and
+        # concluded a six-operator grid was hopeless; that was the arithmetic of a
+        # split design, not this one. Where the design is genuinely not crossed, the
+        # division is right again -- hence the branch rather than a constant.
+        per_op = budget if crossing["crossed"] else budget / k
         half = 1.96 * worst["se"] * (worst["n_clusters"] / per_op) ** 0.5
         print(f"{k:>12}{per_op:>22.0f}{half:>24.3f}")
+    if crossing["crossed"]:
+        print("       (crossed design: every operator sees every test patient, so adding"
+              "\n        operators costs compute, not precision)")
+
+    # -- the estimand the protocol is actually sized against (D45) ----------------
+    paired = paired_gap_curve(
+        pd.concat(flagged_parts, ignore_index=True), calib_op, cluster_col=args.cluster
+    )
+    deployments = paired[paired["deployment_operator"] != calib_op]
+    print(f"\npaired coverage gap against {calib_op}:")
+    print(paired.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+    if len(deployments):
+        worst_gap = deployments.loc[deployments["se_paired"].idxmax()]
+        print(
+            f"\nthe headline claim is sized on the PAIRED se, not the per-operator one:\n"
+            f"{'target half-width':>18}{'clusters needed (paired)':>26}"
+            f"{'vs per-operator':>18}"
+        )
+        for target in TARGETS:
+            n_paired = clusters_for_paired_precision(
+                float(worst_gap["se_paired"]), int(worst_gap["n_clusters"]), target
+            )
+            print(f"{target:>18.2f}{n_paired:>26}{needs[target]:>18}")
+        print(
+            f"\npairing is {worst_gap['narrower_by']:.2f}x narrower than differencing two "
+            "independent estimates here.\n"
+            "That factor is a property of how much variance is between patients rather "
+            "than within them,\nso it is reported per bank and never assumed."
+        )
 
     print(
         "\nRead this as an order of magnitude, not a power calculation: the SE is "
