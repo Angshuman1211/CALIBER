@@ -21,6 +21,7 @@ from caliber.operators import (
     compute_distance,
 )
 from caliber.operators.mri import MASK_FAMILIES
+from caliber.operators.registry import build_operator
 
 SHAPE = (64, 64)
 
@@ -285,3 +286,64 @@ def test_a_correct_adjoint_stays_far_below_the_tolerance(size):
     op = MRIUndersamplingOperator((size, size), family="random1d", acceleration=4)
     bound = math.sqrt(size * size) * float(np.finfo(np.float32).eps)
     assert op.adjoint_test() < bound
+
+
+# -- P-28 / D-052: the distance measures on the MRI mask grid ------------------
+
+
+def test_spectral_divergence_runs_on_a_complex_operator():
+    """It raised for every MRI operator, which is every complex one (P-28).
+
+    `estimate_spectrum` flattened the sketch to a real view up front, doubling the
+    row count, then tried to reshape those rows back into the measurement shape on
+    the next power iteration. At 256 x 256 that is 131,072 values into a 65,536 slot.
+    Nothing caught it because no test computed this measure on an MRI operator, and
+    it is the only candidate distance that is not degenerate there.
+    """
+    a = build_operator(
+        {"modality": "mri", "family": "random1d", "acceleration": 2,
+         "center_fraction": 0.08, "mask_seed": 0}, (64, 64),
+    )
+    b = build_operator(
+        {"modality": "mri", "family": "equispaced1d", "acceleration": 8,
+         "center_fraction": 0.08, "mask_seed": 0}, (64, 64),
+    )
+    assert a.forward(torch.randn(64, 64)).is_complex(), "premise: MRI forward is complex"
+
+    d = compute_distance(a, b, "spectral_divergence", n_components=8)
+    assert np.isfinite(d) and d > 0
+    assert compute_distance(a, a, "spectral_divergence", n_components=8) == 0.0
+
+
+def test_the_mask_distances_are_one_measure_wearing_four_hats():
+    """Four of the five candidate distances coincide on binary-mask operators.
+
+    Measured over every pair of a 3-family x 3-acceleration grid: the null-space
+    projection distance and the sampling-support difference agree to machine epsilon,
+    and the chordal subspace distance is that same quantity over sqrt(2). This is a
+    property of the operator class, not of the implementations -- a mask operator is
+    a diagonal projection, so "which frequencies differ" determines the null space
+    exactly.
+
+    It is pinned as a test because the consequence is a research one: a Week 4 grid
+    cannot rank these measures against each other, and any apparent winner would be
+    numerical noise. See D-052.
+    """
+    import itertools
+
+    ops = [
+        build_operator(
+            {"modality": "mri", "family": f, "acceleration": r,
+             "center_fraction": 0.08, "mask_seed": 0}, (64, 64),
+        )
+        for f in ("random1d", "equispaced1d", "variable_density2d")
+        for r in (2, 4, 8)
+    ]
+    for a, b in itertools.combinations(ops, 2):
+        support = compute_distance(a, b, "sampling_support")
+        assert compute_distance(a, b, "null_space_projection") == pytest.approx(
+            support, abs=1e-12
+        )
+        assert compute_distance(a, b, "chordal_subspace") * np.sqrt(2) == pytest.approx(
+            support, abs=1e-12
+        )

@@ -42,7 +42,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from caliber.calibration import apply_threshold, split_conformal_threshold
+from caliber.calibration import apply_threshold, split_threshold
+from caliber.calibration.conformal import min_positives
 from caliber.evaluation import (
     cluster_bootstrap_coverage,
     clusters_for_paired_precision,
@@ -55,6 +56,11 @@ from caliber.scorebank import read_bank, read_manifest
 
 #: fastMRI singlecoil_val, measured: 199 volumes from 96 distinct patients (D-027).
 FASTMRI_PATIENTS = 96
+#: How many of those land on the test side at the default ``calib_fraction`` -- counted
+#: on the real patient list, not assumed. ``test_split_golden.py`` pins the calibration
+#: side at 52, so the test side is 44. The earlier ``96 * 0.42 = 40`` here was a guess,
+#: and it under-reported the achievable half-width by about 6%.
+FASTMRI_TEST_PATIENTS = 44
 #: Interval half-widths worth asking about. 0.10 distinguishes "restored" from "failed";
 #: 0.05 is what a published coverage claim would want.
 TARGETS = (0.10, 0.05, 0.02)
@@ -102,8 +108,15 @@ def main(argv: list[str] | None = None) -> int:
     flagged_parts = []
     for oid, part in evaluate.groupby("operator_id", observed=True):
         own = calib_pool[calib_pool["operator_id"] == oid]
-        tau = split_conformal_threshold(own["score"], own["label"], alpha=args.alpha)
-        flagged = apply_threshold(part, tau, "score")
+        result = split_threshold(own["score"], own["label"], alpha=args.alpha)
+        if not result.certifiable:
+            print(
+                f"[sizing] NOT CERTIFIABLE  {oid} has {result.n_positives} positives, "
+                f"under the {min_positives(args.alpha)} needed at alpha={args.alpha}; "
+                "it flags everything and its coverage is not a guarantee (D-026)",
+                file=sys.stderr,
+            )
+        flagged = apply_threshold(part, result.threshold, "score")
         flagged_parts.append(flagged)
         stats = cluster_bootstrap_coverage(
             flagged["flag"], flagged["label"], flagged[args.cluster]
@@ -129,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
               f"{'as % of test patients':>26}")
     print("\n" + header)
     print("-" * len(header))
-    budget = FASTMRI_PATIENTS * 0.42          # the test side, at this project's split
+    budget = FASTMRI_TEST_PATIENTS            # the test side, at this project's split
     needs = {}
     for target in TARGETS:
         n = clusters_for_precision(worst["se"], worst["n_clusters"], target)

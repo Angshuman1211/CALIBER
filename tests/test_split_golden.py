@@ -19,6 +19,7 @@ be recorded) and regenerating these values in the same commit.
 from __future__ import annotations
 
 import hashlib
+import sys
 from pathlib import Path
 
 import pytest
@@ -90,3 +91,15 @@ def test_real_fastmri_assignment_matches_the_week3_bank():
     assert sum(split_for(p) == "calib" for p in patients) == REAL_N_CALIB
     lines = "\n".join(f"{p}:{split_for(p)}" for p in sorted(patients))
     assert hashlib.sha256(lines.encode()).hexdigest() == REAL_ASSIGNMENT_DIGEST
+
+
+def test_the_sizing_scripts_test_budget_matches_the_pinned_split():
+    """`sizing.py` had this as `96 * 0.42 = 40`, a guess, and every half-width it
+    printed inherited the error. Tie the constant to the pinned assignment so the next
+    edit cannot quietly reintroduce an estimate where a counted number exists.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import sizing
+
+    assert sizing.FASTMRI_PATIENTS == REAL_N_PATIENTS
+    assert sizing.FASTMRI_TEST_PATIENTS == REAL_N_PATIENTS - REAL_N_CALIB

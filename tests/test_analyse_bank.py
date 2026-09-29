@@ -135,8 +135,8 @@ def test_every_threshold_is_fitted_on_calibration_rows_and_scored_on_test_rows(
     bank_df = read_bank(two_split_bank)
     fitted_on, scored_on = [], []
 
-    real_split_conformal = analyse_bank.split_conformal_threshold
-    real_mondrian = analyse_bank.mondrian_thresholds
+    real_split_conformal = analyse_bank.split_threshold
+    real_mondrian = analyse_bank.mondrian_calibration_results
     real_evaluate = analyse_bank.evaluate_groups
 
     def spy_split_conformal(scores, labels, alpha):
@@ -151,8 +151,8 @@ def test_every_threshold_is_fitted_on_calibration_rows_and_scored_on_test_rows(
         scored_on.append(set(df["split"]))
         return real_evaluate(df, *args, **kwargs)
 
-    monkeypatch.setattr(analyse_bank, "split_conformal_threshold", spy_split_conformal)
-    monkeypatch.setattr(analyse_bank, "mondrian_thresholds", spy_mondrian)
+    monkeypatch.setattr(analyse_bank, "split_threshold", spy_split_conformal)
+    monkeypatch.setattr(analyse_bank, "mondrian_calibration_results", spy_mondrian)
     monkeypatch.setattr(analyse_bank, "evaluate_groups", spy_evaluate)
 
     assert analyse_bank.main([str(two_split_bank), "--label-threshold", "0.05"]) == 0

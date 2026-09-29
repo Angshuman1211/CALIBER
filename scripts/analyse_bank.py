@@ -24,7 +24,12 @@ from pathlib import Path
 import pandas as pd
 import torch
 
-from caliber.calibration import apply_threshold, mondrian_thresholds, split_conformal_threshold
+from caliber.calibration import (
+    apply_threshold,
+    mondrian_calibration_results,
+    split_threshold,
+)
+from caliber.calibration.conformal import min_positives
 from caliber.evaluation import (
     coverage_curve,
     derive_score_and_label,
@@ -171,7 +176,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # 1. Naive transfer — one threshold from the calibration operator, used everywhere.
     calib = calib_pool[calib_pool["operator_id"] == calib_op]
-    tau = split_conformal_threshold(calib["score"], calib["label"], alpha=args.alpha)
+    uncertifiable: list[str] = []
+    naive_result = split_threshold(calib["score"], calib["label"], alpha=args.alpha)
+    tau = naive_result.threshold
+    if not naive_result.certifiable:
+        uncertifiable.append(f"naive/{calib_op} ({naive_result.n_positives} positives)")
     naive = evaluate_groups(
         apply_threshold(evaluate, tau, "score"), by=("operator_id",), nominal=nominal
     )
@@ -181,21 +190,44 @@ def main(argv: list[str] | None = None) -> int:
     matched_parts = []
     for oid, part in evaluate.groupby("operator_id"):
         own = calib_pool[calib_pool["operator_id"] == oid]
-        t = split_conformal_threshold(own["score"], own["label"], alpha=args.alpha)
-        matched_parts.append(apply_threshold(part, t, "score"))
+        result = split_threshold(own["score"], own["label"], alpha=args.alpha)
+        if not result.certifiable:
+            uncertifiable.append(f"matched/{oid} ({result.n_positives} positives)")
+        matched_parts.append(apply_threshold(part, result.threshold, "score"))
     matched = evaluate_groups(
         pd.concat(matched_parts), by=("operator_id",), nominal=nominal
     )
     matched["method"] = "matched_per_operator"
 
     # 3. Group-conditional (Mondrian) — the guaranteed backbone.
-    taus = mondrian_thresholds(calib_pool, "score", "label", alpha=args.alpha)
+    mondrian_results = mondrian_calibration_results(
+        calib_pool, "score", "label", alpha=args.alpha
+    )
+    uncertifiable += [
+        f"group_conditional/{g} ({r.n_positives} positives)"
+        for g, r in sorted(mondrian_results.items())
+        if not r.certifiable
+    ]
+    taus = {g: r.threshold for g, r in mondrian_results.items()}
     mondrian = evaluate_groups(
         apply_threshold(evaluate, taus, "score"), by=("operator_id",), nominal=nominal
     )
     mondrian["method"] = "group_conditional"
 
     results = pd.concat([naive, matched, mondrian], ignore_index=True)
+
+    # D-026: a group too thin to certify lands at -inf, which flags every region --
+    # valid, useless, and previously silent. The old reference implementation rounded
+    # up instead and returned a plausible-looking threshold whose true miss rate could
+    # be 1/2. Say so here rather than letting the number be read as calibrated.
+    if uncertifiable:
+        print(
+            f"[analyse] NOT CERTIFIABLE  fewer than {min_positives(args.alpha)} "
+            f"positives at alpha={args.alpha}, so these flag everything and their "
+            f"coverage is not a conformal guarantee:\n           "
+            + "\n           ".join(uncertifiable),
+            file=sys.stderr,
+        )
 
     # Operator distance, computed from the registry alone.
     ops = rebuild_operators(manifest)

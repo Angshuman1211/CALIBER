@@ -257,3 +257,73 @@ def test_unknown_group_is_flagged_wholesale_not_left_unflagged():
         {"score": [0.0, 5.0], "label": [True, True], "calib_group": ["mri/new/R32"] * 2}
     )
     assert apply_flags(unseen, report)["flag"].all()
+
+
+# -- D-026: the reference wrappers delegate instead of rounding up -------------
+
+
+def test_the_reference_wrapper_no_longer_certifies_a_single_positive():
+    """The case D-026 names, and the reason it mattered.
+
+    The old implementation took the `ceil((n+1)*alpha)`-th smallest positive score. At
+    `n=1, alpha=0.1` that is the single positive score itself, so a new positive falls
+    below it half the time: a true miss rate of 1/2 against a promised 0.1, returned as
+    an ordinary float with nothing marking it as junk. Flooring sends it to -inf, which
+    flags everything -- valid, useless, and visibly so.
+    """
+    from caliber.calibration import split_conformal_threshold
+
+    assert split_conformal_threshold(np.array([5.0]), np.array([True]), 0.1) == -np.inf
+
+
+def test_no_positives_flags_everything_rather_than_nothing():
+    """The other behaviour that changed, and the more dangerous of the two.
+
+    With no hallucinated calibration regions the old code returned `+inf`, flagging
+    nothing -- a 100% miss rate presented as a successful calibration. `-inf` is the
+    conservative direction: catch everything, certify nothing.
+    """
+    from caliber.calibration import split_conformal_threshold
+
+    assert split_conformal_threshold(np.array([5.0]), np.array([False]), 0.1) == -np.inf
+
+
+def test_the_wrapper_and_the_real_implementation_cannot_drift():
+    """Two implementations of one rule was the whole defect; assert there is one."""
+    from caliber.calibration import split_conformal_threshold
+    from caliber.calibration.conformal import split_threshold
+
+    rng = np.random.default_rng(7)
+    for n in (12, 60, 500):
+        scores = rng.normal(size=n)
+        labels = rng.random(n) < 0.5
+        for alpha in (0.05, 0.1, 0.2):
+            assert split_conformal_threshold(scores, labels, alpha) == (
+                split_threshold(scores, labels, alpha=alpha).threshold
+            )
+
+
+def test_mondrian_results_expose_the_flag_the_float_dict_cannot():
+    """A thin group has to be reportable as thin, not just quietly wrong."""
+    import pandas as pd
+
+    from caliber.calibration import mondrian_calibration_results, mondrian_thresholds
+    from caliber.calibration.conformal import min_positives
+
+    rng = np.random.default_rng(0)
+    df = pd.DataFrame(
+        {
+            "score": rng.normal(size=200),
+            "label": np.ones(200, dtype=bool),
+            "calib_group": ["thick"] * 195 + ["thin"] * 5,
+        }
+    )
+    results = mondrian_calibration_results(df, "score", "label")
+    assert results["thick"].certifiable
+    assert not results["thin"].certifiable
+    assert results["thin"].n_positives < min_positives(0.1)
+
+    # and the float form stays consistent with it
+    taus = mondrian_thresholds(df, "score", "label")
+    assert taus == {g: r.threshold for g, r in results.items()}
+    assert taus["thin"] == -np.inf

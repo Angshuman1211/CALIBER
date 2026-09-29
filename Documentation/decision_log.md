@@ -897,7 +897,7 @@ inventory should live back in `data/` and it goes back.
 ---
 
 ## D-026 · Reference `split_conformal_threshold` over-certifies thin groups
-**Date:** Week 2 · **Status:** OPEN · **Raised by:** Track 1 (T1.2) · **Owner:** Track 2 · **Track 1 entry:** D32
+**Date:** Week 2 · **Status:** RESOLVED (Week 4) · **Raised by:** Track 1 (T1.2) · **Owner:** Track 2 · **Track 1 entry:** D32
 
 Two issues in `calibration/__init__.py`, found while T1.2 superseded it.
 
@@ -920,6 +920,32 @@ now floors and returns `certifiable=False` for thin groups.
 floor and fix the docstring. Worth doing before someone reuses it in good faith.
 
 *Affects:* T1.2, `calibration/__init__.py`, Week 4 harness.
+
+**Resolved, Week 4, by taking the suggested fix.** Both reference functions are now thin
+wrappers over `conformal.split_threshold` rather than a second implementation of the same
+rule, which is what let the two drift in the first place.
+
+Two behaviours changed, both toward correctness:
+
+* **`ceil` to `floor`.** Thin groups now come back `certifiable=False` instead of a
+  plausible-looking threshold. On the Week 3 bank the thresholds move by about **0.001**
+  and no reported coverage number changes, because every group there carries 2,000–3,800
+  positives. That is precisely why this survived four weeks: the defect is invisible where
+  the data is thick and wrong where a reviewer would look hardest.
+* **The empty case flipped sign.** With no positives at all the old code returned `+inf` —
+  flag nothing, a 100% miss rate presented as a successful calibration. The delegate
+  returns `-inf`: flag everything, valid and visibly useless. This was not in the original
+  report and is the more dangerous of the two, since `+inf` fails in the flattering
+  direction.
+
+The float return cannot carry `certifiable`, so `mondrian_calibration_results` was added
+alongside it, and `analyse_bank.py` and `sizing.py` now print a **NOT CERTIFIABLE** line
+naming any group with fewer than `min_positives(alpha)` positives. Flooring alone would
+have made the numbers correct while leaving them just as silent.
+
+Pinned by four tests in `test_calibration.py`, including the `n=1, alpha=0.1` case from
+this entry and an equivalence check against the delegate across three sizes and three
+alphas — so the two cannot drift apart again.
 
 ---
 
@@ -1935,6 +1961,135 @@ hidden dependency one level up.
 instead of that one, and would silently loosen the 32² case by 20×.
 
 *Affects:* T2.1, the runner's health gate, P-27.
+
+---
+
+## D-051 · A third split side, for the choices made by looking at scores
+**Date:** Week 4 · **Status:** PROPOSED · **Proposed by:** Track 2 · **Unblocks:** T1.1
+
+D28 (score component weights) and D37 (the criterion threshold) are both *selected* by
+looking at scores. Until now there was nowhere to select them from: `SPLITS` was
+`("calib", "test")`, so any selection had to come out of one of the two sides that the
+coverage guarantee depends on being untouched.
+
+Both failure modes are silent:
+
+* **Selecting on calibration data** biases the conformal threshold. The calibration
+  scores are no longer exchangeable with the test scores, and coverage degrades by an
+  amount nothing in the pipeline reports.
+* **Selecting on test data** biases the coverage number directly — the familiar one, and
+  the one a reviewer will ask about first.
+
+**Decision:** `split_for()` gains `design_fraction`, and patients below it land on a
+third side, `"design"`. T1.1's weight selection and D37's threshold are fitted there and
+nowhere else.
+
+**It is carved out of the calibration range, not the test range.** That is the part worth
+arguing about, and there are three reasons:
+
+1. **The test side never moves.** For *any* `design_fraction`, a patient lands on `test`
+   exactly when it would have under the two-way split. So a design split can be
+   introduced after coverage has already been measured without invalidating the
+   measurement, and two banks built with different design fractions remain comparable on
+   the test side. `tests/test_design_split.py` asserts the set equality rather than
+   trusting the arithmetic.
+2. **The cost lands where it hurts least.** P-23 measured the binding constraint on the
+   headline to be *test* patients: the paired gap half-width is ±0.121 against gaps of
+   0.112 and 0.127. Calibration patients are not the scarce resource; test patients are.
+3. **Nothing existing is disturbed.** `design_fraction=0.0` is the default and reproduces
+   the two-way assignment exactly — same salt, same pins, same banks. The golden test
+   (`test_split_golden.py`, including the real-fastMRI digest) passes unchanged, which is
+   the evidence rather than the claim.
+
+Asking for more design patients than there are calibration patients is refused with a
+message naming `calib_fraction`, rather than quietly shrinking test.
+
+**What Track 1 needs to pick.** The fraction itself is a protocol choice, not Track 2's.
+T1.4 currently reads *"T1.1 is complete pending the weight selection in D28, which needs
+the design split and therefore real data (C2)"* — the design split was the missing half of
+that, and it was missing from **Track 2's** module, so the blocker was never only data.
+Counted on the real 96-patient list at the default `calib_fraction=0.5`, with the test
+side unchanged at 44 in every row:
+
+| design_fraction | design | calib | test |
+|---|---|---|---|
+| 0.0 (today) | 0 | 52 | 44 |
+| 0.10 | 8 | 44 | 44 |
+| 0.15 | 19 | 33 | 44 |
+| 0.20 | 25 | 27 | 44 |
+
+**The draw is lumpy at this size** — 0.15 yields 19 rather than the nominal 14, and 0.10
+yields 8 rather than 10. At 96 patients the fraction should be chosen by the count it
+actually produces, which is why the measured table is here instead of the arithmetic.
+
+*Alternative 1:* carve the design side out of the test range instead. Rejected — it
+shrinks the one side P-23 identified as binding, and it would silently invalidate every
+coverage number measured before the design side existed.
+
+*Alternative 2:* carve proportionally from both. Rejected — it moves test patients, which
+forfeits property (1) for no gain the project can currently use.
+
+*Alternative 3:* select weights on calibration data and accept the bias. Rejected — the
+bias is invisible and runs in the direction that flatters our own coverage, which P-19 and
+P-23 have both already cost this project once each.
+
+*Cost:* calibration patients, which makes the threshold slightly noisier. Unmeasured, and
+it interacts with the `calib_fraction` rebalance offered at the end of P-23 — both draw on
+the same pool, so they should be chosen together rather than one at a time.
+
+*Affects:* T1.1, D28, D37, T2.1 §D-022, the fastMRI loader, Sec. 19.
+
+---
+
+## D-052 · Four of the five candidate operator distances are one measure on mask operators
+**Date:** Week 4 · **Status:** ACCEPTED · **Measured by:** Track 2 · **For:** T1.3, T3.2, Week 6
+
+Choosing the distance axis for the Week 4 coverage-failure figure meant computing all
+five candidates across the MRI grid. They are not five measures. Over **all 153 pairs**
+of a 3-family × 6-acceleration grid at 256²:
+
+| pair | agreement |
+|---|---|
+| `null_space_projection` vs `sampling_support` | identical to **1.1e-16** |
+| `chordal_subspace` × √2 vs `sampling_support` | identical to **1.1e-16** |
+| `operator_norm` vs `sampling_support` | within **9.1e-4**, Spearman ρ = 0.999915 |
+
+**This is a property of the operator class, not of the implementations.** An MRI
+undersampling operator is a diagonal projection in k-space. Which frequencies it keeps
+*is* its range, so "how much do the sampling supports differ" and "how much do the null
+spaces differ" are the same question asked twice, and the chordal distance between two
+coordinate subspaces is that quantity over √2 by construction.
+
+**Consequence, and it is a research one rather than a cleanup.** The MRI grid cannot
+rank these measures against each other. T1.3 asks which distance best predicts the
+coverage gap and T3.2 lists candidates to compare; on this operator class any ranking
+among these four is numerical noise, and a Week 6 result that picked a winner here would
+not survive a reviewer who noticed they are the same function. The comparison needs an
+operator class where range and null space are not determined by a coordinate mask — CT
+view subsampling (Week 7), where the projection is not diagonal.
+
+**The fifth candidate could not be computed at all.** `spectral_divergence` raised for
+every complex operator, which is every MRI operator (P-28, now fixed). So the one measure
+that might have separated them was also the one nothing had ever run on this class.
+
+**A second finding, for the grid design.** Distance from `mri.random1d.R2`:
+
+| | R2 | R4 | R8 |
+|---|---|---|---|
+| `random1d` | 0.000 | 0.500 | 0.612 |
+| `equispaced1d` | 0.644 | 0.656 | **0.650** |
+| `variable_density2d` | 0.681 | 0.687 | 0.693 |
+
+Changing the mask family **saturates** the distance: any family change costs ~0.65 at
+once, after which acceleration contributes ~0.01 and not even monotonically — equispaced
+R4 sits *above* R8. So the graded part of the axis is entirely within-family, and a
+denser acceleration sweep across families buys near-duplicate points. This is why the
+Week 4 config is 3 × 3 rather than the drafted 3 × 6, quite apart from the compute.
+
+*Alternative:* report a single distance and drop the others. Rejected — the degeneracy
+is the finding, and recording only one measure would hide it from Week 6.
+
+*Affects:* T1.3, T3.2, T3.4 (L2 prefers `null_space_dim`), Week 6 Tool 2, Week 7 CT.
 
 ---
 

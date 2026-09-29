@@ -226,18 +226,35 @@ On the Week 3 bank at Track 1's ratified `tau = 1.75`, per-operator SE is
 
 and, splitting the 96-patient ceiling (D-027) across a grid:
 
-| operators | test patients each | achievable half-width |
-|---|---|---|
-| 1 | 40 | **0.125** |
-| 2 | 20 | 0.176 |
-| 3 | 13 | 0.216 |
-| 6 | 7 | 0.305 |
-| 12 | 3 | 0.432 |
+> **WRONG — corrected by Track 1 (D-049), and the error was Track 2's.** The table below
+> divides the test patients by the number of operators. **The design is crossed:**
+> retrospective undersampling applies every mask to the *same* volume, so every operator
+> sees every patient. Verified independently on both banks in the repository - 3 operators
+> x 30 items and 2 operators x 3 items, each operator seeing the identical item set. The
+> corrected reading is the one `sizing.py` now prints: the per-operator half-width is
+> **0.125 at every grid size**, and adding operators costs compute, not precision. That
+> reverses the advice this entry gave. The table is kept, struck through, because the
+> recommendation built on it went to Track 1 in writing.
 
-**Read the first row of the second table.** Even spending *every* available test
-patient on a *single* operator gives +/- 0.125 - still wider than the +/- 0.10 that
-would separate "coverage restored" from "coverage failed". A six-operator Week 4
-grid gives +/- 0.305, which is not a measurement of anything.
+| ~~operators~~ | ~~test patients each~~ | ~~achievable half-width~~ |
+|---|---|---|
+| ~~1~~ | ~~40~~ | ~~0.125~~ |
+| ~~2~~ | ~~20~~ | ~~0.176~~ |
+| ~~3~~ | ~~13~~ | ~~0.216~~ |
+| ~~6~~ | ~~7~~ | ~~0.305~~ |
+| ~~12~~ | ~~3~~ | ~~0.432~~ |
+
+**What survives the correction.** Even spending every available test patient on a
+single operator gives **+/- 0.119** - still wider than the +/- 0.10 that would separate
+"coverage restored" from "coverage failed". That conclusion is unaffected by D-049 and
+Track 1 confirms it: *"Contrast A really is capped at +/- 0.125 and this does not
+change it."* What does not survive is the claim that a larger grid makes it worse.
+
+*(The cap reads 0.119 rather than the 0.125 both this entry and D-049 quote. `sizing.py`
+had the test side hardcoded as `96 * 0.42 = 40` patients, a guess; the real draw at the
+default `calib_fraction` puts 44 there, counted from the patient list and pinned by
+`test_split_golden.py`. The script now uses the measured number. The cap moves by 0.006
+and nothing that was concluded from it changes.)*
 
 So **fastMRI `singlecoil_val` cannot support a per-operator coverage claim at any
 grid size**, and no amount of CPU time changes that; it is a property of having 96
@@ -260,6 +277,74 @@ per-operator coverage as the headline. The options, all Track 1's to choose
 The caveats travel with the numbers: the SE is extrapolated from 12 clusters, and
 clustering is by *volume* rather than patient, so the true intervals are wider
 still (fastMRI has ~2 volumes per patient).
+
+---
+
+**Measured, Week 4, on the fastMRI bank** - the run Track 1 asked for in D-049, which
+only this machine can do because the bank is not shareable (D-045, T2.1 §7).
+
+Track 1's answer is **option 2** (flag area co-headline) with the estimand changed to the
+**paired** coverage gap, on the argument that the same patient appears at both operators
+so the patient's own difficulty cancels. The mechanism is real and the sanity check is
+clean: the gap of an operator against *itself* comes back as exactly 0.0000 with SE 0,
+where differencing two independent bootstraps gives SE 0.168 for a quantity that cannot
+vary.
+
+**The pairing factor on real knee anatomy is smaller than the illustration suggests:**
+
+| deployment operator | gap | paired SE | unpaired SE | narrower by |
+|---|---|---|---|---|
+| R=4 | 0.112 | 0.110 | 0.161 | **1.46x** |
+| R=8 | 0.127 | 0.124 | 0.160 | **1.29x** |
+
+D-049's table reaches 2.9x, at a between-patient SD of 0.20. This substrate gives
+1.29-1.46x, which is what D-049 itself says should happen - *"the number that matters is
+the one your bank gives"*. Reported, not assumed.
+
+**It helps, and it is not enough on its own.** Scaling the worst paired SE (0.124, the
+R=8 deployment) by 1/sqrt(n):
+
+| test patients | paired gap half-width |
+|---|---|
+| 12 (this bank) | 0.243 |
+| **44 (today's split)** | **0.127** |
+| 49 | 0.120 |
+| 58 | 0.111 |
+| 72 | 0.099 |
+
+At today's split the interval is **about as wide as the gap it measures** (0.127 against
+gaps of 0.112 and 0.127). The paired estimand moves the headline from impossible to
+marginal, not to comfortable. ±0.10 needs 72 test patients, which is more than the
+dataset has on the test side at any split.
+
+**A lever cheaper than option 4, and Track 2's to offer — but a smaller one than first
+reported.** The test side is not a property of the dataset, it is `calib_fraction`.
+Counted on the real 96-patient list rather than assumed:
+
+| calib fraction | calib patients | test patients | paired half-width |
+|---|---|---|---|
+| **0.5 (today)** | **52** | **44** | **0.127** |
+| 0.4 | 47 | 49 | 0.120 |
+| 0.3 | 38 | 58 | 0.111 |
+
+Spending the whole lever — 0.5 down to 0.3, giving up 14 calibration patients — buys
+0.127 → 0.111. That is real but it does not reach ±0.10, so it is a contribution to
+option 4 rather than a substitute for it.
+
+**Two corrections to the first version of this addendum, both Track 2's.** It reported
+0.121 at "38 test patients, today's split, calib_fraction 0.6". Neither figure was
+checked: no config sets `calib_fraction`, so every run uses the 0.5 default, and the real
+draw at 0.5 is 52/44 — the numbers above are counted from the patient list. It also
+scaled the R=4 paired SE (0.110) while calling it the sized quantity, where `sizing.py`
+sizes on the widest operator (R=8, 0.124). Both errors ran in the flattering direction,
+which is the direction P-19 and P-23 have each already cost this project once.
+
+**The caveat is real and unmeasured:** a smaller calibration side makes the *threshold*
+noisier, and that feeds back into coverage in a way this arithmetic does not capture, so
+there is an optimum somewhere rather than a monotone gain. It also now competes with the
+design side (D-051), which draws from the same calibration pool — the two should be chosen
+together rather than one at a time. Track 2 can measure the trade on the existing bank if
+Track 1 wants the curve before choosing.
 
 ---
 
@@ -1094,6 +1179,48 @@ Rebuilt against the log and checked: every decision now has exactly one row.
 
 ---
 
+#### P-28 - The only non-degenerate distance measure could not be computed for any MRI operator
+
+**Fixed** - **See:** D-011, D-052
+
+Computing all five candidate operator distances across the Week 4 grid, to choose the
+axis for the coverage-failure figure, raised on the fifth:
+
+```
+RuntimeError: shape '[256, 256]' is invalid for input of size 131072
+  caliber/operators/spectrum.py:54 in estimate_spectrum
+```
+
+**Cause.** `estimate_spectrum` flattened its sketch to a real view up front —
+`torch.view_as_real(...).reshape(-1, k)` — which doubles the row count for a complex
+operator. The power iteration then took a column of that real matrix and reshaped it
+back into the *measurement* shape. At 256² that is 131,072 real values into a 65,536
+complex slot, and it raised every time.
+
+Every MRI forward operator is complex, so `spectral_divergence` had never once been
+computable for one. It worked for CT, which is real, and CT is what the tests covered.
+
+**Fix.** Carry the sketch in the operator's own domain and flatten to real only for the
+QR and SVD at the end, so no reshape back is needed:
+
+```python
+ys = [op.forward(probe) for probe in probes]
+for _ in range(n_power_iters):
+    ys = [op.forward(op.adjoint(y)) for y in ys]        # (A A^H)^q A Omega
+```
+
+Bit-identical on real operators — checked against the old code path on a CT operator,
+max difference 0.0 — and working on complex ones.
+
+**Why this one mattered more than an ordinary crash.** D-052 measures the other four
+candidate distances to be *the same function* on binary-mask operators. Spectral
+divergence is the only one that could have distinguished them, and it was the only one
+that could not run. The gap in the tests and the gap in the measurement coincided
+exactly, which is the pattern worth noticing: the untested path was the one carrying
+the information.
+
+---
+
 #### P-27 - The adjoint test failed at random, and fixing it naively would have hidden real bugs
 
 **Fixed** - **See:** D-012, D-043
@@ -1167,7 +1294,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 50 entries, so a problem in Part I can be
+What lives here instead is the index — 52 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1197,7 +1324,7 @@ traced to the decision that settled it without opening the log.
 | [D-023](decision_log.md) | One calibration group per (family, acceleration); seeds are members | Week 1 | RESOLVED |
 | [D-024](decision_log.md) | `NullSpaceNoiseSampler` leaks ~4% of its "hallucination" into the measured component | Week 2 | RESOLVED — fixed, and it moved a headline number |
 | [D-025](decision_log.md) | `data/README.md` removed; all data documentation consolidated into `data_access.md` | Week 2 | DONE |
-| [D-026](decision_log.md) | Reference `split_conformal_threshold` over-certifies thin groups | Week 2 | OPEN |
+| [D-026](decision_log.md) | Reference `split_conformal_threshold` over-certifies thin groups | Week 2 | RESOLVED Week 4 — delegates to `conformal.split_threshold` |
 | [D-027](decision_log.md) | fastMRI `singlecoil_val` has 199 volumes but only 96 patients; the split must be by `patient_id` | Week 1 | ACCEPTED — fixed |
 | [D-028](decision_log.md) | Fixing D-024 reversed the direction of the naive-transfer coverage failure | Week 1 | ACCEPTED — recorded, not yet re-measured on a real solver |
 | [D-029](decision_log.md) | Solver algorithms are separated from the network that drives them | Week 2 | ACCEPTED |
@@ -1222,3 +1349,5 @@ traced to the decision that settled it without opening the log.
 | [D-048](decision_log.md) | An override must name something the pipeline reads, or it is refused | Week 4 | ACCEPTED |
 | [D-049](decision_log.md) | P-23 answered: the headline estimand is paired, and the crossed design does not divide the patient budget | Week 4 | Track 1's entry — answers P-23 |
 | [D-050](decision_log.md) | The adjoint gate is size-aware, because a flat 1e-6 was a knife edge | Week 4 | Track 1's fix to a non-portable test |
+| [D-051](decision_log.md) | A third split side, for the choices made by looking at scores | Week 4 | PROPOSED — unblocks T1.1 |
+| [D-052](decision_log.md) | Four of the five candidate operator distances are one measure on mask operators | Week 4 | ACCEPTED — measured, 153 pairs |

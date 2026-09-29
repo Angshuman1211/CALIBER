@@ -7,19 +7,78 @@
 #
 # This is the run whose output produces the project's first headline figure:
 # nominal coverage against actual coverage as the deployment operator moves.
+#
+#   caliber configs/experiments/w04_mri_operator_grid.yaml
+#   python scripts/analyse_bank.py runs/<run_id> \
+#       --calibration-operator mri.random1d.R2.c0.08.s0
+#
+# --- what this config used to say, and why it could never have run ----------
+#
+# The Week 1 draft asked for `dps, n_steps: 200`, 3 families x 6 accelerations,
+# `limit: 200` and `n_posterior: 8`. On this machine (P-16: CPU only, 1.46 s per
+# UNet forward at 256^2) that is 1.46 x 200 x 8 x 200 x 18 = **97 days**, before
+# counting the backward pass DPS needs at every step and DDNM does not. It was a
+# placeholder written before any cost was measured, and it survived three weeks
+# because nothing runs a config until someone runs it.
+#
+# The settings below are W03's, which are measured, with the operator set widened.
+# Keeping them identical is not only thrift: Sec. 13 requires the solver held
+# fixed across the curve, and it makes the W03 bank a literal subset of this one,
+# so the two are mergeable (`merge_banks`) and comparable without a caveat.
+#
+# --- the grid, and why it is 3 x 3 and not 3 x 6 -----------------------------
+#
+# Measured cost: 1.46 s/forward x 24 steps x 4 draws = 140 s per item-operator,
+# x 30 items x 9 operators = **~10.5 hours**. Six accelerations would be 21 hours
+# for a distance axis that, measured, barely moves:
+#
+#   distance from mri.random1d.R2 (null_space_projection, = sampling_support)
+#     random1d          R4 0.500   R8 0.612
+#     equispaced1d      R2 0.644   R4 0.656   R8 0.650
+#     variable_density  R2 0.681   R4 0.687   R8 0.693
+#
+# **Changing the mask family saturates the distance.** Any family change costs
+# ~0.65 immediately and the acceleration then contributes ~0.01 — and not even
+# monotonically (equispaced R4 sits *above* R8). So a denser acceleration sweep
+# buys near-duplicate points in the far field, while the three within-family
+# accelerations are what give the axis its only graded stretch (0 -> 0.50 -> 0.61).
+# Three families x three accelerations covers both regimes; more would be compute
+# spent on points the distance measure cannot separate. See D-052.
+#
+# --- what this grid cannot do ------------------------------------------------
+#
+# It cannot rank the candidate distance measures against each other. Over all 153
+# pairs of the full 3 x 6 grid, `null_space_projection` and `sampling_support`
+# agree to 1.1e-16 and `chordal_subspace` is the same quantity over sqrt(2): a
+# mask operator is a diagonal projection, so "which frequencies differ" *is* its
+# null space. That comparison needs a non-mask operator class (CT, Week 7).
 
 include: base
 
 experiment:
   name: w04_mri_operator_grid
   solver:
-    name: dps
-    n_steps: 200
-  n_posterior: 8
+    # DDNM at 24 steps, exactly as W03. D-033 measured the null share of DDNM's
+    # error at 0.997 by 24 steps where DPS is still at 0.495, so this is the
+    # cheaper *and* the better-founded choice for the Stage-2 premise.
+    name: ddnm
+    checkpoint: checkpoints/ddpm-celebahq-256
+    n_steps: 24
+    # One draw through the UNet at a time (D-044). Without this the four draws go
+    # in one batch and the preflight puts the peak at 18.0 GB against a 26.8 GB
+    # commit limit on this machine; batching brings it to 6.0 GB. The bank is
+    # identical either way -- the per-draw seeds are derived, not sequential
+    # (D-041) -- and on CPU there is no batching speedup to give up. A ten-hour
+    # run is the one you least want dying at hour seven (P-24).
+    max_draws_per_batch: 1
+  n_posterior: 4
   operators:
+    # One mask seed throughout: the seed is a member of a calibration group, not
+    # a group of its own (D-023). Varying it would spend compute on within-group
+    # variation before the between-group effect has been measured at all.
     - modality: mri
       family: [random1d, equispaced1d, variable_density2d]
-      acceleration: [2, 3, 4, 6, 8, 10]
+      acceleration: [2, 4, 8]
       center_fraction: 0.08
       mask_seed: 0
 
@@ -29,9 +88,20 @@ data:
     name: fastmri
     root: data/raw/fastmri/singlecoil_val
     annotations_csv: data/annotations/fastmri_plus/knee.csv
-    split: calib
+    # `auto`, not `calib`: conformal calibration needs a held-out evaluation set,
+    # and the side is decided per patient (D-022, D-027) identically in every
+    # acquisition regime — without which a coverage difference between regimes
+    # would be confounded with anatomy rather than attributable to the operator.
+    split: auto
     image_shape: [256, 256]
+    slices_per_volume: 1
 
 run:
-  limit: 200
-  cache_reconstructions: 12
+  # 30 items, as W03. The crossed design means every operator sees all of them
+  # (D-049), so this sets the precision of every point on the curve at once:
+  # ~12 test volumes, a per-operator 95% interval near +/-0.24. That is wide, and
+  # P-23 is the entry that says so — the Week 4 deliverable is the *trend* across
+  # the grid, not a publishable per-operator coverage number.
+  limit: 30
+  cache_reconstructions: 6
+  checkpoint_every: 25
