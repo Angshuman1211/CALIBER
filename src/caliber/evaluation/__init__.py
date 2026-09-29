@@ -18,6 +18,14 @@ from .metrics import (
     region_fdr,
     region_power,
 )
+from .paired import (
+    PairedGap,
+    clusters_for_paired_precision,
+    is_crossed,
+    paired_coverage_gap,
+    paired_gap_curve,
+    paired_method_gap,
+)
 
 __all__ = [
     "bound_agreement",
@@ -34,4 +42,11 @@ __all__ = [
     "monotonicity",
     "region_fdr",
     "region_power",
+    # Track 1 (T1.4) — the paired estimand for the headline figure
+    "PairedGap",
+    "clusters_for_paired_precision",
+    "is_crossed",
+    "paired_coverage_gap",
+    "paired_gap_curve",
+    "paired_method_gap",
 ]
