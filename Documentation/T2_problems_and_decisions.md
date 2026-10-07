@@ -1294,7 +1294,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 52 entries, so a problem in Part I can be
+What lives here instead is the index — 55 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1351,3 +1351,6 @@ traced to the decision that settled it without opening the log.
 | [D-050](decision_log.md) | The adjoint gate is size-aware, because a flat 1e-6 was a knife edge | Week 4 | Track 1's fix to a non-portable test |
 | [D-051](decision_log.md) | A third split side, for the choices made by looking at scores | Week 4 | PROPOSED — unblocks T1.1 |
 | [D-052](decision_log.md) | Four of the five candidate operator distances are one measure on mask operators | Week 4 | ACCEPTED — measured, 153 pairs |
+| [D-053](decision_log.md) | The gap is not symmetric in the operator pair, so the plotted axis is directional | Week 4 | Track 1's entry — answers D-052 |
+| [D-054](decision_log.md) | `design_fraction = 0.10`; `calib_fraction` holds at 0.5 until the banks are rebuilt | Week 4 | Track 1's ruling — answers D-051 |
+| [D-055](decision_log.md) | The weight-selection rule is pre-registered; one run produces the number | Week 4 | Track 1's entry — closes D28's half of D-051 |
