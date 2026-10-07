@@ -24,13 +24,14 @@ from __future__ import annotations
 
 import csv
 from collections import defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 
 import torch
 from torch import Tensor
 
 from .base import Item, SliceDataset, center_crop, normalise
-from .splits import DEFAULT_SALT, split_for
+from .splits import DEFAULT_SALT, SPLITS, split_for
 
 
 def _require_h5py():
@@ -142,6 +143,7 @@ class FastMRIDataset(SliceDataset):
         calib_fraction: float = 0.5,
         design_fraction: float = 0.0,
         split_salt: str = DEFAULT_SALT,
+        keep_splits: str | Sequence[str] | None = None,
     ):
         self.root = Path(root)
         # ``split="auto"`` is the D-022 path: the side is decided per *patient*
@@ -168,10 +170,17 @@ class FastMRIDataset(SliceDataset):
                 "access is credentialed and must be requested before Week 3."
             )
         self.files = find_volumes(self.root)
-        if limit_volumes:
-            self.files = self.files[:limit_volumes]
         if not self.files:
             raise FileNotFoundError(f"no .h5 volumes under {self.root} (searched recursively)")
+        # Filtering happens BEFORE limit_volumes, and that order is the whole point.
+        # Limiting first and filtering second is what makes a design-split run expensive:
+        # the split is a property of the patient, so ~8% of any prefix lands on `design`
+        # at design_fraction=0.10 and a 30-volume prefix yields two or three usable
+        # volumes out of thirty reconstructions.
+        if keep_splits is not None:
+            self.files = self._filter_by_split(keep_splits)
+        if limit_volumes:
+            self.files = self.files[:limit_volumes]
         self.annotations = load_annotations(annotations_csv) if annotations_csv else {}
         self._index = [
             (f, s) for f in self.files for s in range(self.slices_per_volume)
@@ -258,6 +267,65 @@ class FastMRIDataset(SliceDataset):
             annotation=annotation,
             meta={"source": str(path), "raw_shape": raw_shape, "patient_id": patient},
         )
+
+    def _filter_by_split(self, keep_splits: str | Sequence[str]) -> list[Path]:
+        """Keep only the volumes whose patient lands on one of ``keep_splits``.
+
+        **Why this exists.** The loader has always *labelled* each item with its split
+        while processing every volume it finds. For calibration and test that is right —
+        both sides are wanted and the labels sort them afterwards. For the design side it
+        is ruinous: `design_fraction=0.10` puts 8 of 96 patients on `design` (D-054), so a
+        run that reconstructs the whole dataset spends ~92% of its GPU-equivalent time on
+        rows the weight selection will discard. Measured against T2.3's 288 s per
+        item-operator, that is **47.8 h against 1.9 h** for the same 8 patients.
+
+        **It changes no patient's assignment.** The split is a pure function of the patient
+        key, the fraction and the salt (D-022, D-027); this chooses which patients are
+        *processed*, never which side they are on. A volume kept under a filter carries the
+        same label it would have carried without one, which `tests/test_split_filter.py`
+        asserts rather than assumes.
+
+        **Cost:** one h5 attribute read per volume, to recover the patient id. Milliseconds
+        against minutes of reconstruction, but it does touch every file once at
+        construction, so a dataset on cold network storage will pause here.
+        """
+        if not self.auto_split:
+            raise ValueError(
+                f"keep_splits={keep_splits!r} needs split='auto'. With an explicit "
+                f"split={self.split!r} every item is forced onto that side, so filtering "
+                "by the computed split would silently keep or drop everything."
+            )
+        wanted = {keep_splits} if isinstance(keep_splits, str) else set(keep_splits)
+        unknown = wanted - set(SPLITS)
+        if unknown:
+            raise ValueError(
+                f"unknown split(s) {sorted(unknown)}; the sides are {list(SPLITS)}"
+            )
+
+        h5py = _require_h5py()
+        kept, counts = [], dict.fromkeys(SPLITS, 0)
+        for path in self.files:
+            with h5py.File(path, "r") as fh:
+                patient = str(fh.attrs.get("patient_id", "")) or path.stem
+            self._patient_cache[path.stem] = patient
+            side = split_for(
+                patient,
+                calib_fraction=self.calib_fraction,
+                design_fraction=self.design_fraction,
+                salt=self.split_salt,
+            )
+            counts[side] = counts.get(side, 0) + 1
+            if side in wanted:
+                kept.append(path)
+
+        if not kept:
+            raise FileNotFoundError(
+                f"no volume lands on {sorted(wanted)} — the {len(self.files)} volumes "
+                f"under {self.root} split as {counts}. At design_fraction="
+                f"{self.design_fraction:g} the design side is empty by construction if the "
+                "fraction is 0."
+            )
+        return kept
 
     def patient_index(self) -> dict[str, str]:
         """``{sample_id: patient_id}`` for every volume, by reading the attrs.
