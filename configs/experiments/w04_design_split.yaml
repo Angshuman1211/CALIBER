@@ -1,0 +1,98 @@
+# Week 4 — the design-split bank, for choices made by looking at scores.
+#
+# Produces the `split=design` rows that T1.1's weight selection (D28/D49) and
+# D37's threshold need, and nothing else. Two commands:
+#
+#   caliber configs/experiments/w04_design_split.yaml
+#   PYTHONPATH=src python scripts/select_weights.py runs/<run_id> \
+#       --calibration-operator mri.random1d.R2.c0.08.s0
+#
+# A config rather than four `--set` overrides, deliberately: since D-048 a
+# mistyped override is refused outright, and `design_fraction` is a *dataset*
+# kwarg rather than a `run.` one, which is exactly the kind of detail that
+# produces a loud failure or — worse, before D-048 — a silent wrong run (P-26).
+#
+# --- why this is a separate run, and a cheap one ----------------------------
+#
+# `design_fraction: 0.10` puts 8 of fastMRI's 96 patients on the design side
+# (D-054, counted on the real patient list). The loader used to *label* every
+# volume with its split while reconstructing all of them, so producing those 8
+# patients' rows meant reconstructing all 199 volumes and discarding ~92% of the
+# work: 597 item-operator reconstructions at T2.3's measured 288 s each is
+# **47.8 hours**.
+#
+# `keep_splits: design` processes only the volumes whose patient lands on the
+# design side. It changes no patient's assignment — the split stays a pure
+# function of (patient, fraction, salt) per D-022/D-027, and
+# `tests/test_split_filter.py` asserts a kept volume carries the label it would
+# have carried unfiltered. It only chooses what is worth reconstructing.
+#
+#   24 reconstructions (8 volumes x 3 operators) x 288 s = **1.9 hours**
+#   on a quiet machine, at the 140 s floor:                 **0.9 hours**
+#
+# `limit: 8` takes one volume per design patient. The filter runs *before* the
+# limit, so this is 8 design volumes rather than 8 volumes of which ~1 is design
+# — that ordering is the whole point of the change.
+#
+# --- the two settings that are not tuning -----------------------------------
+#
+# `max_draws_per_batch: 1` is mandatory, not conservative. The samplers pass all
+# `n_posterior` draws through the UNet as one batch, and 4 draws at 256° needs
+# ~18 GB and **segfaults with no traceback** when the machine is short (P-24).
+# Chunked to one draw it needs 6.0 GB and the bank is bit-identical either way
+# (D-044), which is what makes this a memory setting rather than an
+# experimental choice.
+#
+# `checkpoint_every: 2` because no config sets it and a two-hour run that dies
+# at hour two currently loses everything — the runner writes the bank at the end
+# (D-040). It changes the config hash, which is why it belongs in a new config
+# rather than being added to w03's.
+#
+# NOT REPORTABLE: the prior is `ddpm-celebahq-256`, a face model (D-016, D-035).
+# The weights selected from this bank are development values. The score's
+# definition is pinned only by a selection on a reportable bank — D49 says so
+# and `select_weights.py` prints it.
+
+include: base
+
+experiment:
+  name: w04_design_split
+  # Identical to w03 in every respect that touches the score, so the weights
+  # selected here apply to that bank: same solver, same step count, same draw
+  # count, same operators, same resolution. Only the split side differs.
+  solver:
+    name: ddnm
+    checkpoint: checkpoints/ddpm-celebahq-256
+    n_steps: 24
+    max_draws_per_batch: 1
+  n_posterior: 4
+  operators:
+    # The same three operators as w03. The selection needs the calibration
+    # operator to freeze the scales on (D27) and at least one deployment
+    # operator for the group-conditional thresholds the sweep calibrates.
+    - modality: mri
+      family: random1d
+      acceleration: [2, 4, 8]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [256, 256]
+  dataset:
+    name: fastmri
+    root: data/raw/fastmri/singlecoil_val
+    annotations_csv: data/annotations/fastmri_plus/knee.csv
+    split: auto
+    # Required for `keep_splits` to mean anything: with an explicit split every
+    # item is forced onto one side and the filter is refused (it would silently
+    # keep or drop everything).
+    design_fraction: 0.10
+    keep_splits: design
+    image_shape: [256, 256]
+    slices_per_volume: 1
+
+run:
+  limit: 8
+  checkpoint_every: 2
+  # No figures from this bank — it exists to choose two numbers, not to be shown.
+  cache_reconstructions: 0
