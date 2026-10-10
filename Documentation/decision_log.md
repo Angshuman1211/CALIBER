@@ -2255,6 +2255,60 @@ numbers already measured stay comparable.
 *Affects:* T1.1, D28, D-051, D-054, D-046, T3.3's constant.
 
 
+---
+
+## D-056 · Two failure modes, a corrected comparison rule, and Tool 2's first real evaluation
+**Date:** Week 4 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.4) · **See:** D50, D51, D52
+
+Three results from closing out T1.4. The first is free and improves the Week 4 headline; the
+third is a half-negative on the project's primary contribution.
+
+**1. The grid has only been analysed in its benign direction.** Week 4 calibrates at
+`random1d R2`, the least aggressive operator, and deploys upward. By D-053 that is the
+direction where scores rise, so the threshold turns conservative and the failure shows up as
+over-flagging — flag area 0.999, coverage 1.000. **Descending the grid is the other failure.**
+On the phantom bank, calibrating at R8 and deploying to R2 gives naive coverage **0.000**
+against Mondrian's 0.903. Coverage collapse — the failure §1 predicts, and nothing has been
+pointed at it.
+
+**This is a re-analysis of your existing bank, not a re-run.** The design is crossed (D-049),
+so the calibration operator is an analysis-time choice — §17's premise. Both directions get
+reported: the ascending half alone understates the risk, the descending half alone would be
+cherry-picking.
+
+**2. D-039's "compare flagged area, not power" needs a precondition, and I wrote it without
+one.** Area is the right axis only while the conformal threshold actually pins the miss rate,
+which requires calibration and deployment scores to be exchangeable — the thing operator
+shift breaks. Caught by measurement: the nearest-operator arm posted the smallest flagged
+area of any arm, at coverage **0.547**. An arm now competes on area only if its coverage
+interval reaches nominal.
+
+**3. Tool 2 has been evaluated for the first time, and it is half a win.**
+`calibrate_weighted` appeared in no analysis path at all — implemented Week 2, never pointed
+at a bank. `scripts/tool2_holdout.py` holds each operator out in turn. On the one interior
+fold available: Tool 2 is **valid where the nearest-operator baseline is not** (that one
+under-covers by 24 points), and flags **exactly as much area as Mondrian's unknown-group
+fallback** — everything. It has earned validity and not efficiency.
+
+The mechanism is not tuning. The oracle threshold is 0.8152; Tool 2 picks 0.5658, below the
+held-out operator's *minimum* score. Bandwidth swept 0.02-0.8 moves it by 0.05 and never
+changes the outcome, so **D33's open bandwidth question closes with "the bandwidth is not the
+lever"**. A lower-tail quantile is set by the lowest-scoring regime in the mixture, and an
+exponential kernel down-weights smoothly without ever excluding: at `h=0.08` the far regime
+still holds 14% relative weight, enough to occupy the alpha=0.10 tail. Drive it to zero and
+the ESS collapses, so D32 refuses to certify. **Tool 2's accuracy wants concentrated weight
+and its certifiability wants spread weight, and on an ordered grid no `h` gives both.**
+
+*For your grid:* Tool 2 cannot extrapolate, so a held-out **endpoint** operator tests nothing.
+Q4 needs *interior* deployment operators, which your nine-operator grid has and the phantom
+bank barely does.
+
+*Cost:* one interior fold, a reference sampler, three operators. The direction of the
+tail-domination argument should survive to nine operators, but the verdict is yours to
+reproduce: `PYTHONPATH=src python3 scripts/tool2_holdout.py runs/<week4_run_id>`.
+
+*Affects:* O3, T1.2, T1.4, D-039, D33, Q4, the Week 4 figure, Week 6 Tool 2.
+
 ## Template
 
 ```

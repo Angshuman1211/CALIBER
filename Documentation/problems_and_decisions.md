@@ -600,6 +600,66 @@ refused outright. Four chances to get a key wrong is three too many.
 
 ---
 
+### D50 — Operator shift has two failure modes; the project has only ever analysed the benign one [T1.4, improves the headline at zero compute]
+The Week 4 grid calibrates at `random1d R2` — the *least* aggressive operator — and deploys to R4 and R8. By D47 that is the direction in which scores rise, so the transferred threshold becomes conservative and the failure appears as over-flagging. Measured on the phantom bank, both directions, α=0.10:
+
+| | naive coverage | naive flag area | Mondrian coverage | Mondrian area |
+|---|---|---|---|---|
+| R2 → R4 | 1.000 | **1.000** | 0.902 | 0.873 |
+| R2 → R8 | 1.000 | **1.000** | 0.902 | 0.832 |
+| **R8 → R2** | **0.000** | 0.000 | 0.903 | 0.820 |
+| **R8 → R4** | 0.668 | 0.600 | 0.902 | 0.874 |
+
+**Ascending the grid breaks efficiency; descending it breaks validity.** Deploying to a less-hidden operator collapses coverage from 0.90 to 0.00 — the failure §1 predicts and the grid has never been pointed at. Mondrian restores coverage to ~0.902 in *every* cell, both directions, which is the blueprint's claim demonstrated rather than asserted.
+
+**This is a re-analysis, not a re-run.** The Week 4 bank is fully crossed (D45), so the calibration operator is an analysis-time choice — §17's whole premise. Zero GPU.
+
+**Both get reported, and that is the point.** Reporting only the ascending direction understates the risk; reporting only the descending one would be cherry-picking. The honest claim is stronger than the blueprint's: operator shift has two distinct failure modes, we characterise both, and the group-conditional remedy fixes both. A protocol change in a clinic can go either way.
+
+*To T1.4's grid:* every operator pair is swept in both directions, and the figure carries the sign (D47).
+
+---
+
+### D51 — D39's "compare area, not power" has a precondition, and across-regime comparisons violate it [T1.4, corrects D39]
+D39 ruled that component and method comparisons are made on flagged area because a conformal threshold pins the miss rate at α. **That holds only while the calibration scores are exchangeable with the deployment scores** — which operator shift breaks by construction, and which is the entire object of study.
+
+Caught by running the Tool 2 comparison: the nearest-operator arm posted the **smallest flagged area of any arm** while averaging coverage **0.547**. Flagging almost nothing is cheap once you have stopped catching anything, and a ranking on area alone would have declared it the winner.
+
+**Corrected rule.** An arm competes on flagged area only if it is **valid** — the upper end of its coverage interval reaches nominal. An invalid arm's small area is reported as the symptom it is, not as efficiency. D39 stands where it was argued, *within* one calibration regime comparing score components; it does not transfer across regimes.
+
+---
+
+### D52 — Tool 2's first real evaluation: valid where the obvious baseline is not, and no better than the conservative fallback [T1.2/T1.4, answers Q4 on a development bank]
+`calibrate_weighted` — the project's primary contribution (§9) — appeared in **no** analysis path until now. Implemented in Week 2, unit-tested on synthetic banks, never pointed at a bank. `scripts/tool2_holdout.py` is Q4's experiment: hold each operator out in turn and compare four ways of thresholding it.
+
+On the phantom bank's one interior fold (held out R=4; the endpoint folds ask the weighting to extrapolate and are reported separately):
+
+| arm | coverage | flag area | valid? |
+|---|---|---|---|
+| `matched` (oracle, unavailable at deployment) | 0.902 | 0.874 | yes |
+| `mondrian` (no group for the held-out operator) | 1.000 | 1.000 | yes, vacuously |
+| `nearest` (closest operator's threshold) | 0.666 | 0.599 | **no** |
+| **`weighted` (Tool 2)** | 1.000 | 1.000 | yes, vacuously |
+
+**The honest reading: Tool 2 is valid where the obvious alternative is not, and buys nothing over the conservative fallback.** Half a win. `nearest` is what a sensible person does without Tool 2 and it under-covers by 24 points, so the weighting is not pointless — but it flags every region, exactly as Mondrian's unknown-group fallback does, so it has not earned its place on the efficiency axis.
+
+**The mechanism, and it is not a tuning problem.** The oracle threshold is 0.8152; Tool 2 picks 0.5658, *below the held-out operator's minimum score* of 0.6459. Swept the bandwidth over 0.02–0.8:
+
+| `h` | 0.02 | 0.08 | 0.2 | 0.427 | 0.8 |
+|---|---|---|---|---|---|
+| threshold | −inf | 0.528 | 0.575 | 0.566 | 0.563 |
+| coverage / area | 1.000 / 1.000 | 1.000 / 1.000 | 1.000 / 1.000 | 1.000 / 1.000 | 1.000 / 1.000 |
+
+Nothing moves. **A lower-tail quantile is set by the lowest-scoring regime in the mixture**, and an exponential kernel down-weights smoothly without ever excluding — at `h=0.08` the far regime still holds 14% relative weight, and at α=0.10 that is enough to occupy the whole tail. Drive the weight to zero and the ESS collapses, at which point D32 refuses to certify and the threshold returns −inf.
+
+**So Tool 2's accuracy wants concentrated weight and its certifiability wants spread weight, and on an ordered grid there is no `h` that satisfies both.** That is a real tension in the primary contribution, stated plainly, and it closes D33's open bandwidth question with "the bandwidth is not the lever".
+
+**Two leads, neither implemented here.** A **truncated** kernel — hard-exclude beyond a distance cut, keeping ESS from what remains instead of inheriting a contaminating tail. Or **interpolate the threshold rather than pooling the scores**: each regime's own quantile plus the known distance, which would land near the oracle, at the cost of the conformal guarantee (D6 already declines an exact guarantee for arbitrary shift, so the cost may be smaller than it sounds).
+
+**Caveats that matter.** One interior fold, a reference sampler, three operators. The real Week 4 grid has nine operators and many interior folds, where the tail-domination argument predicts the same outcome but the bandwidth has more room. One command on their bank settles it.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
