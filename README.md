@@ -99,8 +99,8 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 
 | File | Owner | What |
 |---|---|---|
-| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D49`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-055` |
+| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D52`, open questions, cross-track contracts |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-056` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
 | `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-27`), unresolved first, plus an index of every decision |
@@ -154,9 +154,9 @@ Owns the central claim, the design of the method, and the decisions that set dir
 | Task | Deliverable | Status |
 |------|-------------|--------|
 | **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Near complete** — Q6 answered on a real prior (D43); `s_residual` ruled out (D42); `w_free`'s selection rule pre-registered (D49), awaiting one run with a design split |
-| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | **Implemented** — verified on synthetic banks; real banks need C2 |
+| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | **Implemented; Tool 2 evaluated (D52)** — valid where the nearest-operator baseline is not, no better than the conservative fallback; the cause is tail domination, not bandwidth |
 | **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19, amended for direction (D47): the gap is not symmetric in the operator pair, so the plotted axis is signed. CT cross-check pending T2.5 |
-| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | **Started** — statistical-validation methodology settled (D45: paired estimand, crossed design); operator grids and ablation matrix open |
+| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | **Substantially delivered** — estimand (D45), operator grid (D50: both shift directions), ablation matrix. Seed noise floor unmeasured |
 | **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | **Week 1 sign-off delivered** (D19–D24); standing |
 | **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | **Phase 1 gate delivered**; standing |
 | **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | Not started |
