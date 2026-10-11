@@ -1179,6 +1179,44 @@ Rebuilt against the log and checked: every decision now has exactly one row.
 
 ---
 
+#### P-29 - One pair in 1,791 came back NaN on the GPU and was written to the bank as if it were data
+
+**Fixed** - **See:** D-041, D-042, D-057
+
+The w05 bank (D-057: 9 operators x 199 volumes, 6.4 h on the laptop's RTX 3050) finished
+cleanly, logged no error, and held **256 NaN rows**: every score and error column for one
+pair, `file1000031` slice 20 on `mri.equispaced1d.R4.c0.08.s0`, seed 374937. Nothing in the
+run noticed. A post-run integrity check did.
+
+**Transient, not a bug, and checked rather than assumed.** The same pair with the same seed,
+re-run on the same GPU, came back finite twice. The same volume was clean on the CPU in the
+Week 4 bank. The other eight operators on that volume were clean in this one. The card ran at
+its 86-87 C limit for six hours, which is the likely cause and is not proven.
+
+**The defect was not the NaN; it was that the runner wrote it.** The runner checked its
+config, its memory (D-043), its operators and its prior's domain (D-035) before starting, and
+never checked its own output. A NaN pair is not merely missing: `derive_score_and_label`
+would have scored it, `split_threshold` sorts NaN to the end, and a calibration threshold can
+move with no visible sign.
+
+**Two fixes.**
+
+1. **The runner retries a non-finite pair with the same seed**, up to `NONFINITE_RETRIES = 2`,
+   with a warning each time. Same seed is the point: a recovered pair is the one an
+   uninterrupted run would have made, so the bank stays a function of its config (D-041). A
+   pair still non-finite after that saves a checkpoint and stops with a message naming the
+   pair and seed. Retrying must not paper over a real fault. Both behaviours are pinned in
+   `test_checkpointing.py`, including that a retried bank equals a clean one value for value.
+2. **The bank was repaired through the resume path, not by hand.** The 256 rows were removed,
+   the bank put back in partial form, and the same command re-run: `resuming 1790/1791`, one
+   pair recomputed in 27 s. The other 1,790 pairs compare identical to the original, and the
+   original is kept as `runs/w05_mri_full_val_gpu-990dafc40e706541_backup_with_nan/`.
+
+The recomputed pair sits at the end of the table rather than in its original position.
+Nothing downstream depends on row order.
+
+---
+
 #### P-28 - The only non-degenerate distance measure could not be computed for any MRI operator
 
 **Fixed** - **See:** D-011, D-052

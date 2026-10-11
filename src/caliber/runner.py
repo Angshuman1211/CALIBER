@@ -46,6 +46,11 @@ from .scoring.score import SCORE_VERSION, compute_score_components
 from .solvers import build_solver
 from .solvers.denoiser import prior_is_admissible
 
+#: Same-seed retries for a pair whose draws come back non-finite (P-29). One transient
+#: NaN in 1,791 GPU pairs recovered on the first retry; two leaves margin without
+#: hiding a pair that is genuinely broken.
+NONFINITE_RETRIES = 2
+
 
 def add_measurement_noise(y: torch.Tensor, sigma: float, seed: int) -> torch.Tensor:
     """Additive complex or real Gaussian noise at the operator's declared level."""
@@ -250,6 +255,31 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
             y = add_measurement_noise(op.forward(item.image), sigma, seed_here)
 
             samples = solver.sample(y, op, n_samples=n_posterior, seed=seed_here)
+            # P-29: a non-finite draw used to be scored and written like any other,
+            # leaving 256 silent NaN rows. The w05 GPU run hit it once in 1,791 pairs;
+            # the same pair, same seed, re-ran clean twice, so it was transient. Retry
+            # with the *same* seed, so a recovered pair is the one a clean run makes
+            # and the bank stays a function of its config (D-041). A pair that stays
+            # non-finite is a real fault: save what is done, then stop loudly.
+            for attempt in range(1, NONFINITE_RETRIES + 1):
+                if bool(torch.isfinite(samples).all()):
+                    break
+                print(
+                    f"[caliber] WARNING          non-finite draw for {item.sample_id} / "
+                    f"{desc.operator_id}; retrying with the same seed "
+                    f"({attempt}/{NONFINITE_RETRIES}) (P-29)",
+                    file=sys.stderr,
+                )
+                samples = solver.sample(y, op, n_samples=n_posterior, seed=seed_here)
+            if not bool(torch.isfinite(samples).all()):
+                if len(writer):
+                    writer.checkpoint(registry_descriptors=registry.descriptors())
+                raise RuntimeError(
+                    f"{item.sample_id} slice {item.slice_idx} / {desc.operator_id} "
+                    f"(seed {seed_here}) is still non-finite after "
+                    f"{NONFINITE_RETRIES} retries (P-29). Completed pairs are saved; "
+                    "rerun the same command to resume once the cause is fixed."
+                )
             components = compute_score_components(samples, y, op, grid)
             truth = compute_region_truth(
                 samples, item.image, op, grid, item.annotation, components.ref_intensity

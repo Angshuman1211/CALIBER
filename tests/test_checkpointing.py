@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import torch
 
 from caliber.config import load_config
 from caliber.runner import run
@@ -217,3 +218,59 @@ def test_a_checkpoint_from_a_different_config_is_refused(tmp_path):
 def test_no_checkpoint_means_nothing_to_resume(tmp_path):
     writer = ScoreBankWriter(tmp_path / "bank", run_id="r", config={"_meta": {"config_hash": "x"}})
     assert writer.resume_from_checkpoint() == set()
+
+
+# -- P-29: a non-finite draw is retried, never written ------------------------
+
+
+def test_a_transient_nan_is_retried_with_the_same_seed_and_never_written(tmp_path, monkeypatch):
+    """The w05 failure: one pair in 1,791 came back NaN on the GPU and was saved as-is.
+
+    The same pair and seed re-ran clean twice, so the fix retries with the *same*
+    seed -- a recovered pair must be the one an uninterrupted run would have made.
+    """
+    from caliber.solvers.reference import NullSpaceNoiseSampler
+
+    real_sample = NullSpaceNoiseSampler.sample
+    calls = {"n": 0}
+
+    def nan_once(self, y, op, n_samples, seed):
+        calls["n"] += 1
+        out = real_sample(self, y, op, n_samples=n_samples, seed=seed)
+        return torch.full_like(out, float("nan")) if calls["n"] == 2 else out
+
+    monkeypatch.setattr(NullSpaceNoiseSampler, "sample", nan_once)
+    retried = read_bank(run(_cfg(tmp_path / "retried")))
+
+    monkeypatch.setattr(NullSpaceNoiseSampler, "sample", real_sample)
+    clean = read_bank(run(_cfg(tmp_path / "clean")))
+
+    cols = ["s_free", "s_disagree", "s_residual", "err_total", "err_free"]
+    assert not retried[cols].isna().any().any(), "a NaN draw reached the bank"
+    keys = ["sample_id", "slice_idx", "operator_id", "region_id"]
+    a = retried.sort_values(keys).reset_index(drop=True)[cols]
+    b = clean.sort_values(keys).reset_index(drop=True)[cols]
+    pd.testing.assert_frame_equal(a, b)
+
+
+def test_a_pair_that_stays_nan_stops_the_run_and_keeps_completed_work(tmp_path, monkeypatch):
+    """Not transient: retrying must not paper over it. Stop loudly, keep what is done."""
+    from caliber.solvers.reference import NullSpaceNoiseSampler
+
+    real_sample = NullSpaceNoiseSampler.sample
+    calls = {"n": 0}
+
+    def nan_from_the_third_pair(self, y, op, n_samples, seed):
+        calls["n"] += 1
+        out = real_sample(self, y, op, n_samples=n_samples, seed=seed)
+        return torch.full_like(out, float("nan")) if calls["n"] >= 3 else out
+
+    monkeypatch.setattr(NullSpaceNoiseSampler, "sample", nan_from_the_third_pair)
+    cfg = _cfg(tmp_path)
+    with pytest.raises(RuntimeError, match="still non-finite"):
+        run(cfg)
+
+    partial = next(tmp_path.glob(f"*/{PARTIAL_SCORES}"))
+    saved = pd.read_parquet(partial)
+    assert saved.groupby(["sample_id", "operator_id"]).ngroups == 2, "completed pairs lost"
+    assert not saved["err_total"].isna().any()
