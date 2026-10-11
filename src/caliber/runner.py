@@ -46,6 +46,11 @@ from .scoring.score import SCORE_VERSION, compute_score_components
 from .solvers import build_solver
 from .solvers.denoiser import prior_is_admissible
 
+#: Same-seed retries for a pair whose draws come back non-finite (P-29). One transient
+#: NaN in 1,791 GPU pairs recovered on the first retry; two leaves margin without
+#: hiding a pair that is genuinely broken.
+NONFINITE_RETRIES = 2
+
 
 def add_measurement_noise(y: torch.Tensor, sigma: float, seed: int) -> torch.Tensor:
     """Additive complex or real Gaussian noise at the operator's declared level."""
@@ -250,6 +255,31 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
             y = add_measurement_noise(op.forward(item.image), sigma, seed_here)
 
             samples = solver.sample(y, op, n_samples=n_posterior, seed=seed_here)
+            # P-29: a non-finite draw used to be scored and written like any other,
+            # leaving 256 silent NaN rows. The w05 GPU run hit it once in 1,791 pairs;
+            # the same pair, same seed, re-ran clean twice, so it was transient. Retry
+            # with the *same* seed, so a recovered pair is the one a clean run makes
+            # and the bank stays a function of its config (D-041). A pair that stays
+            # non-finite is a real fault: save what is done, then stop loudly.
+            for attempt in range(1, NONFINITE_RETRIES + 1):
+                if bool(torch.isfinite(samples).all()):
+                    break
+                print(
+                    f"[caliber] WARNING          non-finite draw for {item.sample_id} / "
+                    f"{desc.operator_id}; retrying with the same seed "
+                    f"({attempt}/{NONFINITE_RETRIES}) (P-29)",
+                    file=sys.stderr,
+                )
+                samples = solver.sample(y, op, n_samples=n_posterior, seed=seed_here)
+            if not bool(torch.isfinite(samples).all()):
+                if len(writer):
+                    writer.checkpoint(registry_descriptors=registry.descriptors())
+                raise RuntimeError(
+                    f"{item.sample_id} slice {item.slice_idx} / {desc.operator_id} "
+                    f"(seed {seed_here}) is still non-finite after "
+                    f"{NONFINITE_RETRIES} retries (P-29). Completed pairs are saved; "
+                    "rerun the same command to resume once the cause is fixed."
+                )
             components = compute_score_components(samples, y, op, grid)
             truth = compute_region_truth(
                 samples, item.image, op, grid, item.annotation, components.ref_intensity
@@ -297,9 +327,17 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
             if checkpoint_every and n_done % checkpoint_every == 0 and n_done < n_total:
                 writer.checkpoint(registry_descriptors=registry.descriptors())
             if n_done % max(1, n_total // 20) == 0 or n_done == n_total:
-                # Rate over pairs computed in *this* process, not recovered ones.
-                rate = (n_new - len(done)) / max(1e-9, time.time() - started)
-                print(f"[caliber] {n_done}/{n_total} items  ({rate:.1f}/s)")
+                # Seconds per pair, over pairs computed in *this* process, not recovered
+                # ones. It used to print pairs per second to one decimal, which at the
+                # 210 s/pair this project runs on CPU always read "0.0/s" -- a progress
+                # line that could not tell a healthy run from a stalled one.
+                done_here = max(1, n_new - len(done))
+                per_pair = (time.time() - started) / done_here
+                hours_left = per_pair * (n_total - n_done) / 3600
+                print(
+                    f"[caliber] {n_done}/{n_total} items  "
+                    f"({per_pair:.1f} s/pair, ~{hours_left:.1f} h left)"
+                )
 
     registry.write_manifest(out_root / "operator_registry.json")
     writer.flush(registry_descriptors=registry.descriptors())

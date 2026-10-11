@@ -16,6 +16,7 @@ from caliber.solvers import SOLVERS, build_solver
 from caliber.solvers.denoiser import (
     N_TRAIN_STEPS,
     AnalyticDenoiser,
+    DiffusersUNetDenoiser,
     NoiseSchedule,
     linear_beta_schedule,
 )
@@ -270,3 +271,63 @@ def test_draws_still_differ_from_each_other(setup, name):
     draws = SOLVERS[name](n_steps=STEPS, denoiser=denoiser).sample(y, op, n_samples=3, seed=0)
     assert not torch.equal(draws[0], draws[1])
     assert not torch.equal(draws[1], draws[2])
+
+
+# -- the GPU path: only the UNet moves, and its output must come back ----------
+
+
+class _StubUNet(torch.nn.Module):
+    """Stands in for `UNet2DModel`: same call shape, no weights to download."""
+
+    class config:  # noqa: N801 - mirrors the diffusers attribute name
+        in_channels = 3
+
+    def forward(self, x, t):
+        class _Out:
+            sample = x * 0.5
+
+        return _Out()
+
+
+def _denoiser_with_stub(device: str) -> DiffusersUNetDenoiser:
+    den = DiffusersUNetDenoiser("unused-checkpoint", device=device)
+    den._model = _StubUNet().to(device)
+    return den
+
+
+def test_predict_noise_returns_on_the_callers_device_and_dtype():
+    """The contract the GPU path depends on, checked where it can be: on CPU.
+
+    `predict_noise` used to return `.to(x.dtype)` alone. On CPU that is harmless, which
+    is why nothing caught it; with `device: cuda` the noise estimate stayed on the GPU
+    and the first solver step mixed it into CPU arithmetic and raised.
+    """
+    den = _denoiser_with_stub("cpu")
+    x = torch.randn(2, 16, 16, dtype=torch.float64)
+    eps = den.predict_noise(x, 10)
+    assert eps.device == x.device
+    assert eps.dtype == x.dtype
+    assert eps.shape == x.shape
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
+def test_a_cuda_denoiser_runs_a_full_ddnm_sample_on_cpu_data():
+    """Run this first on any GPU machine, before a long bank (AWS runbook, step 1).
+
+    The UNet sits on the GPU; the operator, the measurement and the samples stay on
+    CPU. A device mismatch anywhere in the solver loop raises here in seconds instead
+    of an hour into a run.
+    """
+    den = _denoiser_with_stub("cuda")
+    eps = den.predict_noise(torch.randn(1, 16, 16), 10)
+    assert eps.device.type == "cpu"
+
+    op = MRIUndersamplingOperator(
+        image_shape=(16, 16), family="random1d", acceleration=4,
+        center_fraction=0.08, mask_seed=0,
+    )
+    solver = DDNMSampler(n_steps=4, denoiser=den, device="cuda")
+    y = op.forward(torch.rand(16, 16))
+    samples = solver.sample(y, op, n_samples=2, seed=0)
+    assert samples.device.type == "cpu"
+    assert torch.isfinite(samples).all()

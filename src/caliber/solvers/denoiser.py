@@ -199,7 +199,12 @@ class DiffusersUNetDenoiser(Denoiser):
         batched = x.unsqueeze(1).repeat(1, n_ch, 1, 1).to(self.device)
         timestep = torch.full((batched.shape[0],), int(t), device=self.device, dtype=torch.long)
         eps = model(batched, timestep).sample
-        return eps.mean(dim=1).to(x.dtype)
+        # Back to the caller's device as well as its dtype. Only the UNet moves to the
+        # GPU; the operators, FFTs and scoring stay on CPU, and they are 0.1% of the
+        # time per pair (measured), so there is nothing to gain by moving them. Before
+        # this returned `.to(x.dtype)` alone, so with `device: cuda` the first solver
+        # step mixed a GPU tensor into CPU arithmetic and raised.
+        return eps.mean(dim=1).to(device=x.device, dtype=x.dtype)
 
 
 # -- what the prior was trained on, and whether that fits the modality ---------

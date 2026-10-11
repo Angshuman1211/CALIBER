@@ -633,9 +633,20 @@ rather than producing plausible-looking but systematically mis-scaled reconstruc
 
 ---
 
+### Resolved
+
 #### P-16 - No GPU: torch here is the CPU build
 
-**See:** P-10, D-029, Sec. 17 risk R7
+**Fixed (Week 5)** - **See:** P-10, D-029, P-29, Sec. 17 risk R7
+
+**Resolved by the fix this entry named, four weeks after naming it.** A separate environment with
+`torch 2.13.0+cu126` (`D:\venvs\caliber-gpu`) runs the UNet on the RTX 3050 at **13.9 s per
+pair** against ~210 s on the CPU, and the full-data grid took 6.4 h instead of ~105 h (T2.4 §8).
+It also exposed a device bug the CPU path could never hit: `predict_noise` returned the noise
+estimate on the GPU. Weeks 3 and 4 were sized around this entry's constraint when the remedy
+was one install away; that is worth remembering the next time a problem names its own fix.
+
+*The original entry, kept as written:*
 
 `torch.cuda.is_available()` is **False** — the installed torch is `2.13.0+cpu`, so the
 6 GB RTX 3050 the compute budget was written around is not being used at all. Measured
@@ -657,8 +668,6 @@ The immediate mitigation is D-029: the samplers are testable against an analytic
 denoiser, so correctness work does not wait on compute.
 
 ---
-
-### Resolved
 
 #### P-01 - The CT null projector amplifies instead of projecting
 
@@ -1179,6 +1188,44 @@ Rebuilt against the log and checked: every decision now has exactly one row.
 
 ---
 
+#### P-29 - One pair in 1,791 came back NaN on the GPU and was written to the bank as if it were data
+
+**Fixed** - **See:** D-041, D-042, D-057
+
+The w05 bank (D-057: 9 operators x 199 volumes, 6.4 h on the laptop's RTX 3050) finished
+cleanly, logged no error, and held **256 NaN rows**: every score and error column for one
+pair, `file1000031` slice 20 on `mri.equispaced1d.R4.c0.08.s0`, seed 374937. Nothing in the
+run noticed. A post-run integrity check did.
+
+**Transient, not a bug, and checked rather than assumed.** The same pair with the same seed,
+re-run on the same GPU, came back finite twice. The same volume was clean on the CPU in the
+Week 4 bank. The other eight operators on that volume were clean in this one. The card ran at
+its 86-87 C limit for six hours, which is the likely cause and is not proven.
+
+**The defect was not the NaN; it was that the runner wrote it.** The runner checked its
+config, its memory (D-043), its operators and its prior's domain (D-035) before starting, and
+never checked its own output. A NaN pair is not merely missing: `derive_score_and_label`
+would have scored it, `split_threshold` sorts NaN to the end, and a calibration threshold can
+move with no visible sign.
+
+**Two fixes.**
+
+1. **The runner retries a non-finite pair with the same seed**, up to `NONFINITE_RETRIES = 2`,
+   with a warning each time. Same seed is the point: a recovered pair is the one an
+   uninterrupted run would have made, so the bank stays a function of its config (D-041). A
+   pair still non-finite after that saves a checkpoint and stops with a message naming the
+   pair and seed. Retrying must not paper over a real fault. Both behaviours are pinned in
+   `test_checkpointing.py`, including that a retried bank equals a clean one value for value.
+2. **The bank was repaired through the resume path, not by hand.** The 256 rows were removed,
+   the bank put back in partial form, and the same command re-run: `resuming 1790/1791`, one
+   pair recomputed in 27 s. The other 1,790 pairs compare identical to the original, and the
+   original is kept as `runs/w05_mri_full_val_gpu-990dafc40e706541_backup_with_nan/`.
+
+The recomputed pair sits at the end of the table rather than in its original position.
+Nothing downstream depends on row order.
+
+---
+
 #### P-28 - The only non-degenerate distance measure could not be computed for any MRI operator
 
 **Fixed** - **See:** D-011, D-052
@@ -1350,7 +1397,7 @@ traced to the decision that settled it without opening the log.
 | [D-049](decision_log.md) | P-23 answered: the headline estimand is paired, and the crossed design does not divide the patient budget | Week 4 | Track 1's entry — answers P-23 |
 | [D-050](decision_log.md) | The adjoint gate is size-aware, because a flat 1e-6 was a knife edge | Week 4 | Track 1's fix to a non-portable test |
 | [D-051](decision_log.md) | A third split side, for the choices made by looking at scores | Week 4 | PROPOSED — unblocks T1.1 |
-| [D-052](decision_log.md) | Four of the five candidate operator distances are one measure on mask operators | Week 4 | ACCEPTED — measured, 153 pairs |
+| [D-052](decision_log.md) | Four of the five candidate operator distances are one measure on mask operators | Week 4 | ACCEPTED — measurement stands; "needs CT" revised by D-053 |
 | [D-053](decision_log.md) | The gap is not symmetric in the operator pair, so the plotted axis is directional | Week 4 | Track 1's entry — answers D-052 |
 | [D-054](decision_log.md) | `design_fraction = 0.10`; `calib_fraction` holds at 0.5 until the banks are rebuilt | Week 4 | Track 1's ruling — answers D-051 |
 | [D-055](decision_log.md) | The weight-selection rule is pre-registered; one run produces the number | Week 4 | Track 1's entry — closes D28's half of D-051 |
