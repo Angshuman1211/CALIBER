@@ -1,17 +1,21 @@
-# Week 5 — the first bank sized to certify its own headline, on a cloud GPU.
+# Week 5 — the first bank sized to certify its own headline, on a GPU.
 #
-#   caliber configs/experiments/w05_mri_full_val_gpu.yaml
+#   D:/venvs/caliber-gpu/Scripts/python.exe -u -m caliber.runner \
+#       configs/experiments/w05_mri_full_val_gpu.yaml
 #
-# Run it on a GPU machine only, following the AWS runbook. On this laptop it is
-# ~35 hours; on one NVIDIA T4 it is estimated at 2-3 hours, measured as follows:
+# Needs a CUDA build of torch: the project's main environment is CPU-only
+# (torch 2.13.0+cpu), so this runs from a separate GPU environment.
 #
-#   * one UNet forward at 256^2 = 496 GFLOP (counted, FlopCounterMode)
-#   * 99.9% of each pair's time is the UNet; operators + scoring = 0.18 s (profiled)
-#   * T4 fp32 at 35-60% of its 8.1 TFLOPS peak = 0.10-0.18 s/forward
-#   * 96 forwards per pair (24 steps x 4 draws) = 10-17 s/pair, x 597 pairs
+# Measured on the project laptop's own GPU (NVIDIA RTX 3050 6 GB Laptop, torch
+# 2.13.0+cu126) with scripts/gpu_benchmark.py, 25 real pairs end to end:
 #
-# The first ten minutes of any GPU run are a benchmark that replaces that estimate
-# with a measurement (runbook, step 4). Trust the measurement.
+#   13.9 s/pair steady, after a 7% warm-up slowdown that then held flat
+#   597 pairs -> ~2.3 hours            (the same run on this laptop's CPU: ~35 h)
+#   GPU vs CPU on one UNet pass: relative difference 1.8e-4, rounding-level
+#
+# Why it is fast: one UNet forward at 256^2 is 496 GFLOP (counted), and the UNet is
+# 99.9% of each pair's time; operators + scoring are 0.18 s (profiled). So a GPU
+# speeds up nearly all of the work.
 #
 # --- why this bank, after Week 4 -------------------------------------------------
 #
@@ -33,15 +37,15 @@
 # decision (D-051, P-23). They draw on the same pool of calibration patients, so
 # they are chosen together. Changing either after launch changes the config hash,
 # and a run with a different hash does NOT resume - it starts again from zero
-# (D-042). On a GPU that costs ~$2 rather than a day and a half, but confirm first.
+# (D-042). On the GPU that costs ~2 hours rather than a day and a half, but confirm first.
 #
 # --- resume, and what keeps it safe --------------------------------------------
 #
-# `checkpoint_every: 10` writes the partial bank every ten pairs, ~2-3 minutes on a
-# T4, atomically (temp file + rename), so a crash at any instant loses at most that.
+# `checkpoint_every: 10` writes the partial bank every ten pairs, ~2.3 minutes on the
+# RTX 3050, atomically (temp file + rename), so a crash at any instant loses at most that.
 # Re-running this exact command picks up from the last checkpoint and prints
 # "[caliber] resuming N/597". It refuses a checkpoint from any other config.
-# Run it inside tmux, so a dropped SSH or browser session does not stop it.
+# On the laptop the run is local, so WiFi does not matter; keep it plugged in, lid open.
 
 include: base
 
@@ -58,10 +62,14 @@ experiment:
     # one more reason the device is part of the config hash: a CUDA run can never be
     # resumed on CPU, or mixed with a CPU bank, by accident.
     device: cuda
-    # All four draws through the UNet in one batch. A T4 has 16 GB; the batch needs a
-    # few. Batching is the GPU's efficient mode, and the bank is identical either way
-    # because every draw carries its own seed (D-041, D-044).
-    max_draws_per_batch: 0
+    # One draw through the UNet at a time, measured on the RTX 3050 6 GB:
+    #   1 draw : 12.0 s/pair, 2.8 GB of GPU memory
+    #   2 draws: 11.9 s/pair, 5.1 GB   - no faster, and no headroom left on a 6.4 GB card
+    #   4 draws: out of GPU memory
+    # The card is already fully busy at one draw, so batching buys nothing here. The
+    # bank is identical either way because every draw carries its own seed (D-041,
+    # D-044). On a 16 GB GPU, 0 (all four at once) is worth re-measuring.
+    max_draws_per_batch: 1
   n_posterior: 4
   operators:
     - modality: mri
