@@ -10,7 +10,7 @@
 # 2.13.0+cu126) with scripts/gpu_benchmark.py, 25 real pairs end to end:
 #
 #   13.9 s/pair steady, after a 7% warm-up slowdown that then held flat
-#   597 pairs -> ~2.3 hours            (the same run on this laptop's CPU: ~35 h)
+#   9 operators x 199 volumes = 1,791 pairs -> ~6.9 hours   (on this laptop's CPU: ~105 h)
 #   GPU vs CPU on one UNet pass: relative difference 1.8e-4, rounding-level
 #
 # Why it is fast: one UNet forward at 256^2 is 496 GFLOP (counted), and the UNet is
@@ -19,25 +19,34 @@
 #
 # --- why this bank, after Week 4 -------------------------------------------------
 #
-# T2.4 §7: the Week 4 grid had 12 test clusters and a paired half-width of +/-0.22,
-# and six of its nine operators were near-duplicates on the distance axis (D-052).
-# Adding operators costs compute and buys no precision in a crossed design (D-049).
-# So this run spends its compute on *patients* instead:
+# The Week 4 grid ran on 30 volumes: 12 test clusters, a paired half-width of +/-0.22.
+# This run keeps the same 3 x 3 grid and spends the GPU on *patients*: every volume
+# in singlecoil_val, 199 volumes from 96 patients.
 #
-#   all 199 volumes = 96 patients;  calib_fraction 0.3 -> 38 calib / 58 test
-#   paired half-width ~ +/-0.100 -- the first configuration that can separate
-#   "coverage restored" from "coverage failed" (P-23)
+# --- the three choices, as ruled by Track 1 (Week 5) ---------------------------
 #
-# and on the one stretch of the distance axis that is graded: one mask family,
-# three accelerations (0 -> 0.50 -> 0.61 from R2).
+# **calib_fraction 0.5, unchanged.** Track 2 proposed 0.3, from a table that counted
+# only the test-side term (+/-0.115 -> +/-0.100). Moving patients from calib to test
+# also grows the conformal threshold's own sampling noise, and the two add in
+# quadrature: with the patient as the calibration unit (D-027), Var ~ a(1-a)/(n+2),
+# the total is +/-0.140 at 0.5 and +/-0.137 at 0.3. Re-slicing 96 patients cannot
+# create precision; only more patients can. Keeping 0.5 also keeps the test side
+# comparable with everything measured so far.
 #
-# --- before launching: two values Track 1 must confirm ---------------------------
+# **design_fraction 0.10.** Carves 8 design patients out of calibration (D-051) for
+# D49's weight-selection rule; w_free is the last unset number in the score. Test
+# stays at 44. Costs ~0.004 of total half-width. 52 calib -> 8 design + 44 calib.
 #
-# `calib_fraction` and `design_fraction` below are Track 2's proposal, not a
-# decision (D-051, P-23). They draw on the same pool of calibration patients, so
-# they are chosen together. Changing either after launch changes the config hash,
-# and a run with a different hash does NOT resume - it starts again from zero
-# (D-042). On the GPU that costs ~2 hours rather than a day and a half, but confirm first.
+# **All three mask families.** Track 2 proposed dropping two, because they sit at a
+# near-identical *symmetric* distance (~0.65, D-052). Track 1 refuted the premise
+# (D-053: distance is not the axis), and Week 4's own table settles it: every
+# deployment cell that under-covers is cross-family. Within random1d alone, every
+# deployment cell sits at coverage 1.000, so one family would carry zero evidence for
+# O3. If compute ever forces a cut: cut accelerations (graded, interpolable), never
+# families (categorical).
+#
+# Changing any value after launch changes the config hash, and a run with a
+# different hash does NOT resume - it starts again from zero (D-042).
 #
 # --- resume, and what keeps it safe --------------------------------------------
 #
@@ -73,7 +82,7 @@ experiment:
   n_posterior: 4
   operators:
     - modality: mri
-      family: random1d
+      family: [random1d, equispaced1d, variable_density2d]
       acceleration: [2, 4, 8]
       center_fraction: 0.08
       mask_seed: 0
@@ -87,8 +96,8 @@ data:
     split: auto
     image_shape: [256, 256]
     slices_per_volume: 1
-    calib_fraction: 0.3     # PROPOSED - confirm with Track 1 before launch
-    design_fraction: 0.0    # PROPOSED - confirm with Track 1 before launch
+    calib_fraction: 0.5     # Track 1, Week 5 (see header)
+    design_fraction: 0.10   # Track 1, Week 5: 8 design / 44 calib / 44 test patients
 
 run:
   limit: null               # every volume in singlecoil_val: 199 volumes, 96 patients
