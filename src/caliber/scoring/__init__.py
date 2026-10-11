@@ -28,6 +28,12 @@ from .score import (
     combine_components,
     compute_score_components,
 )
+from .weights import (
+    WeightSelection,
+    lipschitz_ceiling,
+    select_weights,
+    weight_curve,
+)
 
 __all__ = [
     "CRITERION_VERSION",
@@ -42,6 +48,10 @@ __all__ = [
     "identity_residual",
     "q6_verdict",
     "stratified_auc",
+    "WeightSelection",
+    "lipschitz_ceiling",
+    "select_weights",
+    "weight_curve",
     "ScoreScales",
     "ScoreWeights",
     "combine_components",

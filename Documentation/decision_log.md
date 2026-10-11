@@ -2093,6 +2093,252 @@ is the finding, and recording only one measure would hide it from Week 6.
 
 ---
 
+## D-053 · The gap is not symmetric in the operator pair, so the plotted axis is directional
+**Date:** Week 4 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.3) · **Answers:** D-052
+
+D-052's measurement is right and its conclusion is too pessimistic by one step. Four of the
+five registered distances agree to 1.1e-16 on mask operators because they are the same
+function — and **all five are metrics**, while the quantity they are meant to predict is
+not symmetric.
+
+Measured on the phantom bank, naive transfer in both directions between the same pairs:
+
+| calibrate → deploy | `null_space_projection` | gap | 95% CI |
+|---|---|---|---|
+| R2 → R8 | 0.6124 | −0.097 | [−0.134, −0.068] |
+| **R8 → R2** | **0.6124** | **+0.902** | [+0.881, +0.921] |
+| R4 → R8 | 0.3536 | −0.074 | [−0.094, −0.054] |
+| **R8 → R4** | **0.3536** | **+0.234** | [+0.197, +0.270] |
+
+Every x carries two y's of opposite sign with disjoint intervals. **The headline figure's
+axis cannot be a metric.** The mechanism is P-21's with its direction named: deploying
+where scores are higher over-flags (coverage gained, flag area exploded); deploying where
+they are lower under-flags (coverage collapsed). The blueprint expects the second and the
+grid has been exercising the first.
+
+**`null_space_growth` is registered** — net ambient fraction newly hidden, signed. It
+reproduces `null_space_projection` exactly (up to sign) on nested masks, so D19 is amended
+rather than replaced, and `|growth| ≤ null_space_projection` always, so T3.3's bound is
+untouched and merely loose in the benign direction. `distance_matrix` refuses it, since
+mirroring an antisymmetric quantity would record half the pairs backwards.
+
+**For the Week 4 figure.** From `random1d R2` at 256², the six cross-family deployment
+operators:
+
+| axis | spread over the 6 points | monotone in acceleration |
+|---|---|---|
+| `null_space_projection` | 0.0498 | no — `equispaced R4` > `R8` |
+| `null_space_growth` | **0.6124** | yes, within every family |
+
+**A prediction, and then its falsification against your own §7.1 — same day.** The signed
+measure is *identical* across families at matched acceleration (0.0000 / 0.5000 / 0.6124 for
+R2 / R4 / R8, all three families), because two masks keeping the same number of lines hide
+as much as they reveal. That predicted equal coverage gaps at matched acceleration. **It is
+wrong**, and your table already said so — I wrote the prediction before reading §7.1, which
+was the wrong order:
+
+| signed growth | gaps at that level | spread |
+|---|---|---|
+| +0.0000 | +0.038, **+0.142**, +0.070 | **0.104** |
+| +0.5000 | −0.100, −0.098, +0.047 | **0.147** |
+| +0.6124 | −0.100, −0.100, −0.092 | 0.008 |
+
+Against a total gap range of 0.242, the family change carries ~60% of it. The worst point is
+`equispaced1d R2` — your "one operator where naive transfer under-covers outright" — which
+is the coherent-aliasing mechanism named as the candidate, so the direction of the
+falsification is at least the expected one.
+
+**What survives is the ordering, and it is worth having.** Spearman ρ of gap against axis
+over your nine points:
+
+| axis | ρ |
+|---|---|
+| `null_space_projection` | **+0.305**, and the sign is incoherent — gaps go *negative* as it grows |
+| `null_space_growth` | **−0.751**, coherent: more newly hidden ⇒ more over-flagging |
+
+**Revised: the figure takes two coordinates** — signed growth as the graded x-axis, mask
+family as a categorical series. One line per family, not one curve through nine points.
+D-052's conclusion that this operator class does not reduce to a single distance is
+*upheld*; what it overstated is that the obstruction needs CT to see. Direction is
+recoverable here; pattern is not reducible at all.
+
+*Cost:* the measure is not injective — it collapses the family axis to zero — so it orders
+the grid without separating it, and the family term has to be carried alongside.
+
+*Affects:* T1.3, D19, T3.2, T3.3 §5, T1.4's figure, Week 4 grid analysis, Week 6 Tool 2.
+
+---
+
+## D-054 · `design_fraction = 0.10`; `calib_fraction` holds at 0.5 until the banks are rebuilt
+**Date:** Week 4 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.4) · **Answers:** D-051
+
+D-051 is accepted as proposed, including the carve from the calibration range for the three
+reasons given. The fraction was Track 1's and here it is, with the coupled second number.
+
+**`design_fraction = 0.10`** — 8 patients on the real list. The argument is the flatness of
+what it feeds: D42's weight sweep moves flag area by 0.015 across `w_free ∈ [0.3, 0.6]`, so
+a noisy selection inside that region costs almost nothing. The design side needs to be
+*separate*, not large. τ is the same case — D37 set it on calibration arithmetic, not by
+fitting. And calibration can afford it: at τ=1.75 the positive rate is 0.401–0.772, leaving
+thousands of positives per group against D32's floor of 9.
+
+**`calib_fraction` stays 0.5, and the reason is comparability rather than statistics.**
+Your P-23 lever (0.5 → 0.3, ±0.127 → ±0.111) is real and I am declining it for now:
+**changing `calib_fraction` moves the test side** — 54 → 62 on a 96-key list — which is
+precisely the property D-051 engineered for `design_fraction` and cannot provide for this
+one. Taking it today makes every coverage number already measured incomparable with every
+one measured after, for a gain that still misses ±0.10.
+
+**Take it when the banks are being rebuilt anyway — the medical-prior swap (D-016).** That
+is the one moment the re-baseline is free. Go to **0.4**, not 0.3, unless the
+threshold-noise feedback you flagged has been measured by then; 0.3 trades a measured 0.016
+against an unmeasured risk to the quantity the project certifies.
+
+**One guard for the config rather than the prose:** `calib_fraction=0.3` with
+`design_fraction=0.20` leaves **5** calibration patients, which neither number shows on its
+own. Worth refusing, against D32's 9-positives-per-group floor rather than a patient count.
+
+*Cost:* 8 calibration patients now; the paired half-width stays at ±0.127 until D-016.
+
+*Affects:* T1.1, D28, D37, D-051, P-23, T2.1, the fastMRI loader.
+
+---
+
+## D-055 · The weight-selection rule is pre-registered; one run produces the number
+**Date:** Week 4 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.1) · **Closes:** D28's half of D-051
+
+D-051 built the design split, D-054 set the fraction, and the selection rule is now written
+down — **before** any bank with a design side exists, so it cannot be tuned to what the data
+turns out to say. Track 1's entry is D49; `scoring/weights.py` and `scripts/select_weights.py`.
+
+The rule in one line: sweep `w_free` on design rows, minimise **flagged area** at fixed α,
+and among points within one cluster-bootstrap SE of the minimum take the largest `w_free`,
+because `L = w·L_free + (1−w)·L_disagree` falls as `w_free` rises (D-046). Flat objective,
+so the tie-break does the work and it is resolved toward the tighter bound rather than toward
+noise.
+
+**What Track 2 needs to run, and a plumbing gap worth knowing about first.**
+`design_fraction` reached `splits.py` and the fastMRI loader, but **no config sets it, and the
+phantom dataset cannot express it** — it takes a single fixed split string. So the three-way
+split is reachable today for fastMRI only, as a *dataset* kwarg rather than a `run.` one:
+
+```
+caliber configs/experiments/w04_design_split.yaml
+PYTHONPATH=src python3 scripts/select_weights.py runs/<run_id> \
+    --calibration-operator mri.random1d.R2.c0.08.s0
+```
+
+**`keep_splits` is added to the fastMRI loader, and it is what makes that run affordable.**
+The loader labelled every volume with its split while reconstructing all of them. For a side
+that is 8 patients of 96 that discards ~92% of the work — at your measured 288 s per
+item-operator, **597 reconstructions and 47.8 h** against **24 and 1.9 h**. It filters
+*before* `limit_volumes`, which is the load-bearing ordering: limiting first returns 8
+volumes of which roughly one is design.
+
+It changes no patient's assignment. The split stays a pure function of (patient, fraction,
+salt) per D-022/D-027; `keep_splits` chooses only what is worth reconstructing, and
+`tests/test_split_filter.py` asserts a kept volume carries the label it would have carried
+unfiltered. It is refused outright with an explicit `split`, where it would silently keep or
+drop everything.
+
+The config rather than overrides is deliberate: `max_draws_per_batch: 1` is mandatory
+(P-24/D-044 — 4 draws at 256° needs ~18 GB and segfaults with no traceback) and
+`checkpoint_every` is unset everywhere (D-040), so a two-hour run that dies loses everything.
+Both belong in a file, not in four flags that D-048 will reject one character at a time.
+
+One optional follow-up left for you: the phantom dataset takes a single fixed split string,
+so the three-way path has no dataset-free smoke test.
+
+*Cost:* one re-run of the Week 3 config. The test side does not move (D-051), so the coverage
+numbers already measured stay comparable.
+
+*Affects:* T1.1, D28, D-051, D-054, D-046, T3.3's constant.
+
+
+---
+
+## D-056 · Two failure modes, a corrected comparison rule, and Tool 2's first real evaluation
+**Date:** Week 4 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.4) · **See:** D50, D51, D52
+
+Three results from closing out T1.4. The first is free and improves the Week 4 headline; the
+third is a half-negative on the project's primary contribution.
+
+**1. The grid has only been analysed in its benign direction.** Week 4 calibrates at
+`random1d R2`, the least aggressive operator, and deploys upward. By D-053 that is the
+direction where scores rise, so the threshold turns conservative and the failure shows up as
+over-flagging — flag area 0.999, coverage 1.000. **Descending the grid is the other failure.**
+On the phantom bank, calibrating at R8 and deploying to R2 gives naive coverage **0.000**
+against Mondrian's 0.903. Coverage collapse — the failure §1 predicts, and nothing has been
+pointed at it.
+
+**This is a re-analysis of your existing bank, not a re-run.** The design is crossed (D-049),
+so the calibration operator is an analysis-time choice — §17's premise. Both directions get
+reported: the ascending half alone understates the risk, the descending half alone would be
+cherry-picking.
+
+**2. D-039's "compare flagged area, not power" needs a precondition, and I wrote it without
+one.** Area is the right axis only while the conformal threshold actually pins the miss rate,
+which requires calibration and deployment scores to be exchangeable — the thing operator
+shift breaks. Caught by measurement: the nearest-operator arm posted the smallest flagged
+area of any arm, at coverage **0.547**. An arm now competes on area only if its coverage
+interval reaches nominal.
+
+**3. Tool 2 has been evaluated for the first time, and it is half a win.**
+`calibrate_weighted` appeared in no analysis path at all — implemented Week 2, never pointed
+at a bank. `scripts/tool2_holdout.py` holds each operator out in turn. On the one interior
+fold available: Tool 2 is **valid where the nearest-operator baseline is not** (that one
+under-covers by 24 points), and flags **exactly as much area as Mondrian's unknown-group
+fallback** — everything. It has earned validity and not efficiency.
+
+The mechanism is not tuning. The oracle threshold is 0.8152; Tool 2 picks 0.5658, below the
+held-out operator's *minimum* score. Bandwidth swept 0.02-0.8 moves it by 0.05 and never
+changes the outcome, so **D33's open bandwidth question closes with "the bandwidth is not the
+lever"**. A lower-tail quantile is set by the lowest-scoring regime in the mixture, and an
+exponential kernel down-weights smoothly without ever excluding: at `h=0.08` the far regime
+still holds 14% relative weight, enough to occupy the alpha=0.10 tail. Drive it to zero and
+the ESS collapses, so D32 refuses to certify. **Tool 2's accuracy wants concentrated weight
+and its certifiability wants spread weight, and on an ordered grid no `h` gives both.**
+
+*For your grid:* Tool 2 cannot extrapolate, so a held-out **endpoint** operator tests nothing.
+Q4 needs *interior* deployment operators, which your nine-operator grid has and the phantom
+bank barely does.
+
+*Cost:* one interior fold, a reference sampler, three operators. The direction of the
+tail-domination argument should survive to nine operators, but the verdict is yours to
+reproduce: `PYTHONPATH=src python3 scripts/tool2_holdout.py runs/<week4_run_id>`.
+
+*Affects:* O3, T1.2, T1.4, D-039, D33, Q4, the Week 4 figure, Week 6 Tool 2.
+
+---
+
+## D-057 · Pre-run rulings: hold calib_fraction at 0.5, take design_fraction 0.10, keep all three families
+**Date:** Week 5 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.4) · **Answers:** Track 2's pre-run questions · **Amends:** D-054's reasoning
+
+Full working in Track 1's D53.
+
+**calib_fraction = 0.5.** Your table counts the test-side term only. Moving a patient from
+calib to test also grows the threshold's own sampling noise, and they add in quadrature:
+total half-width is **0.140 (0.5) against 0.137 (0.3)**, and **0.144 against 0.144** once the
+design side is carved out. 0.3 buys 0.003, not 0.015, and none of the four settings reaches
+±0.100. Re-slicing 96 patients cannot create precision. (Caveat: for the *paired* gap the
+threshold noise partly cancels, so the real gain is in (0.003, 0.015] — still too small to
+pay the comparability cost of moving the test side.)
+
+**design_fraction = 0.10 — yes, in this run.** D49's rule is written and waiting on those
+rows; `w_free` is the last unset number in the score. Free in a run that is happening anyway,
+which makes `w04_design_split.yaml` redundant for this pass.
+
+**Keep all three families.** Checked against your own §7.1: every cell below nominal coverage
+is `random1d R2` (the calibration operator), `equispaced1d R2` (0.758),
+`variable_density2d R2` (0.830) and `variable_density2d R4` (0.853). **Within `random1d`
+alone every deployment cell is at coverage 1.000, so dropping the families leaves zero cells
+supporting under-coverage** — the whole O3 evidence base in that grid is cross-family. It
+would also drop the grid's lowest flag area (0.209), the only non-vacuous cell. If compute
+forces a cut, cut accelerations: the within-family axis is graded and interpolable, the family
+axis is categorical and is not.
+
+*Affects:* T1.1, T1.4, D28, D-051, D-054, D-052, D-053, O3, Week 5 run.
+
 ## Template
 
 ```

@@ -86,6 +86,97 @@ def null_space_projection_distance(
     return _normalise(value, op_a, op_b, normalise)
 
 
+# -- 1b. signed null-space growth — directional (T1.3, Track 1) ---------------
+
+
+def null_space_growth(
+    op_a: ForwardOperator,
+    op_b: ForwardOperator,
+    normalise: Normalisation = "ambient",
+    n_probes: int = 32,
+    seed: int = 0,
+) -> float:
+    """**Signed** growth of the null space from ``op_a`` (calibration) to ``op_b``
+    (deployment). Positive means the deployment operator hides more.
+
+    **Track 1 owns this one** (T1.3). It exists because every other measure in this
+    registry is a *metric* — symmetric by construction — and the coverage gap is not a
+    symmetric function of the operator pair. Measured on the phantom bank, naive transfer
+    between the same two operators in the two directions:
+
+    | pair | ``null_space_projection`` | coverage gap | 95% CI |
+    |---|---|---|---|
+    | R2 → R8 | 0.6124 | −0.097 | [−0.134, −0.068] |
+    | R8 → R2 | 0.6124 | **+0.902** | [+0.881, +0.921] |
+
+    Same x, opposite y, intervals nowhere near each other. A coverage-gap-against-distance
+    curve plotted on a symmetric axis is therefore **not a function** — it is two branches
+    — and the three distance values tested each carry both.
+
+    The mechanism is the one P-21 identified: scores rise with acceleration, so a threshold
+    calibrated where scores are low and deployed where they are high flags everything
+    (over-coverage, exploding flag area), while the reverse direction flags almost nothing
+    (coverage collapse). Those are different failures and the axis has to tell them apart.
+
+    **Definition.** On the energy scale, the net fraction of the ambient space newly
+    hidden, then a signed square root to put it on the same amplitude scale as
+    :func:`null_space_projection_distance`:
+
+        g = (|kept by A, dropped by B| − |dropped by A, kept by B|) / ambient
+        d = sign(g) · sqrt(|g|)
+
+    Two properties worth stating because they are the point:
+
+    * **Nested masks reproduce the symmetric measure exactly, up to sign.** Where the
+      deployment operator samples a subset of the calibration operator, the second term is
+      zero and ``|d|`` equals ``null_space_projection``. So this is not a different
+      quantity on the graded within-family axis — it is the same quantity with its
+      direction restored, which keeps D19's interpretation ("the fraction of k-space lines
+      whose sampled status changed") intact where that reading applies.
+    * **An equal-acceleration family change collapses toward zero.** Two masks that keep
+      the same fraction of k-space in different places hide as much as they reveal, so
+      ``g ≈ 0`` where the symmetric measure saturates at ~0.65 (D-052). That is a
+      **falsifiable prediction**: a family change at matched acceleration should show a
+      small coverage gap. The Week 4 grid can test it.
+
+    **This is not a metric and must not be used as one.** It is signed, asymmetric, and
+    violates the triangle inequality, so it is unavailable to T3.3's Lipschitz assumption,
+    which needs a genuine distance. That is not a conflict: ``|d| ≤
+    null_space_projection`` always, so a bound proved against the symmetric measure stays
+    valid here and is merely loose in the benign direction. The split is exactly the
+    "plotted quantity need not be the proved quantity" caution T1.3 raised and T3.3 §5
+    answered — returning in a new form, with the same resolution.
+    """
+    if _both_have_masks(op_a, op_b):
+        mask_a = op_a.descriptor().sampling_support
+        mask_b = op_b.descriptor().sampling_support
+        newly_hidden = float((mask_a & ~mask_b).sum())
+        newly_revealed = float((~mask_a & mask_b).sum())
+    else:
+        # Hutchinson again, but on each one-sided projector rather than the difference:
+        # P_N(B) restricted to what A measured is the content B newly hides.
+        gen = torch.Generator().manual_seed(seed)
+        hidden = revealed = 0.0
+        for _ in range(n_probes):
+            z = torch.randn(*op_a.image_shape, generator=gen)
+            hidden += float(torch.linalg.vector_norm(op_b.project_null(op_a.project_range(z))) ** 2)
+            revealed += float(
+                torch.linalg.vector_norm(op_a.project_null(op_b.project_range(z))) ** 2
+            )
+        newly_hidden, newly_revealed = hidden / n_probes, revealed / n_probes
+
+    net = newly_hidden - newly_revealed
+    value = abs(net) ** 0.5
+    signed = _normalise(value, op_a, op_b, normalise)
+    return signed if net >= 0 else -signed
+
+
+#: Measures that are **not** metrics — signed and asymmetric. A pairwise matrix of these
+#: is antisymmetric rather than symmetric, so :func:`distance_matrix` refuses them rather
+#: than silently returning half of one.
+SIGNED_MEASURES = frozenset({"null_space_growth"})
+
+
 # -- 2. sampling-support difference -------------------------------------------
 
 
@@ -176,6 +267,7 @@ def spectral_divergence(
 
 DISTANCES: dict[str, Callable[..., float]] = {
     "null_space_projection": null_space_projection_distance,
+    "null_space_growth": null_space_growth,
     "sampling_support": sampling_support_difference,
     "chordal_subspace": chordal_subspace_distance,
     "operator_norm": operator_norm_distance,
@@ -191,7 +283,19 @@ def compute_distance(op_a: ForwardOperator, op_b: ForwardOperator, measure: str,
 
 
 def distance_matrix(ops: list[ForwardOperator], measure: str, **kwargs) -> Tensor:
-    """Symmetric pairwise distance matrix over a set of registered operators."""
+    """Symmetric pairwise distance matrix over a set of registered operators.
+
+    Refuses a signed measure rather than filling in half a matrix and mirroring it: for
+    ``null_space_growth`` the ``(i, j)`` and ``(j, i)`` entries have opposite signs, and
+    mirroring would record the deployment direction as the calibration one for half the
+    pairs. Call :func:`compute_distance` per ordered pair instead.
+    """
+    if measure in SIGNED_MEASURES:
+        raise ValueError(
+            f"{measure!r} is signed and directional, so a symmetric matrix would "
+            "misreport half its entries — compute it per ordered (calibration, "
+            "deployment) pair instead"
+        )
     n = len(ops)
     out = torch.zeros(n, n, dtype=torch.float64)
     for i in range(n):
