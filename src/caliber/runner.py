@@ -297,9 +297,17 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
             if checkpoint_every and n_done % checkpoint_every == 0 and n_done < n_total:
                 writer.checkpoint(registry_descriptors=registry.descriptors())
             if n_done % max(1, n_total // 20) == 0 or n_done == n_total:
-                # Rate over pairs computed in *this* process, not recovered ones.
-                rate = (n_new - len(done)) / max(1e-9, time.time() - started)
-                print(f"[caliber] {n_done}/{n_total} items  ({rate:.1f}/s)")
+                # Seconds per pair, over pairs computed in *this* process, not recovered
+                # ones. It used to print pairs per second to one decimal, which at the
+                # 210 s/pair this project runs on CPU always read "0.0/s" -- a progress
+                # line that could not tell a healthy run from a stalled one.
+                done_here = max(1, n_new - len(done))
+                per_pair = (time.time() - started) / done_here
+                hours_left = per_pair * (n_total - n_done) / 3600
+                print(
+                    f"[caliber] {n_done}/{n_total} items  "
+                    f"({per_pair:.1f} s/pair, ~{hours_left:.1f} h left)"
+                )
 
     registry.write_manifest(out_root / "operator_registry.json")
     writer.flush(registry_descriptors=registry.descriptors())
