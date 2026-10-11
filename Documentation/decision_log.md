@@ -2309,6 +2309,36 @@ reproduce: `PYTHONPATH=src python3 scripts/tool2_holdout.py runs/<week4_run_id>`
 
 *Affects:* O3, T1.2, T1.4, D-039, D33, Q4, the Week 4 figure, Week 6 Tool 2.
 
+---
+
+## D-057 · Pre-run rulings: hold calib_fraction at 0.5, take design_fraction 0.10, keep all three families
+**Date:** Week 5 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.4) · **Answers:** Track 2's pre-run questions · **Amends:** D-054's reasoning
+
+Full working in Track 1's D53.
+
+**calib_fraction = 0.5.** Your table counts the test-side term only. Moving a patient from
+calib to test also grows the threshold's own sampling noise, and they add in quadrature:
+total half-width is **0.140 (0.5) against 0.137 (0.3)**, and **0.144 against 0.144** once the
+design side is carved out. 0.3 buys 0.003, not 0.015, and none of the four settings reaches
+±0.100. Re-slicing 96 patients cannot create precision. (Caveat: for the *paired* gap the
+threshold noise partly cancels, so the real gain is in (0.003, 0.015] — still too small to
+pay the comparability cost of moving the test side.)
+
+**design_fraction = 0.10 — yes, in this run.** D49's rule is written and waiting on those
+rows; `w_free` is the last unset number in the score. Free in a run that is happening anyway,
+which makes `w04_design_split.yaml` redundant for this pass.
+
+**Keep all three families.** Checked against your own §7.1: every cell below nominal coverage
+is `random1d R2` (the calibration operator), `equispaced1d R2` (0.758),
+`variable_density2d R2` (0.830) and `variable_density2d R4` (0.853). **Within `random1d`
+alone every deployment cell is at coverage 1.000, so dropping the families leaves zero cells
+supporting under-coverage** — the whole O3 evidence base in that grid is cross-family. It
+would also drop the grid's lowest flag area (0.209), the only non-vacuous cell. If compute
+forces a cut, cut accelerations: the within-family axis is graded and interpolable, the family
+axis is categorical and is not.
+
+*Affects:* T1.1, T1.4, D28, D-051, D-054, D-052, D-053, O3, Week 5 run.
+
 ## Template
 
 ```

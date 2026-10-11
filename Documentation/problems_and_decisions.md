@@ -660,6 +660,39 @@ Nothing moves. **A lower-tail quantile is set by the lowest-scoring regime in th
 
 ---
 
+### D53 — Pre-run rulings for the full MRI run: hold `calib_fraction`, take the design side, keep all three families [T1.4, amends D48's reasoning]
+Track 2 asked for three calls before the full run. Two confirm D48; one needed its arithmetic redone, because their new numbers made my earlier premise false.
+
+**1. `calib_fraction` stays 0.5 — and the reason has changed.** D48 declined the 0.3 lever partly because "the gain still misses ±0.10". Their refined numbers reach it (±0.115 → ±0.100), so that premise is gone. The ruling survives on a better argument: **their table counts only the test-side term.** Moving a patient from calib to test also grows the conformal threshold's own sampling noise, and the two add in quadrature. Taking the calibration unit to be the patient (D-027) and `Var ≈ α(1−α)/(n+2)`:
+
+| setting | calib / test | test half | threshold half | **total** |
+|---|---|---|---|---|
+| 0.5, design 0 (today) | 52 / 44 | 0.115 | 0.080 | **0.140** |
+| 0.5, design 0.10 | 44 / 44 | 0.115 | 0.087 | **0.144** |
+| 0.3, design 0 | 38 / 58 | 0.100 | 0.093 | **0.137** |
+| 0.3, design 0.10 | 30 / 58 | 0.100 | 0.104 | **0.144** |
+
+**The total is flat.** 0.3 buys 0.003, not 0.015 — and with the design side carved out it ends at 0.144, *worse* than today. None of the four reaches ±0.100. Re-slicing 96 patients cannot create precision; only adding patients can (P-23's option 4).
+
+*Honest limit on this calculation:* treating all positives in a patient as one exchangeable unit is the conservative end, and for the **paired** gap the threshold noise partially cancels, since one threshold moves both arms together. So the true gain from 0.3 is somewhere in (0.003, 0.015] rather than exactly 0.003. It is still small enough that the comparability cost of moving the test side is not worth paying.
+
+**2. `design_fraction = 0.10` — yes, take it in this run.** D49's selection rule is written and waiting on exactly these rows, and `w_free` is the last unset number in the score definition. Since a full run is happening anyway, the design rows come free in the same pass, which makes `configs/experiments/w04_design_split.yaml` unnecessary for this case — it stays for a standalone top-up. Cost 0.004 of total half-width, against closing D28.
+
+**3. Keep all three mask families.** Their reasoning — the families sit at ~0.65 so add no new points (D-052) — is the premise D47 refuted: distance is not the axis. Checked against their own §7.1 table, every grid cell whose coverage falls below nominal:
+
+| cell | coverage | flag area | |
+|---|---|---|---|
+| `random1d R2` | 0.862 | 0.694 | the calibration operator itself |
+| `equispaced1d R2` | **0.758** | 0.630 | cross-family |
+| `variable_density2d R2` | 0.830 | 0.209 | cross-family |
+| `variable_density2d R4` | 0.853 | 0.531 | cross-family |
+
+**Within `random1d` alone, every deployment cell sits at coverage 1.000.** Dropping the other two families leaves **zero** cells supporting under-coverage — the entire O3 evidence base in the grid is cross-family. It would also drop the lowest flag area in the grid (`variable_density2d R2`, 0.209), the only cell where the flag is useful rather than vacuous.
+
+*If compute forces a cut, cut accelerations, not families.* The within-family axis is graded and interpolable (D47's signed measure is monotone along it); the family axis is categorical and cannot be interpolated at all.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)

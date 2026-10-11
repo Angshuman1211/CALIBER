@@ -1294,7 +1294,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 56 entries, so a problem in Part I can be
+What lives here instead is the index — 57 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1355,3 +1355,4 @@ traced to the decision that settled it without opening the log.
 | [D-054](decision_log.md) | `design_fraction = 0.10`; `calib_fraction` holds at 0.5 until the banks are rebuilt | Week 4 | Track 1's ruling — answers D-051 |
 | [D-055](decision_log.md) | The weight-selection rule is pre-registered; one run produces the number | Week 4 | Track 1's entry — closes D28's half of D-051 |
 | [D-056](decision_log.md) | Two failure modes, a corrected comparison rule, and Tool 2's first real evaluation | Week 4 | Track 1's entry — see D50-D52 |
+| [D-057](decision_log.md) | Pre-run rulings: hold calib_fraction, take design_fraction 0.10, keep all three families | Week 5 | Track 1's ruling — answers Track 2's pre-run questions |
