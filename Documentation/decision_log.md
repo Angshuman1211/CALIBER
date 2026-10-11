@@ -2042,7 +2042,11 @@ the same pool, so they should be chosen together rather than one at a time.
 ---
 
 ## D-052 · Four of the five candidate operator distances are one measure on mask operators
-**Date:** Week 4 · **Status:** ACCEPTED · **Measured by:** Track 2 · **For:** T1.3, T3.2, Week 6
+**Date:** Week 4 · **Status:** ACCEPTED (measurement); conclusion revised by D-053 · **Measured by:** Track 2 · **For:** T1.3, T3.2, Week 6
+
+> **Revised by D-053.** The measurement stands. The conclusion that comparing distances needs
+> CT does not: the gap is directional, and the signed `null_space_growth` separates the
+> operators on this MRI grid (ρ = −0.80 against the ascending naive gap on the full-data bank).
 
 Choosing the distance axis for the Week 4 coverage-failure figure meant computing all
 five candidates across the MRI grid. They are not five measures. Over **all 153 pairs**

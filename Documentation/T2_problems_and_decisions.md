@@ -633,9 +633,20 @@ rather than producing plausible-looking but systematically mis-scaled reconstruc
 
 ---
 
+### Resolved
+
 #### P-16 - No GPU: torch here is the CPU build
 
-**See:** P-10, D-029, Sec. 17 risk R7
+**Fixed (Week 5)** - **See:** P-10, D-029, P-29, Sec. 17 risk R7
+
+**Resolved by the fix this entry named, four weeks after naming it.** A separate environment with
+`torch 2.13.0+cu126` (`D:\venvs\caliber-gpu`) runs the UNet on the RTX 3050 at **13.9 s per
+pair** against ~210 s on the CPU, and the full-data grid took 6.4 h instead of ~105 h (T2.4 §8).
+It also exposed a device bug the CPU path could never hit: `predict_noise` returned the noise
+estimate on the GPU. Weeks 3 and 4 were sized around this entry's constraint when the remedy
+was one install away; that is worth remembering the next time a problem names its own fix.
+
+*The original entry, kept as written:*
 
 `torch.cuda.is_available()` is **False** — the installed torch is `2.13.0+cpu`, so the
 6 GB RTX 3050 the compute budget was written around is not being used at all. Measured
@@ -657,8 +668,6 @@ The immediate mitigation is D-029: the samplers are testable against an analytic
 denoiser, so correctness work does not wait on compute.
 
 ---
-
-### Resolved
 
 #### P-01 - The CT null projector amplifies instead of projecting
 
@@ -1388,7 +1397,7 @@ traced to the decision that settled it without opening the log.
 | [D-049](decision_log.md) | P-23 answered: the headline estimand is paired, and the crossed design does not divide the patient budget | Week 4 | Track 1's entry — answers P-23 |
 | [D-050](decision_log.md) | The adjoint gate is size-aware, because a flat 1e-6 was a knife edge | Week 4 | Track 1's fix to a non-portable test |
 | [D-051](decision_log.md) | A third split side, for the choices made by looking at scores | Week 4 | PROPOSED — unblocks T1.1 |
-| [D-052](decision_log.md) | Four of the five candidate operator distances are one measure on mask operators | Week 4 | ACCEPTED — measured, 153 pairs |
+| [D-052](decision_log.md) | Four of the five candidate operator distances are one measure on mask operators | Week 4 | ACCEPTED — measurement stands; "needs CT" revised by D-053 |
 | [D-053](decision_log.md) | The gap is not symmetric in the operator pair, so the plotted axis is directional | Week 4 | Track 1's entry — answers D-052 |
 | [D-054](decision_log.md) | `design_fraction = 0.10`; `calib_fraction` holds at 0.5 until the banks are rebuilt | Week 4 | Track 1's ruling — answers D-051 |
 | [D-055](decision_log.md) | The weight-selection rule is pre-registered; one run produces the number | Week 4 | Track 1's entry — closes D28's half of D-051 |
