@@ -1,0 +1,88 @@
+# Week 5 — the first bank sized to certify its own headline, on a cloud GPU.
+#
+#   caliber configs/experiments/w05_mri_full_val_gpu.yaml
+#
+# Run it on a GPU machine only, following the AWS runbook. On this laptop it is
+# ~35 hours; on one NVIDIA T4 it is estimated at 2-3 hours, measured as follows:
+#
+#   * one UNet forward at 256^2 = 496 GFLOP (counted, FlopCounterMode)
+#   * 99.9% of each pair's time is the UNet; operators + scoring = 0.18 s (profiled)
+#   * T4 fp32 at 35-60% of its 8.1 TFLOPS peak = 0.10-0.18 s/forward
+#   * 96 forwards per pair (24 steps x 4 draws) = 10-17 s/pair, x 597 pairs
+#
+# The first ten minutes of any GPU run are a benchmark that replaces that estimate
+# with a measurement (runbook, step 4). Trust the measurement.
+#
+# --- why this bank, after Week 4 -------------------------------------------------
+#
+# T2.4 §7: the Week 4 grid had 12 test clusters and a paired half-width of +/-0.22,
+# and six of its nine operators were near-duplicates on the distance axis (D-052).
+# Adding operators costs compute and buys no precision in a crossed design (D-049).
+# So this run spends its compute on *patients* instead:
+#
+#   all 199 volumes = 96 patients;  calib_fraction 0.3 -> 38 calib / 58 test
+#   paired half-width ~ +/-0.100 -- the first configuration that can separate
+#   "coverage restored" from "coverage failed" (P-23)
+#
+# and on the one stretch of the distance axis that is graded: one mask family,
+# three accelerations (0 -> 0.50 -> 0.61 from R2).
+#
+# --- before launching: two values Track 1 must confirm ---------------------------
+#
+# `calib_fraction` and `design_fraction` below are Track 2's proposal, not a
+# decision (D-051, P-23). They draw on the same pool of calibration patients, so
+# they are chosen together. Changing either after launch changes the config hash,
+# and a run with a different hash does NOT resume - it starts again from zero
+# (D-042). On a GPU that costs ~$2 rather than a day and a half, but confirm first.
+#
+# --- resume, and what keeps it safe --------------------------------------------
+#
+# `checkpoint_every: 10` writes the partial bank every ten pairs, ~2-3 minutes on a
+# T4, atomically (temp file + rename), so a crash at any instant loses at most that.
+# Re-running this exact command picks up from the last checkpoint and prints
+# "[caliber] resuming N/597". It refuses a checkpoint from any other config.
+# Run it inside tmux, so a dropped SSH or browser session does not stop it.
+
+include: base
+
+experiment:
+  name: w05_mri_full_val_gpu
+  solver:
+    # DDNM, 24 steps, 4 draws: identical to W03/W04, so the banks are comparable.
+    # Sec. 13 requires the solver held fixed across the curve.
+    name: ddnm
+    checkpoint: checkpoints/ddpm-celebahq-256
+    n_steps: 24
+    # Only the UNet runs on the GPU; operators, FFTs and scoring stay on CPU, at
+    # 0.1% of the time per pair. GPU arithmetic is not bit-identical to CPU, which is
+    # one more reason the device is part of the config hash: a CUDA run can never be
+    # resumed on CPU, or mixed with a CPU bank, by accident.
+    device: cuda
+    # All four draws through the UNet in one batch. A T4 has 16 GB; the batch needs a
+    # few. Batching is the GPU's efficient mode, and the bank is identical either way
+    # because every draw carries its own seed (D-041, D-044).
+    max_draws_per_batch: 0
+  n_posterior: 4
+  operators:
+    - modality: mri
+      family: random1d
+      acceleration: [2, 4, 8]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [256, 256]
+  dataset:
+    name: fastmri
+    root: data/raw/fastmri/singlecoil_val
+    annotations_csv: data/annotations/fastmri_plus/knee.csv
+    split: auto
+    image_shape: [256, 256]
+    slices_per_volume: 1
+    calib_fraction: 0.3     # PROPOSED - confirm with Track 1 before launch
+    design_fraction: 0.0    # PROPOSED - confirm with Track 1 before launch
+
+run:
+  limit: null               # every volume in singlecoil_val: 199 volumes, 96 patients
+  cache_reconstructions: 6
+  checkpoint_every: 10
