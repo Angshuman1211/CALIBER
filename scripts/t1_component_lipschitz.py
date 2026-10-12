@@ -115,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     prov = manifest.get("provenance") or {}
     if prov and not prov.get("reportable", True):
         print(
-            f"[lipschitz] NOT REPORTABLE — dataset={prov.get('dataset')}, "
+            f"[lipschitz] NOT REPORTABLE -- dataset={prov.get('dataset')}, "
             f"solver_family={prov.get('solver_family')}. Constants below are a development "
             "reading, not a result."
         )
@@ -139,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
         d = float(compute_distance(ops[left], ops[right],
                                    measure=args.distance, normalise=args.normalise))
         if d <= 0:
-            print(f"[lipschitz] {left} and {right} are at distance 0 — skipped")
+            print(f"[lipschitz] {left} and {right} are at distance 0 -- skipped")
             continue
         row = {"operator_a": left, "operator_b": right, "d_op": d}
         signed = {}
@@ -177,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{len(table)} pair(s).\n"
             "            They partially cancel, so the combination can be less "
             "operator-sensitive\n"
-            "            than any component (T3.4 §3). That is why there is no lower bracket: a\n"
+            "            than any component (T3.4 Sec.3). That is why there is no lower bracket: a\n"
             "            small combined secant is not evidence of a small constant."
         )
 

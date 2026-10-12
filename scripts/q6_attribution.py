@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     prov = manifest.get("provenance") or {}
     if prov and not prov.get("reportable", True):
         print(
-            f"[q6] NOT REPORTABLE — dataset={prov.get('dataset')}, "
+            f"[q6] NOT REPORTABLE -- dataset={prov.get('dataset')}, "
             f"solver_family={prov.get('solver_family')}. Q6's answer from this bank is a "
             "development reading, not a result."
         )
@@ -137,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     over_filled = float(np.nanmean(u > 2.0)) if np.isfinite(u).any() else float("nan")
     print(
         f"[q6] {over_filled:.1%} of regions have u > 2, where err_free/free_content > 1 is "
-        "forced regardless of alignment — D37's pass/fail check is only diagnostic on the rest"
+        "forced regardless of alignment -- D37's pass/fail check is only diagnostic on the rest"
     )
     aligned = float(np.nanmean(cos > 0.5)) if np.isfinite(cos).any() else float("nan")
     print(
@@ -197,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
         candidates={c: c for c in candidate_cols if c in df.columns},
         alpha=args.alpha,
     )
-    print(f"\n[q6] ablation at alpha={args.alpha:g} — compare flag_area, not power")
+    print(f"\n[q6] ablation at alpha={args.alpha:g} -- compare flag_area, not power")
     print(ablation.to_string(index=False))
 
     verdict = q6_verdict(attribution, ablation)

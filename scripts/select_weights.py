@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     print(selection.curve.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
     print(f"\n[weights] SELECTED  {selection.note()}")
     print(
-        "[weights] the level of flag area above is optimistic — the design rows are both "
+        "[weights] the level of flag area above is optimistic -- the design rows are both "
         "calibrated and\n          evaluated on. The comparison between points is what the "
         "rule uses, and that is unbiased."
     )

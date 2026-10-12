@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         f"({df['label'].mean():.1%} of all regions) at {rule} > {args.label_threshold}"
     )
     if df["label"].sum() == 0:
-        print("[analyse] no positive regions — lower --label-threshold")
+        print("[analyse] no positive regions -- lower --label-threshold")
         return 1
     if bool(df["label"].all()):
         print(
