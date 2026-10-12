@@ -724,6 +724,69 @@ Fixed mechanically, by AST position so docstrings were untouched, and the rule i
 
 ---
 
+### D57 — The relative criterion needs a conjunctive absolute gate; the ratio is driven more by its denominator than its numerator [T1.1/O2, amends D21 and D37]
+Track 2 found that on the 44 test patients, **low `free_content` alone** ranks the relative label at AUROC **0.89-0.95** — better than any score in the project — and asked whether that is what the criterion is meant to do. It is not. Reproduced on the real-prior bank and decomposed:
+
+| ranker -> relative label | AUROC |
+|---|---|
+| `-free_content` (low anatomy) | **0.826** |
+| `err_free` (the numerator alone) | **0.741** |
+| `s_free` | 0.902 |
+| combined score | 0.907 |
+
+`spearman(ratio, free_content) = -0.520` against `spearman(ratio, err_free) = +0.450`. **The denominator has more influence on the label than the numerator does.** A region with little hidden content yields a large ratio from an error far too small to matter, so the criterion systematically labels smooth tissue as hallucinated, and anything correlated with low anatomical density scores well against it. `MIN_FREE_CONTENT = 1e-3` does not help: the smallest live `free_content` is 0.162, so the guard never fires — the problem is the ratio's structure across the live range, not division by near-zero.
+
+**This is my defect.** D21 introduced the ratio to stop `err_free` being confounded by anatomy density, and it over-corrected into the opposite confound. The two gates fail in opposite directions:
+
+- **ratio alone** — denominator-dominated (this finding);
+- **absolute alone** — anatomy-confounded, which is D21's original reason and P-02's symptom (`err_free > 0.10` flags every region).
+
+**Ruling: the reported label is the conjunction.** `err_free / free_content > τ` **and** `err_free > ε`. Implemented as `label_hallucinated(..., relative=True, absolute_floor=ε)`; passing a floor to the absolute form is refused, since that would be two thresholds on one quantity.
+
+Measured on the M4Raw bank at the 62nd percentile of `err_free` (ε = 0.403):
+
+| | ratio only | conjunction |
+|---|---|---|
+| positive rate | 0.255 | 0.167 |
+| AUROC(`-free_content`) | 0.826 | **0.696** |
+| AUROC(`s_free`) | 0.902 | **0.974** |
+
+The denominator's grip falls toward chance, the score's rises, and the positive rate stays well clear of D32's nine-per-group floor.
+
+**ε is a quantile on the design split, never a constant.** It is an error magnitude, and D-020 established that those transfer across neither modalities nor substrates. Same discipline as D37's τ and D28's weights: set on the design split, frozen, re-set per substrate.
+
+**A soft floor does not work, and I tried it first.** `err_free / (free_content + c) > τ` *raises* the denominator's AUROC to 0.878 at c=0.05 and kills the positive rate entirely by c=0.10. It rescales the same ratio structure instead of adding an independent gate.
+
+**What this invalidates, and what it does not.** Every label-dependent number measured so far is affected — coverage, FDR, power, the weight sweep, Q6. All of it is **re-analysis, not re-reconstruction**, which is precisely what D-002 bought by storing continuous quantities. **Q6's verdict survives**: under the conjunction `s_free` is still invention-driven (AUC 0.900, detail-matched 0.868), though its excess over the anatomy control falls from +0.715 to +0.468 — so part of D43's margin *was* the denominator effect, and that correction belongs in the write-up.
+
+**And it reframes Track 2's AUROC observation.** They report `s_disagree` alone beating the combined score at every operator. That comparison is against the defective label, and `s_disagree` is the component *more* anti-correlated with anatomy (rho -0.155 against `s_free`'s -0.035), so it is the component most rewarded by the artefact. The ordering must be re-measured under the conjunction before anything is concluded from it.
+
+---
+
+### D58 — The Week 5 fallbacks: Track 1 owns them, [7] is the one to build, and [9] is inapplicable [T1.2, answers Track 2's ownership question]
+The cards say Track 2, `calibration/` says Track 1. **`calibration/` is right** — these are methods, and §18 gives methodology to Track 1. Track 2's time is better spent on runs, which need the GPU and the data.
+
+**They are no longer contingencies.** The risk register listed them as fallbacks if Tool 2 underperformed. D52 measured Tool 2 as valid on 2 of 3 interior folds and no better than the conservative fallback, so the trigger condition has fired.
+
+**Priority, from D52's mechanism** — the lower-tail quantile is set by the lowest-scoring regime, and a smooth kernel down-weights without ever excluding:
+
+- **[7] group-weighted — build this one.** Weighting whole groups rather than points allows a group to take weight *zero*, which is exactly the truncated kernel D52 proposed as its lead. It is the fallback that addresses the measured failure, already named in the register.
+- **[8] doubly-robust — second.** Needs a model of the shift, which the project does not have; worth attempting only if [7] does not close the gap.
+- **[9] ACI — inapplicable as the protocol stands, and worth saying so rather than carrying it as planned work.** Adaptive conformal inference updates the threshold from *observed* coverage, which requires labels at deployment. The deployment setting has none — that is the whole premise. It becomes applicable only under a different protocol where a clinician adjudicates a sampled fraction of flags, which is a scope change, not a fallback.
+
+Code goes in `src/caliber/calibration/fallbacks.py`, same module Track 1 already owns.
+
+---
+
+### D59 — The seed noise floor: R4 is right, and report it per operator [T1.4, answers Track 2]
+R4 was the operator I had in mind and it is the right primary — mid-grid, and already running.
+
+**But the spread almost certainly grows with acceleration,** so one floor measured at R4 will understate the ablations that matter most. A `random1d` mask at R=2 draws 50% of lines and at R=8 draws 12.5%, so two seeds differ far more at R8 — and the descending-direction headline (D50) *calibrates* at R8. If a second sweep is cheap, R8 is the one that bounds the headline; if not, R4 stands with the caveat stated.
+
+**Report it per operator, not as one global number.** Seeds are members of a calibration group rather than groups of their own (D-023), so this is within-group variation and it is allowed to differ between groups.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)

@@ -10,6 +10,7 @@ applies.
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import torch
 
@@ -146,3 +147,60 @@ def test_sweep_ignores_regions_below_the_floor():
 def test_sweep_refuses_a_bank_with_no_usable_region():
     with pytest.raises(ValueError, match="no region has enough free content"):
         positive_rate_sweep(torch.tensor([1.0]), torch.tensor([0.0]), [1.0])
+
+
+# -- D57: the relative criterion needs a conjunctive absolute gate -------------
+
+
+def _truth(err_free, free_content):
+    n = len(err_free)
+    return RegionTruth(
+        err_total=torch.tensor(err_free, dtype=torch.float32),
+        err_free=torch.tensor(err_free, dtype=torch.float32),
+        free_content=torch.tensor(free_content, dtype=torch.float32),
+        ann_coverage=torch.zeros(n),
+    )
+
+
+def test_the_ratio_alone_labels_a_smooth_region_from_a_tiny_error():
+    """The defect D57 fixes, in two regions.
+
+    A region with almost nothing hidden in it yields a large ratio from an error far too
+    small to matter, so the relative criterion calls it hallucinated. That is why
+    `-free_content` out-ranks every score in the project against this label (AUROC 0.826
+    on the real-prior bank, 0.89-0.95 on Track 2's test patients).
+    """
+    # smooth region: a tiny error over a tiny denominator -> ratio 4.0
+    # dense region: a large error over a large denominator -> ratio 1.0
+    truth = _truth(err_free=[0.02, 0.50], free_content=[0.005, 0.50])
+    ratio_only = label_hallucinated(truth, threshold=1.75, relative=True).numpy()
+    assert ratio_only[0] and not ratio_only[1], "the smooth region is the one flagged"
+
+
+def test_the_absolute_gate_removes_it_and_is_conjunctive():
+    truth = _truth(err_free=[0.02, 0.50], free_content=[0.005, 0.50])
+    gated = label_hallucinated(
+        truth, threshold=1.75, relative=True, absolute_floor=0.10
+    ).numpy()
+    assert not gated.any(), "the smooth region fails the floor, the dense one fails the ratio"
+
+
+def test_the_gate_can_only_remove_positives_never_add_them():
+    rng = np.random.default_rng(0)
+    truth = _truth(
+        err_free=rng.uniform(0.01, 1.0, 400), free_content=rng.uniform(0.01, 1.0, 400)
+    )
+    base = label_hallucinated(truth, threshold=1.75, relative=True).numpy()
+    for floor in (0.0, 0.1, 0.3, 0.6):
+        gated = label_hallucinated(
+            truth, threshold=1.75, relative=True, absolute_floor=floor
+        ).numpy()
+        assert not (gated & ~base).any(), f"floor {floor} invented a positive"
+
+
+def test_a_floor_on_the_absolute_criterion_is_refused():
+    """The absolute form already thresholds err_free; a second floor would be two
+    thresholds on one quantity, which is a configuration error rather than a stricter rule."""
+    truth = _truth(err_free=[0.5], free_content=[0.5])
+    with pytest.raises(ValueError, match="relative"):
+        label_hallucinated(truth, threshold=0.10, absolute_floor=0.2)

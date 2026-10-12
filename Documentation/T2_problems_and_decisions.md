@@ -1341,7 +1341,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 58 entries, so a problem in Part I can be
+What lives here instead is the index — 59 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1404,3 +1404,4 @@ traced to the decision that settled it without opening the log.
 | [D-056](decision_log.md) | Two failure modes, a corrected comparison rule, and Tool 2's first real evaluation | Week 4 | Track 1's entry — see D50-D52 |
 | [D-057](decision_log.md) | Pre-run rulings: hold calib_fraction, take design_fraction 0.10, keep all three families | Week 5 | Track 1's ruling — answers Track 2's pre-run questions |
 | [D-058](decision_log.md) | Three fixes from the Week 5 review, two of them Track 1's bugs | Week 5 | Track 1's entry -- see D54-D56 |
+| [D-059](decision_log.md) | The relative criterion gains a conjunctive absolute gate; Week 5 fallback ownership | Week 5 | Track 1's entry -- see D57-D59 |

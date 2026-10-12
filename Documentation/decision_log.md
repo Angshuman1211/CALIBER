@@ -2392,6 +2392,61 @@ class can only be caught on your machine, so the test is the substitute for that
 
 *Affects:* T1.1, T1.2, T1.4, D28, D48, D49, D52, O3, P-19, P-23.
 
+---
+
+## D-059 · The relative criterion gains a conjunctive absolute gate; and the Week 5 fallback ownership
+**Date:** Week 5 · **Status:** ACCEPTED · **Proposed by:** Track 1 · **Found by:** Track 2
+**See:** D57, D58, D59 · **Amends:** D21, D-034, D37
+
+**The label defect is real and it is Track 1's.** Your 0.89-0.95 for low `free_content`
+reproduces on the committed bank at 0.826, and the decomposition is worse than it looked:
+`err_free` alone -- the *numerator* -- manages only 0.741, and
+`spearman(ratio, free_content) = -0.520` against `spearman(ratio, err_free) = +0.450`. The
+denominator has more influence on the label than the numerator does. A region with little
+hidden content yields a large ratio from a negligible error, so the criterion labels smooth
+tissue as hallucinated. `MIN_FREE_CONTENT` does not catch it: the smallest live value is
+0.162, so the guard never fires -- the problem is the ratio's structure, not a near-zero
+divide.
+
+**Fix: the reported label is a conjunction**, `err_free/free_content > tau` **and**
+`err_free > eps`. Neither gate suffices alone and they fail in opposite directions -- the
+ratio is denominator-dominated, the absolute test is anatomy-confounded (D21's reason for
+the ratio, and P-02). On the M4Raw bank at the 62nd percentile of `err_free`, the
+denominator's AUROC falls 0.826 -> 0.696 while `s_free`'s rises 0.902 -> 0.974, at a
+positive rate of 0.167. A *soft* floor fails -- it rescales the same structure and kills the
+positive rate -- so the gate has to be independent.
+
+`eps` is a **quantile on the design split, frozen**, never a constant: it is an error
+magnitude and D-020 settled that those do not transfer across substrates.
+
+**All of it is re-analysis, not re-reconstruction** -- D-002's dividend. Every coverage, FDR,
+power and weight number needs recomputing, no GPU. **Q6 survives** the change (`s_free`
+still invention-driven, AUC 0.900) with a smaller margin, which is a correction for the
+write-up rather than a reversal.
+
+**Your `s_disagree` observation needs re-measuring before it is acted on.** It beating the
+combined score at every operator was measured against the defective label, and `s_disagree`
+is the component *more* anti-correlated with anatomy (-0.155 vs `s_free`'s -0.035) -- so it
+is the one the artefact most rewards. The equal-weights fix stands on its own grounds (D54);
+the component ordering does not, yet.
+
+**Fallback ownership: `calibration/` is right, they are Track 1's.** Methods are Track 1 per
+Sec. 18, and your time is better spent on runs. They are also no longer contingencies: D52
+measured Tool 2 underperforming, so the trigger has fired. Build order is **[7]
+group-weighted first** -- weighting groups rather than points lets a group take weight zero,
+which is D52's truncated-kernel lead in the form the register already named -- then [8]
+doubly-robust. **[9] ACI is inapplicable** as the protocol stands: it updates the threshold
+from observed coverage, which needs labels at deployment, which is exactly what is absent.
+Carrying it as planned work would be a scope change in disguise.
+
+**Seed floor: R4 is right as primary.** But the spread should grow with acceleration (R8
+draws 12.5% of lines against R2's 50%), and the descending headline calibrates at R8, so add
+R8 if it is cheap. Report per operator -- seeds are within-group variation (D-023), and the
+groups are allowed to differ.
+
+*Affects:* O2, O3, T1.1, T1.2, T1.4, D21, D37, D43, D52, D54, P-02, every label-dependent
+number measured so far.
+
 ## Template
 
 ```

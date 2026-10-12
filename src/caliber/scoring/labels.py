@@ -105,6 +105,7 @@ def label_hallucinated(
     annotation_min_coverage: float = 0.10,
     relative: bool = False,
     min_free_content: float = MIN_FREE_CONTENT,
+    absolute_floor: float | None = None,
 ) -> Tensor:
     """Derive the boolean hallucination label from cached continuous quantities.
 
@@ -121,6 +122,36 @@ def label_hallucinated(
       with, rather than whether it put in more than some fixed constant. A
       region of dense anatomy carries large ``err_free`` before any solver runs;
       dividing by ``free_content`` is what stops that from reading as invention.
+
+    ``absolute_floor`` adds a second, *conjunctive* gate to the relative form:
+    ``err_free > absolute_floor`` as well as the ratio test. **This is required
+    for a reported relative label** (D57), and the reason is a measured defect
+    rather than caution.
+
+    The ratio is driven more by its denominator than by its numerator. Measured
+    on the real-prior bank: ``-free_content`` alone ranks the relative label at
+    AUROC 0.826 while ``err_free`` alone manages only 0.741, and
+    ``spearman(ratio, free_content) = -0.520`` against
+    ``spearman(ratio, err_free) = +0.450``. Track 2 measured 0.89-0.95 for the
+    denominator on 44 test patients, better than any score in the project. A
+    region with little hidden content to begin with yields a large ratio from a
+    small error, so the criterion systematically labels smooth tissue as
+    hallucinated, and anything correlated with low anatomical density scores well
+    against it.
+
+    The two gates fail in opposite directions and the conjunction kills both:
+    the ratio alone is denominator-dominated; the absolute test alone is
+    anatomy-confounded, which is why D21 introduced the ratio in the first place
+    (and P-02, where ``err_free > 0.10`` flags every region).
+
+    ``absolute_floor`` is **substrate-dependent** and must not be hard-coded: it
+    is an error magnitude, and D-020 established that those transfer across
+    neither modalities nor substrates. Set it as a quantile of ``err_free`` on
+    the **design split** and freeze it, the same discipline D37 applies to
+    ``tau`` and D28 to the weights. On the M4Raw bank the 62nd percentile
+    (0.403) takes the denominator's AUROC from 0.826 to 0.696 while raising
+    ``s_free``'s from 0.902 to 0.974, at a positive rate of 0.167 -- still well
+    clear of D32's nine-positive floor.
 
     ``require_annotation`` restricts positives to clinically annotated regions,
     which is the stricter reading of "does the flag fire where it matters"
@@ -139,8 +170,17 @@ def label_hallucinated(
         ratio = torch.where(usable, err / content.clamp_min(min_free_content),
                             torch.zeros_like(err))
         label = (ratio > threshold) & usable
+        if absolute_floor is not None:
+            # Conjunctive, not a replacement: see the note above on why neither
+            # gate is sufficient alone (D57).
+            label = label & (err > absolute_floor)
     else:
         label = err > threshold
+        if absolute_floor is not None:
+            raise ValueError(
+                "absolute_floor applies to the relative criterion; the absolute form "
+                "already thresholds err_free directly via `threshold`"
+            )
     if require_annotation:
         label = label & (truth.ann_coverage >= annotation_min_coverage)
     return label
