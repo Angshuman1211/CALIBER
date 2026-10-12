@@ -207,7 +207,7 @@ def certification_note(report: CalibrationReport, alpha: float | None = None) ->
         )
     thin = report.uncertifiable_groups
     return (
-        f"{report.method}: NOT reportable at alpha={alpha:g} — "
+        f"{report.method}: NOT reportable at alpha={alpha:g} -- "
         f"{len(thin)} of {len(report.results)} group(s) below the "
         f"{min_positives(alpha)}-positive minimum: {', '.join(thin)}."
     )

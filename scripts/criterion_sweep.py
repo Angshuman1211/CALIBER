@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if "free_content" not in df.columns or df["free_content"].isna().all():
         print(
-            f"[criterion] {bank} has no free_content column — it predates A1 (D21) and "
+            f"[criterion] {bank} has no free_content column -- it predates A1 (D21) and "
             "the relative criterion cannot be applied to it.",
             file=sys.stderr,
         )

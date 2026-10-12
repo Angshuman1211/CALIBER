@@ -73,6 +73,20 @@ L_DISAGREE = 0.5716
 #: Bootstrap replicates for the SE that defines "indistinguishable".
 N_BOOT = 500
 
+#: Largest share of the sweep that may be tied with the minimum before the selection is
+#: declared uninformative.
+#:
+#: Without this, D49's tie-break substitutes for data. Track 2 ran the selection on 8 design
+#: patients and it returned `w_free = 1.00` -- an endpoint, dropping `s_disagree` from the
+#: score entirely -- because **8 of 11** points sat within one SE of the minimum and the
+#: tie-break walks toward the tighter Lipschitz bound. That is not a finding about the
+#: score, it is the rule reporting the boundary of its own search.
+#:
+#: The size of the tied set is the right instrument, and more direct than comparing the
+#: sweep's range against its noise: if most of the sweep is statistically indistinguishable
+#: from the best point, the sweep has not chosen anything. Half is the natural line.
+TIED_FRACTION_LIMIT = 0.5
+
 
 def lipschitz_ceiling(
     w_free: float, l_free: float = L_FREE, l_disagree: float = L_DISAGREE
@@ -92,7 +106,8 @@ class WeightSelection:
     lipschitz: float
     n_design_clusters: int
     tied_with: tuple[float, ...]
-    curve: pd.DataFrame = field(repr=False)
+    discriminated: bool = True
+    curve: pd.DataFrame = field(repr=False, default_factory=pd.DataFrame)
 
     @property
     def at_endpoint(self) -> bool:
@@ -106,17 +121,27 @@ class WeightSelection:
 
     def note(self) -> str:
         """One line stating what was selected and on what, so a table is never orphaned."""
+        if not self.discriminated:
+            return (
+                f"w_free={self.w_free:.2f}, w_disagree={self.w_disagree:.2f} -- NOT "
+                f"SELECTED. The design split ({self.n_design_clusters} clusters) cannot "
+                f"separate any weight from any other: {len(self.tied_with)} of the sweep's "
+                f"points are tied with the minimum. Defaulted to equal weights over the "
+                f"live components (D25), which is a stated default and not a measurement."
+            )
         tie = (
             f"tied with {len(self.tied_with)} point(s) within 1 SE; "
             f"broken toward the tighter bound (D28 step 4)"
             if len(self.tied_with) > 1
             else "a clear minimum, no tie-break needed"
         )
-        end = " ENDPOINT — one component carries no weight" if self.at_endpoint else ""
+        end = " ENDPOINT -- one component carries no weight" if self.at_endpoint else ""
         return (
             f"w_free={self.w_free:.2f}, w_disagree={self.w_disagree:.2f} "
-            f"(flag area {self.flag_area:.4f} ± {self.se:.4f}, L ≤ {self.lipschitz:.4f}, "
-            f"{self.n_design_clusters} design clusters) — {tie}{end}"
+            # ASCII only: this string is printed, and a Windows console at cp1252
+            # raises UnicodeEncodeError on the typographic forms (Track 2, Week 5).
+            f"(flag area {self.flag_area:.4f} +/- {self.se:.4f}, L <= {self.lipschitz:.4f}, "
+            f"{self.n_design_clusters} design clusters) -- {tie}{end}"
         )
 
 
@@ -171,7 +196,7 @@ def weight_curve(
     if design.empty:
         raise ValueError(
             f"no rows with {split_col}={design_split!r}; weight selection requires a design "
-            "split (D48). Regenerate the bank with the dataset's design_fraction set — it "
+            "split (D48). Regenerate the bank with the dataset's design_fraction set -- it "
             "is a dataset kwarg, so `--set data.dataset.design_fraction=0.10`, and it is "
             "wired for fastmri only (the phantom dataset takes one fixed split)."
         )
@@ -231,13 +256,32 @@ def select_weights(
     if usable.empty:
         raise ValueError("no point on the sweep produced a finite flagged area")
 
+    design_clusters = df[df.get("split", pd.Series(dtype=str)).astype(str) == "design"]
+    n_clusters = int(design_clusters[cluster_col].nunique()) if len(design_clusters) else 0
+
     best = usable.loc[usable["flag_area"].idxmin()]
     tolerance = float(best["se"]) if np.isfinite(best["se"]) else 0.0
     tied = usable[usable["flag_area"] <= float(best["flag_area"]) + tolerance]
+
+    # Does the sweep carry information at all? Checked before the tie-break, because the
+    # tie-break is for choosing among separated-but-tied points, not for standing in when
+    # nothing is separated.
+    if len(tied) > TIED_FRACTION_LIMIT * len(usable):
+        row = usable.iloc[(usable["w_free"] - 0.5).abs().argmin()]
+        return WeightSelection(
+            w_free=float(row["w_free"]),
+            w_disagree=float(row["w_disagree"]),
+            flag_area=float(row["flag_area"]),
+            se=float(row["se"]),
+            lipschitz=float(row["lipschitz"]),
+            n_design_clusters=n_clusters,
+            tied_with=tuple(float(v) for v in sorted(tied["w_free"])),
+            discriminated=False,
+            curve=curve,
+        )
+
     chosen = tied.loc[tied["w_free"].idxmax()]
 
-    design_clusters = df[df.get("split", pd.Series(dtype=str)).astype(str) == "design"]
-    n_clusters = int(design_clusters[cluster_col].nunique()) if len(design_clusters) else 0
     return WeightSelection(
         w_free=float(chosen["w_free"]),
         w_disagree=float(chosen["w_disagree"]),
@@ -246,5 +290,6 @@ def select_weights(
         lipschitz=float(chosen["lipschitz"]),
         n_design_clusters=n_clusters,
         tied_with=tuple(float(v) for v in sorted(tied["w_free"])),
+        discriminated=True,
         curve=curve,
     )

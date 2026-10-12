@@ -320,7 +320,7 @@ class FastMRIDataset(SliceDataset):
 
         if not kept:
             raise FileNotFoundError(
-                f"no volume lands on {sorted(wanted)} — the {len(self.files)} volumes "
+                f"no volume lands on {sorted(wanted)} -- the {len(self.files)} volumes "
                 f"under {self.root} split as {counts}. At design_fraction="
                 f"{self.design_fraction:g} the design side is empty by construction if the "
                 "fraction is 0."

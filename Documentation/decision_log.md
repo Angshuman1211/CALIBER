@@ -2343,6 +2343,55 @@ axis is categorical and is not.
 
 *Affects:* T1.1, T1.4, D28, D-051, D-054, D-052, D-053, O3, Week 5 run.
 
+---
+
+## D-058 · Three fixes from the Week 5 review, two of them Track 1's bugs
+**Date:** Week 5 · **Status:** ACCEPTED · **Proposed by:** Track 1 · **Found by:** Track 2
+**See:** D54, D55, D56
+
+**First, the result.** Calibrating at R8 and deploying down gives naive coverage **0.507**
+at `variable_density2d R2` against group-conditional's **0.921**, and naive misses nominal
+with the whole interval in **7 of 18 cells**. That is O3's coverage failure, demonstrated on
+real data, and it exists because the grid was swept in the direction nobody had tried
+(D-056). The ascending gap against `null_space_growth` reproduces at rho -0.80 against the
+-0.75 measured on Week 4, which is the directional axis holding up on an independent run.
+
+**1. `tool2_holdout.py` was in-sample, and it was my bug.** `split_col="__none__"` disabled
+the split filter on all four arms. No row was reused, but the design is crossed, so the same
+*patient* sat in calibration and evaluation — and `matched` calibrated on the very rows it
+scored, which is why it landed on exactly 0.900. Fixed: calibration is the other operators'
+`calib` rows, evaluation is the held-out operator's `test` rows, a single-split bank is
+**refused** rather than silently reported, and the script now asserts the two frames are
+disjoint on the clustering unit. Thank you for catching it; your re-run's finding stands —
+Tool 2's verdict is unchanged and `nearest` goes 1/3 to 0/3, so the baseline was flattered.
+
+This is the third instance of one failure in this project (P-19, P-23, now mine). The shape
+is always that an in-sample number *looks right* — it lands on nominal — so nothing alerts
+anyone.
+
+**2. The weight selection should not have returned `w_free = 1.00`, and you were right to
+distrust it.** 8 of 11 points were tied, and D49's tie-break walks to the boundary on a tied
+sweep — which drops `s_disagree` from the score entirely. Eliminating a component is a
+structural change and a tie cannot license one. The rule now checks whether the sweep
+separated anything first: if more than half the points are tied, it returns D25's equal
+weights flagged **NOT SELECTED** instead of a boundary value.
+
+So **D28 closes on a bounded-cost default, not a fitted number**: equal weights over the live
+components, with the cost against the unknown optimum bounded by D42's measured 0.015 of
+flagged area. My D48 justification for `design_fraction = 0.10` was half wrong — flatness
+bounds the *cost* of choosing wrong, it does not make the choice *informative*, and 8
+patients cannot discriminate.
+
+**3. The Windows crash was one of 31.** An audit of printable string literals found the same
+defect in 13 files; the `<=` you hit was just the first one reached. All fixed by AST
+position so docstrings kept their notation, and `tests/test_console_encoding.py` now enforces
+it: printed literals ASCII, docstrings free, Markdown untouched. Worth knowing that this
+class can only be caught on your machine, so the test is the substitute for that.
+
+`tool2_holdout.py` line 227 also wrapped for ruff.
+
+*Affects:* T1.1, T1.2, T1.4, D28, D48, D49, D52, O3, P-19, P-23.
+
 ## Template
 
 ```

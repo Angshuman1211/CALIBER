@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
 
     crossing = is_crossed(evaluate, cluster_col=args.cluster)
     print(f"[sizing] design           {'CROSSED' if crossing['crossed'] else 'NOT crossed'} "
-          f"— {crossing['reason']} ({crossing['n_shared']} shared clusters)")
+          f"-- {crossing['reason']} ({crossing['n_shared']} shared clusters)")
 
     rows = []
     flagged_parts = []

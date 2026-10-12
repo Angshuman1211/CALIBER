@@ -545,7 +545,7 @@ def classify_component(
     return (
         "ambiguous",
         f"AUC {auc:.3f}, detail-matched {auc_stratified:.3f} ({auc_excess:+.3f} over the "
-        f"anatomy control, {strata_used} strata), partial rho {partial_rho:.3f} — no verdict "
+        f"anatomy control, {strata_used} strata), partial rho {partial_rho:.3f} -- no verdict "
         f"at the pre-registered thresholds",
     )
 
@@ -576,12 +576,12 @@ def attribute_components(
             raise KeyError(f"bank has no {required!r} column")
     if anatomy_col not in df.columns:
         raise KeyError(
-            f"bank has no {anatomy_col!r} column — Q6 needs the A1 column (D21); "
+            f"bank has no {anatomy_col!r} column -- Q6 needs the A1 column (D21); "
             "regenerate the bank with a runner that writes it"
         )
     if not np.isfinite(df[anatomy_col].to_numpy(dtype=float)).any():
         raise ValueError(
-            f"{anatomy_col!r} is entirely null — the A1 column is nullable and this bank "
+            f"{anatomy_col!r} is entirely null -- the A1 column is nullable and this bank "
             "predates it (or was coerced); Q6 cannot be answered from it"
         )
 
@@ -712,7 +712,7 @@ class Q6Verdict:
     notes: tuple[str, ...] = ()
 
     def summary(self) -> str:
-        lines = [f"Q6: {self.verdict} — {self.reason}"]
+        lines = [f"Q6: {self.verdict} -- {self.reason}"]
         if self.decomposition_earns_its_place is False:
             lines.append(
                 "  D2: cross-sample disagreement alone matches the combination's flagged "
@@ -768,7 +768,7 @@ def q6_verdict(
                 if not earns:
                     notes.append(
                         f"flagged area: combination {area[combination]:.3f} vs disagreement "
-                        f"alone {area[disagree_component]:.3f} — within the "
+                        f"alone {area[disagree_component]:.3f} -- within the "
                         f"{FLAG_AREA_TIE:g}x tie band or worse"
                     )
     return Q6Verdict(verdict, reason, free_component, earns, tuple(notes))

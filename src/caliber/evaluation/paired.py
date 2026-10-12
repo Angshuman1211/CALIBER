@@ -91,7 +91,7 @@ def is_crossed(
         "reason": (
             "every operator sees every cluster"
             if crossed
-            else "operators see different cluster sets — pairing is unavailable"
+            else "operators see different cluster sets -- pairing is unavailable"
         ),
     }
 
@@ -199,7 +199,7 @@ def paired_coverage_gap(
     )
     if keys.size == 0:
         raise ValueError(
-            "the two operators share no cluster, so there is nothing to pair — check "
+            "the two operators share no cluster, so there is nothing to pair -- check "
             "is_crossed() before calling this"
         )
 

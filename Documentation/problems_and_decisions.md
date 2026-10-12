@@ -693,6 +693,37 @@ Track 2 asked for three calls before the full run. Two confirm D48; one needed i
 
 ---
 
+### D54 — The weight selection declines to choose when the sweep cannot separate anything; and D48's justification was half wrong [T1.1/D28, amends D49]
+Track 2 ran D49's rule on the Week 5 bank: it returned **`w_free = 1.00`** — an endpoint, dropping `s_disagree` from the score entirely — and they correctly flagged it as the tie-break rather than a result. 8 of 11 sweep points were tied with the minimum, and step 4 walks toward the tighter Lipschitz bound, which on a tied sweep means walking to the boundary.
+
+**Eliminating a component is a structural change to the score, and a tie cannot license one.** D49 said "endpoints are reported, not avoided", which is right when the data *chooses* an endpoint and wrong when the tie-break *arrives* at one.
+
+**Amendment.** Before the tie-break, check whether the sweep separated anything: if more than half its points are tied with the minimum, the selection has no information, and the rule returns D25's stated default — **equal weights over the live components** — flagged `discriminated=False`, with a note that says NOT SELECTED. The tie-break still applies when the tied set is small, which is what it was for. The size of the tied set is the right instrument and more direct than comparing the sweep's range to its noise, which I tried first and which let the pathological case through.
+
+**And I have to own the reasoning error in D48.** I set `design_fraction = 0.10` on the argument that D42's objective is flat across `w_free ∈ [0.3, 0.6]`, so "a noisy selection inside a flat region costs almost nothing". That is true about the **cost** of choosing wrong and false about the **informativeness** of the choice: when the standard error is the size of the objective's whole range, the selection is noise, and no amount of tie-breaking rescues it. Flatness justifies *not caring much* about the answer; it does not justify *claiming* one. Eight patients cannot discriminate here and a design side large enough to do so is not affordable on 96 patients.
+
+**So D28 closes on a bounded-cost default rather than a fitted number**, which is the honest form: the weights are equal over the live components, the cost of that choice against the unknown optimum is bounded by D42's measured 0.015 of flagged area, and `w_free` is re-selected if a substrate ever makes the objective discriminating. That is a weaker claim than "selected on a design split" and it is the one the data supports.
+
+---
+
+### D55 — `tool2_holdout.py` calibrated and evaluated on the same patients; my bug, and the third of its kind here [T1.4, found by Track 2]
+The first version passed `split_col="__none__"` to all four arms, disabling the split filter. No single *row* was reused — the pool excludes the held-out operator — but **the design is crossed (D45), so the same patient appeared in calibration and evaluation**, and the patient is the exchangeable unit (D-027). `matched` was worse: it calibrated on the held-out operator's own rows and scored those same rows, which is why it landed on exactly 0.900 — the in-sample artefact P-23 is named for, reproduced by me two weeks after reading it.
+
+**Fixed:** calibration is now the other operators' `split=calib` rows, evaluation is the held-out operator's `split=test` rows, and the script **refuses a single-split bank** rather than quietly reporting in-sample numbers (`--allow-in-sample` to override, for development). It also warns if any cluster appears on both sides, which is the check that would have caught this.
+
+**What it changed, from Track 2's re-run:** Tool 2's verdict is unchanged (valid on 2 of 3 interior folds), `nearest` drops from 1/3 to 0/3 valid, and `matched` stops sitting exactly on nominal. So the conclusion in D52 survives, and the baseline it was compared against was flattered.
+
+**Third instance of one failure.** P-19 (the script nobody executed), P-23 (two of three baselines in-sample), now this. The common shape is that an in-sample number *looks right* — it lands on nominal, which is the value you were hoping for — so nothing alerts you. The guard that generalises is the one now in the script: assert the two frames are disjoint on the clustering unit, rather than trusting that the filtering was done.
+
+---
+
+### D56 — Printed strings must be ASCII; docstrings need not be [T1.5, found by Track 2]
+`select_weights.py` crashed with `UnicodeEncodeError` on Track 2's Windows console printing a `<=`. Development is on macOS where stdout is UTF-8; every bank is produced on Windows where a legacy console is cp1252. An **audit found 31 printable string literals across 13 files** with the same defect — the crash was the first one anyone happened to hit, not the only one.
+
+Fixed mechanically, by AST position so docstrings were untouched, and the rule is now enforced by `tests/test_console_encoding.py`: non-docstring string literals must be ASCII, docstrings may keep mathematical notation (`||P_N x||`, `theta`, `alpha`), and Markdown is unaffected. Both forms of the check are kept — ASCII, which is the stricter rule, and cp1252-encodability, which is the failure that actually happened.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)

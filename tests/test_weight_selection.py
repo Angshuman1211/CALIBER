@@ -120,6 +120,35 @@ def test_the_residual_component_never_receives_weight():
     ), "D25: the weights must stay on the simplex at every point"
 
 
+def test_a_sweep_that_cannot_separate_anything_declines_to_select():
+    """D54. The tie-break chooses among separated-but-tied points; it is not a substitute
+    for data.
+
+    Track 2 ran the selection on 8 design patients and got `w_free = 1.00` — an endpoint
+    that drops `s_disagree` from the score entirely — because 8 of 11 points were tied with
+    the minimum and the tie-break walks toward the tighter Lipschitz bound. Eliminating a
+    component is a structural change to the score, and a tie cannot license one.
+
+    Here both components report the same latent signal with the same noise, so no weighting
+    is better than any other. The rule must say so and fall back to D25's stated default
+    rather than returning the boundary of its own search.
+    """
+    selection = select_weights(_frame(disagree_noise=0.10, free_noise=0.10, seed=11), CAL)
+    assert not selection.discriminated
+    assert selection.w_free == 0.5, "the default is equal weights over the live components"
+    assert selection.weights.disagree == 0.5
+    assert "NOT SELECTED" in selection.note()
+    assert len(selection.tied_with) > 0.5 * len(DEFAULT_GRID)
+
+
+def test_a_small_tied_set_still_gets_the_tie_break():
+    """The guard must not disable the tie-break wholesale — only override it when the
+    sweep has chosen nothing at all."""
+    selection = select_weights(_frame(disagree_noise=1.5, seed=1), CAL)
+    assert selection.discriminated
+    assert len(selection.tied_with) <= 0.5 * len(DEFAULT_GRID)
+
+
 # -- the premise the comparison rests on ---------------------------------------
 
 

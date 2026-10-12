@@ -112,6 +112,11 @@ def main(argv: list[str] | None = None) -> int:
                          "signed axis")
     ap.add_argument("--normalise", default="ambient")
     ap.add_argument("--cluster", default="sample_id")
+    ap.add_argument("--split-col", default="split")
+    ap.add_argument("--allow-in-sample", action="store_true",
+                    help="proceed on a bank with one split side. Development only: every "
+                         "coverage number is then in-sample and lands on nominal by "
+                         "construction (P-23)")
     ap.add_argument("--bandwidth", type=float, default=None,
                     help="kernel bandwidth; default is the median non-zero distance (D33)")
     ap.add_argument("--out", default=None)
@@ -130,6 +135,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    split_col = args.split_col
+    sides = set(df[split_col].astype(str).unique()) if split_col in df.columns else set()
+    if not {"calib", "test"} <= sides:
+        message = (
+            f"bank has split side(s) {sorted(sides) or 'none'}; this comparison needs both "
+            "'calib' and 'test' so calibration and evaluation are patient-disjoint "
+            "(D-022, D-027). Rebuild with `split: auto`."
+        )
+        if not args.allow_in_sample:
+            print(f"[tool2] {message}", file=sys.stderr)
+            return 1
+        print(f"[tool2] WARNING in-sample: {message}", file=sys.stderr)
+
     ops = rebuild_operators(manifest)
     # A deployment operator is interior if some calibration operator measures more of
     # k-space and some measures less. Weighting can only interpolate between the regimes
@@ -146,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[tool2] distance         {args.distance}/{args.normalise} (D19)")
     if not provenance.get("reportable", False):
         print(
-            "[tool2] NOT REPORTABLE — these numbers exercise the comparison, they do not "
+            "[tool2] NOT REPORTABLE -- these numbers exercise the comparison, they do not "
             "settle it.",
             file=sys.stderr,
         )
@@ -172,24 +190,55 @@ def main(argv: list[str] | None = None) -> int:
         }
         nearest = min(others, key=lambda o: distance_of[group_of(scored, o)])
 
-        # Everything outside the held-out operator is calibration data; the held-out
-        # operator's rows are the evaluation set for every arm, so the arms are compared
-        # on identical rows (the pairing D45 argues for).
-        pool = scored[scored["operator_id"] != held_out].copy()
-        deploy = scored[scored["operator_id"] == held_out].copy()
+        # Calibration data is every operator *except* the held-out one, restricted to the
+        # calibration side of the patient split; evaluation is the held-out operator on the
+        # test side. Both restrictions are load-bearing (D-058).
+        #
+        # The first version of this script passed `split_col="__none__"` to every arm,
+        # which disables the split filter entirely. No single *row* was reused — the pool
+        # excludes the held-out operator — but the design is crossed (D45), so the same
+        # *patient* appeared in calibration and evaluation, and the patient is the
+        # exchangeable unit (D-027). `matched` was worse still: it calibrated on the
+        # held-out operator's own rows and scored the same rows, which is why it landed on
+        # exactly 0.900, the in-sample artefact P-23 was named for.
+        calib_side = scored[scored[split_col] == "calib"]
+        test_side = scored[scored[split_col] == "test"]
+        pool = calib_side[calib_side["operator_id"] != held_out].copy()
+        deploy = test_side[test_side["operator_id"] == held_out].copy()
+        if pool.empty or deploy.empty:
+            print(
+                f"[tool2] skipping {held_out}: needs calibration rows at the other "
+                f"operators and test rows at this one (got {len(pool)} and {len(deploy)})",
+                file=sys.stderr,
+            )
+            continue
+        overlap = set(pool[args.cluster]) & set(deploy[args.cluster])
+        if overlap:
+            print(
+                f"[tool2] {len(overlap)} cluster(s) appear in both calibration and "
+                f"evaluation for {held_out} -- the split column is not patient-disjoint "
+                "(D-022, D-027). Every number below is in-sample.",
+                file=sys.stderr,
+            )
 
         arms = {}
+        # The oracle calibrates on the held-out operator's own *calibration* rows, not on
+        # the rows it is scored on.
         arms["matched"] = calibrate_naive(
-            scored, calibration_group=deployment_group, alpha=args.alpha, split_col="__none__"
+            calib_side, calibration_group=deployment_group, alpha=args.alpha,
+            split_col="__already_filtered__",
         )
-        arms["mondrian"] = calibrate_mondrian(pool, alpha=args.alpha, split_col="__none__")
+        arms["mondrian"] = calibrate_mondrian(
+            pool, alpha=args.alpha, split_col="__already_filtered__"
+        )
         arms["nearest"] = calibrate_naive(
             pool, calibration_group=group_of(scored, nearest), alpha=args.alpha,
-            split_col="__none__",
+            split_col="__already_filtered__",
         )
         arms["weighted"] = calibrate_weighted(
             pool, deployment_group=deployment_group, distance_of=distance_of,
-            alpha=args.alpha, bandwidth=args.bandwidth, split_col="__none__",
+            alpha=args.alpha, bandwidth=args.bandwidth,
+            split_col="__already_filtered__",
         )
 
         for name, report in arms.items():
@@ -215,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
                 notes.append(f"{held_out} / {name}: {certification_note(report)}")
 
     table = pd.DataFrame(rows)
-    print("\n[tool2] leave-one-operator-out — read flag_area, not coverage (D39)")
+    print("\n[tool2] leave-one-operator-out -- read flag_area, not coverage (D39)")
     for held_out, part in table.groupby("held_out", sort=False):
         print(f"\n  held out: {held_out}")
         show = part.drop(columns=["held_out"])
@@ -223,11 +272,14 @@ def main(argv: list[str] | None = None) -> int:
 
     order = ["matched", "mondrian", "nearest", "weighted"]
     for label, subset in (
-        ("interior deployment operators — what Q4 is about", table[table["interior"]]),
-        ("endpoint deployment operators — outside what weighting can reach", table[~table["interior"]]),
+        ("interior deployment operators -- what Q4 is about", table[table["interior"]]),
+        (
+            "endpoint deployment operators -- outside what weighting can reach",
+            table[~table["interior"]],
+        ),
     ):
         if subset.empty:
-            print(f"\n[tool2] no {label.split(' —')[0]}")
+            print(f"\n[tool2] no {label.split(' --')[0]}")
             continue
         folds = subset["held_out"].nunique()
         summary = subset.groupby("arm").agg(
@@ -243,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     inner = table[table["interior"]]
     if inner.empty:
         print(
-            "\n[tool2] Q4: UNDECIDED — this bank has no interior deployment operator, so "
+            "\n[tool2] Q4: UNDECIDED -- this bank has no interior deployment operator, so "
             "every fold asks\n        the weighting to extrapolate. Q4 needs a grid with an "
             "operator between two others."
         )
@@ -257,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n[tool2] Q4, on {n_folds} interior fold(s). Valid in every fold: "
               f"{', '.join(deployable) if deployable else 'none'}")
         if "weighted" not in deployable:
-            print("        Tool 2 is NOT valid on every interior fold — it has not earned "
+            print("        Tool 2 is NOT valid on every interior fold -- it has not earned "
                   "its place here.")
         else:
             beaten = [a for a in deployable if a != "weighted" and areas[a] <= areas["weighted"]]

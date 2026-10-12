@@ -293,7 +293,7 @@ def distance_matrix(ops: list[ForwardOperator], measure: str, **kwargs) -> Tenso
     if measure in SIGNED_MEASURES:
         raise ValueError(
             f"{measure!r} is signed and directional, so a symmetric matrix would "
-            "misreport half its entries — compute it per ordered (calibration, "
+            "misreport half its entries -- compute it per ordered (calibration, "
             "deployment) pair instead"
         )
     n = len(ops)
