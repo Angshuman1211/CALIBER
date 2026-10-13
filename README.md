@@ -113,7 +113,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `T2.1_data_and_operator_pipeline.md` | Track 2 | Week 1 record — what was built, the numbers, honest limitations — plus dataset provenance, licensing and download (App. A) |
 | `T2.2_solver_integration.md` | Track 2 | Week 2 record — DPS, DDNM and FlowDPS behind one interface; the Stage-2 split measured on real output |
 | `T2.3_score_bank_and_baselines.md` | Track 2 | Week 3 record — the first fastMRI score bank, both baselines, and why neither can yet be read as a coverage result |
-| `T3.1`–`T3.3_*.md` | Track 3 | Formal review, distance candidates, L1 stability result |
+| `T3.1`–`T3.5_*.md` | Track 3 | Formal review, distance candidates, L1 stability result, ill-posedness scaling, numerical verification |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.
 
@@ -185,7 +185,7 @@ Owns the derivation of the coverage-gap bound and its verification against measu
 | **T3.2** Operator-distance candidates | Comparative analysis of subspace, projection and spectral distance measures, with their properties | **Substantially complete** — five candidates reduced to three; saturation failure identified |
 | **T3.3** Stability result (L1) | Derivation bounding the coverage gap by the operator distance in known quantities | **First pass** — Step 1 rigorous; Step 2 sketched with two assumptions flagged, not hidden |
 | **T3.4** Ill-posedness scaling (L2) | Extension relating the bound to null-space dimension and spectral decay | **First pass, revised** — √null_frac law and its closed-form ratio shape verified on the placeholder harness; D-046 shows a real prior departs from it; cancellation story applied to the old three-component score only |
-| **T3.5** Numerical verification | Verification of derived results on small synthetic linear operators, requiring negligible compute | Not started — checks T3.3's flagged assumption |
+| **T3.5** Numerical verification | Verification of derived results on small synthetic linear operators, requiring negligible compute | **Delivered** — found and repaired a TV/Kolmogorov error in T3.3, measured the density constant D, quantified the three §4b mismatches; the bound is not yet useful on the toy harnesses |
 | **T3.6** Bound-versus-measurement study | Comparison of predicted and observed coverage gaps using the cached score banks | Not started |
 | **T3.7** Analytical authoring | Derivations, statements of assumptions, and the theoretical sections of the manuscripts | Not started |
 
