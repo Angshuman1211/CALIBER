@@ -113,7 +113,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `T2.1_data_and_operator_pipeline.md` | Track 2 | Week 1 record — what was built, the numbers, honest limitations — plus dataset provenance, licensing and download (App. A) |
 | `T2.2_solver_integration.md` | Track 2 | Week 2 record — DPS, DDNM and FlowDPS behind one interface; the Stage-2 split measured on real output |
 | `T2.3_score_bank_and_baselines.md` | Track 2 | Week 3 record — the first fastMRI score bank, both baselines, and why neither can yet be read as a coverage result |
-| `T3.1`–`T3.3_*.md` | Track 3 | Formal review, distance candidates, L1 stability result |
+| `T3.1`–`T3.5_*.md` | Track 3 | Formal review, distance candidates, L1 stability result, ill-posedness scaling, numerical verification |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.
 
@@ -133,7 +133,7 @@ Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent 
 | **Operator distance** | All five blueprint §12.1 candidates implemented; the primary measure locked and verified non-saturating across the acceleration sweep |
 | **Hallucination score** | Three-component operator-aware score, cached as separable components; validated against *constructed* data-consistent hallucinations |
 | **Calibration** | All three tools — naive baseline, group-conditional backbone, operator-distance weighted — with thin-group refusal and effective-sample-size tracking |
-| **Analytical result** | Coverage gap bounded by a single distributional distance — a checked consequence of the non-exchangeable conformal analysis — with the reduction to operator distance drafted |
+| **Analytical result** | Coverage gap bounded by the Kolmogorov distance of the label-conditional score law (tighter than the original TV statement), with a √d_op reduction to operator distance derived under stated assumptions; constants not yet measured |
 | **Substrates** | fastMRI+ annotations parsed (16,154 boxes); M4Raw verified end to end on real k-space; LoDoPaB CT running end to end |
 | **Engineering** | 177 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
 
@@ -183,9 +183,9 @@ Owns the derivation of the coverage-gap bound and its verification against measu
 |------|-------------|--------|
 | **T3.1** Formal review of the setting | Structured account of the non-exchangeable conformal framework and the assumptions it requires | **Complete** — verified against the source theorems; L3 scope decided |
 | **T3.2** Operator-distance candidates | Comparative analysis of subspace, projection and spectral distance measures, with their properties | **Substantially complete** — five candidates reduced to three; saturation failure identified |
-| **T3.3** Stability result (L1) | Derivation bounding the coverage gap by the operator distance in known quantities | **First pass** — Step 1 rigorous; Step 2 sketched with two assumptions flagged, not hidden |
-| **T3.4** Ill-posedness scaling (L2) | Extension relating the bound to null-space dimension and spectral decay | **First pass, revised** — √null_frac law and its closed-form ratio shape verified on the placeholder harness; D-046 shows a real prior departs from it; cancellation story applied to the old three-component score only |
-| **T3.5** Numerical verification | Verification of derived results on small synthetic linear operators, requiring negligible compute | Not started — checks T3.3's flagged assumption |
+| **T3.3** Stability result (L1) | Derivation bounding the coverage gap by the operator distance in known quantities | **Fourth pass** — Step 1 stated on the Kolmogorov distance of the label-conditional law, with cluster-level proofs; Step 2 derived for the unconditional law and (under assumptions) the label-conditional one, √d_op rate; the label-conditional constants are unmeasured |
+| **T3.4** Ill-posedness scaling (L2) | Extension relating the bound to null-space dimension and spectral decay | **First pass, revised twice** — √null_frac law holds for white-noise fill on sparse-view CT and mask operators, fails for limited-angle CT and a structured prior (D-046 on a real prior); the plateau and the 0.57 ceiling are not bounds |
+| **T3.5** Numerical verification | Verification of derived results on small synthetic linear operators, requiring negligible compute | **Delivered** — repaired a TV/Kolmogorov error in T3.3, measured D, quantified the label-conditioning, clustering and solver-dependence mismatches, derived the label-conditional link; the bound is not yet useful on the toy harnesses |
 | **T3.6** Bound-versus-measurement study | Comparison of predicted and observed coverage gaps using the cached score banks | Not started |
 | **T3.7** Analytical authoring | Derivations, statements of assumptions, and the theoretical sections of the manuscripts | Not started |
 
