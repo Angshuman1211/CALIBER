@@ -204,3 +204,30 @@ def test_a_floor_on_the_absolute_criterion_is_refused():
     truth = _truth(err_free=[0.5], free_content=[0.5])
     with pytest.raises(ValueError, match="relative"):
         label_hallucinated(truth, threshold=0.10, absolute_floor=0.2)
+
+
+def test_the_candidacy_gate_is_the_one_that_removes_both_artefacts():
+    """D60. `min_free_content` at a design-split quantile, not its numerical default.
+
+    A region with nothing hidden in it cannot host a null-space hallucination, so it is not
+    a candidate. Gating candidacy removes the denominator artefact (the ratio inflating on
+    a small denominator) *and* the numerator circularity (`err_free -> s_free` as
+    `free_content` falls, by D38's identity), where gating on `err_free` removes only the
+    first and amplifies the second.
+    """
+    # Two regions with identical ratios, one of which has nothing hidden to invent into.
+    truth = _truth(err_free=[0.04, 0.80], free_content=[0.01, 0.20])
+    both = label_hallucinated(truth, threshold=1.75, relative=True).numpy()
+    assert both.all(), "both regions clear the ratio test, which is the problem"
+
+    gated = label_hallucinated(
+        truth, threshold=1.75, relative=True, min_free_content=0.05
+    ).numpy()
+    assert not gated[0], "the empty region is not a candidate"
+    assert gated[1], "the region with real hidden content still counts"
+
+
+def test_the_default_min_free_content_never_fires_on_live_data():
+    """Why the default is a guard and not the gate: the smallest live `free_content` on the
+    real-prior bank is 0.162, which the 1e-3 default clears by two orders of magnitude."""
+    assert MIN_FREE_CONTENT < 0.162 / 100

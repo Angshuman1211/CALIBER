@@ -787,6 +787,52 @@ R4 was the operator I had in mind and it is the right primary — mid-grid, and 
 
 ---
 
+### D60 — The gate belongs on `free_content`, not `err_free`; my D57 fixed one artefact and amplified another [T1.1/O2, supersedes D57's gate]
+Track 2 asked which quantile to use for D57's absolute floor, and flagged that AUROC reaches 0.99-1.00 at the R2 operators where positives are scarce, suspecting that "where true free content is small, `s_free` might be close to measuring the label's own numerator." **They are right, it is derivable from D38, and it means my gate was the wrong one.**
+
+**The circularity, measured.** By D38's identity, `err_free² = s_free² + free_content² - 2·s_free·free_content·cos θ`, so `err_free -> s_free` as `free_content -> 0`. On the real-prior bank, `spearman(err_free, s_free)` by `free_content` tercile:
+
+| tercile | spearman | mean abs difference |
+|---|---|---|
+| low `free_content` | **+0.964** | 0.048 |
+| mid | +0.960 | 0.068 |
+| high | +0.491 | 0.135 |
+
+Where little is hidden, **the label's numerator is the score**. Grading `s_free` against such a label is grading it against itself.
+
+**And D57's gate selects exactly those regions.** Gating on large `err_free` at small `free_content` picks the circular cases, which is why it inflates rather than corrects:
+
+| gate | pos rate | AUROC(`-free_content`) | AUROC(`s_free`) |
+|---|---|---|---|
+| ratio only | 0.255 | 0.826 | 0.902 |
+| + `err_free` > q62 (**D57**) | 0.167 | 0.690 | **0.973** |
+| + `err_free` > q75 | 0.117 | 0.615 | **0.985** |
+| + **`free_content` > q33** | 0.096 | **0.499** | 0.931 |
+| + `free_content` > q50 | 0.039 | 0.372 | 0.919 |
+
+The candidacy gate takes the denominator's AUROC to **0.499 — exactly chance** — and leaves the score's at a believable 0.931. D57's gate never reaches chance and pushes the score's into the range Track 2 correctly distrusted.
+
+**Ruling: `min_free_content` at the 33rd percentile of `free_content` on the design split.** Not a new parameter — it is the one already in `label_hallucinated`, whose default of 1e-3 is a numerical guard that never fires, since the smallest live value is 0.162. The reasoning is physical: **a region where the operator hides almost nothing cannot host a null-space hallucination, so it is not a candidate**, and asking the relative question there is what manufactures both artefacts.
+
+**One gate, not two.** Adding D57's `err_free` floor on top of the candidacy gate changes nothing measurable (0.039 / 0.372 / 0.919 either way), so it is superseded rather than kept alongside. It stays available and is documented as not recommended.
+
+**q33 rather than q50**, on positive-rate grounds: 0.096 leaves ~2,200 positives on the 23k bank (~245 per group against D32's floor of 9), where q50's 0.039 leaves ~100 per group and Track 2 already measured 1.2% at `vd R2`. The artefact is already fully removed at q33.
+
+---
+
+### D61 — Which direction collapses is solver-dependent; D50 over-generalised from a reference sampler [T1.4, corrects D50]
+D50 ruled that ascending the grid breaks efficiency and descending breaks validity. Under the corrected label on fastMRI, Track 2 measured the **opposite**: descending only over-flags (0 cells fail at any q), and **ascending collapses** — naive reaching 0.298 at `equispaced R2`, with 7-9 of 9 ascending cells missing nominal, consistently across all three q. Group-conditional restores 0.80-0.94.
+
+**Re-checked on the phantom bank under the candidacy gate, and there the direction does *not* flip** — descending still collapses to 0.000. So D50 was not wrong about its own data; it was wrong to generalise it. The reference sampler injects hallucination at a fixed scale, so its score distributions order purely by null-space size; a learned prior's depend on image content and on the mask *pattern*. **Which direction fails is a property of the solver and substrate, not of operator shift.**
+
+**What survives, and what does not.** D47's mechanism survives intact: the gap is not symmetric in the operator pair, one direction over-flags and the other under-covers, and the plotted axis must carry the sign. What does not survive is D50's *assignment* of which direction does which, and the phantom numbers must not be quoted as though they were the project's result.
+
+**And the blueprint's original expectation is restored.** O3 as written — naive transfer loses coverage when deployed to a different operator, group-conditional restores it — is what the real-prior data shows once the label is fixed. Both the over-flagging reading (P-21) and my descending-collapse reading were label artefacts. The claim did not need reframing; the label needed fixing.
+
+*Consequence:* the midterm figures are redone against the candidacy-gated label, in the ascending direction, with the descending cells reported as the over-flagging case.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)

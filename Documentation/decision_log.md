@@ -2447,6 +2447,54 @@ groups are allowed to differ.
 *Affects:* O2, O3, T1.1, T1.2, T1.4, D21, D37, D43, D52, D54, P-02, every label-dependent
 number measured so far.
 
+---
+
+## D-060 · The gate goes on free_content, not err_free; and which direction collapses is solver-dependent
+**Date:** Week 5 · **Status:** ACCEPTED · **Proposed by:** Track 1 · **Found by:** Track 2
+**See:** D60, D61 · **Supersedes:** D57's gate · **Corrects:** D50, D-056
+
+**Your 0.99-1.00 suspicion was right and it changes the fix.** By D-037's identity
+`err_free -> s_free` as `free_content -> 0`, so where little is hidden the label's numerator
+*is* the score. Measured by `free_content` tercile: `spearman(err_free, s_free)` is **+0.964**
+in the bottom third against **+0.491** in the top. And my `err_free` floor selects exactly
+those regions, so it removes the denominator artefact while amplifying the numerator one --
+`s_free`'s AUROC goes to 0.973 at q62 and 0.985 at q75, which is the score being graded
+against itself.
+
+**Use the candidacy gate instead: `min_free_content` at q33 of `free_content` on the design
+split.** Not a new parameter -- it is the one already in `label_hallucinated`, whose 1e-3
+default is a guard that never fires (smallest live value 0.162).
+
+| gate | pos rate | AUROC(-free_content) | AUROC(s_free) |
+|---|---|---|---|
+| ratio only | 0.255 | 0.826 | 0.902 |
+| + err_free > q62 (D57) | 0.167 | 0.690 | **0.973** |
+| + **free_content > q33** | 0.096 | **0.499** | 0.931 |
+
+The candidacy gate reaches **exactly chance** on the denominator and leaves the score
+believable. The reasoning is physical: a region where the operator hides almost nothing
+cannot host a null-space hallucination, so it is not a candidate. **One gate, not two** --
+adding the err_free floor on top changes nothing measurable.
+
+**So the answer to your q question: q33, and on `free_content` rather than `err_free`.**
+q33 rather than q50 on positive-rate grounds, given your 1.2% at `vd R2`.
+
+**The direction flip is my error, and a narrower one than it looks.** I re-ran the phantom
+bank under the candidacy gate and there the direction does *not* flip -- descending still
+collapses. The reference sampler injects hallucination at a fixed scale so its scores order
+purely by null-space size; a learned prior's depend on image content and mask pattern. So
+**which direction fails is a property of the solver and substrate**, and D50 generalised from
+phantoms to a claim about operator shift. D-053's mechanism survives -- the gap is not
+symmetric and the axis carries the sign -- but D-056's assignment of which direction does
+which does not, and your fastMRI result is the one that counts.
+
+**Worth noting what this restores:** O3 as the blueprint wrote it. Naive transfer losing
+coverage when deployed to a different operator, group-conditional restoring it, is what the
+real-prior data shows once the label is fixed. Both P-21's over-flagging reading and my
+descending-collapse reading were label artefacts. The claim never needed reframing.
+
+*Affects:* O2, O3, T1.1, T1.4, D21, D37, D43, D50, D57, D-056, P-21, the midterm figures.
+
 ## Template
 
 ```

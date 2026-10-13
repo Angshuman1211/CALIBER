@@ -89,11 +89,21 @@ def compute_region_truth(
 
 # Below this much free content a region has essentially nothing the operator
 # cannot see, and `err_free / free_content` is 0/0 — an arbitrarily large ratio
-# from an empty patch of background. This is a guard against a degenerate
-# denominator, *not* a tuning knob: it excludes regions where the relative
-# criterion has nothing to say, and it must stay far below any real anatomy.
-# Measured on the M4Raw real-prior bank, the smallest region `free_content` is
-# 0.162, so this floor is two orders of magnitude clear of live data.
+# from an empty patch of background.
+#
+# **This default is a numerical guard, and it is NOT the value a reported label
+# should use (D60).** It sits two orders of magnitude below live data — the
+# smallest region `free_content` on the M4Raw bank is 0.162 — so it never fires,
+# and the denominator artefact it was meant to prevent happens anyway across the
+# live range: `-free_content` alone ranks the ratio-only label at AUROC 0.826,
+# better than the numerator's 0.741.
+#
+# For a reported label, pass `min_free_content` as a **quantile of
+# `free_content` on the design split** — the candidacy gate. A region where the
+# operator hides almost nothing cannot host a null-space hallucination, so it is
+# not a candidate, and asking the relative question there is what produces the
+# artefact. At the 33rd percentile on the M4Raw bank the denominator's AUROC
+# falls to 0.499 — exactly chance — while `s_free`'s stays at a believable 0.931.
 MIN_FREE_CONTENT = 1e-3
 
 
@@ -123,10 +133,20 @@ def label_hallucinated(
       region of dense anatomy carries large ``err_free`` before any solver runs;
       dividing by ``free_content`` is what stops that from reading as invention.
 
-    ``absolute_floor`` adds a second, *conjunctive* gate to the relative form:
-    ``err_free > absolute_floor`` as well as the ratio test. **This is required
-    for a reported relative label** (D57), and the reason is a measured defect
-    rather than caution.
+    ``min_free_content`` is the **candidacy gate and the one to set** (D60): pass
+    a quantile of ``free_content`` from the design split, not the numerical
+    default. See the note on the constant below for why.
+
+    ``absolute_floor`` adds a second, conjunctive gate, ``err_free >
+    absolute_floor``. **Superseded by the candidacy gate and not recommended**
+    (D60). It does remove the denominator artefact, but it *worsens* a second
+    one: by D38's identity ``err_free -> s_free`` as ``free_content`` falls, so
+    in low-content regions the label's numerator *is* the score —
+    ``spearman(err_free, s_free) = +0.964`` in the bottom tercile against
+    ``+0.491`` in the top. Gating on large ``err_free`` selects exactly those
+    regions, which is why it drives ``s_free``'s AUROC to 0.973–0.985: the score
+    is being graded against itself. The candidacy gate removes both artefacts and
+    makes this gate redundant — adding it on top changes nothing measurable.
 
     The ratio is driven more by its denominator than by its numerator. Measured
     on the real-prior bank: ``-free_content`` alone ranks the relative label at
