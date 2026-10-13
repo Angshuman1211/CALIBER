@@ -38,7 +38,7 @@ from torch import Tensor
 from ..operators.base import ForwardOperator
 from .base import PosteriorSampler, SolverInfo
 from .denoiser import Denoiser, DiffusersUNetDenoiser, NoiseSchedule
-from .diffusion import _as_real
+from .diffusion import _as_real, range_replace
 
 
 class FlowDPSSampler(PosteriorSampler):
@@ -63,10 +63,13 @@ class FlowDPSSampler(PosteriorSampler):
         schedule: NoiseSchedule | None = None,
         device: str = "cpu",
         max_draws_per_batch: int = 0,
+        consistency_device: str | None = None,
     ):
         self.checkpoint = checkpoint
         self.n_steps = int(n_steps)
         self.device = device
+        # Where the data-consistency step runs; see diffusion.range_replace.
+        self.consistency_device = consistency_device
         # See _DiffusionSampler: draws per forward batch, 0 = all (P-24, D-044).
         self.max_draws_per_batch = int(max_draws_per_batch)
         self.schedule = schedule or NoiseSchedule()
@@ -124,10 +127,7 @@ class FlowDPSSampler(PosteriorSampler):
         # does, so the two families differ in their *dynamics* and not in how strongly
         # each is tied to the measurements. Holding that fixed is what makes a solver
         # ablation attributable to the solver (Sec. 13 controlled comparison).
-        x0 = torch.stack([
-            _as_real(x0[b] - operator.pinv(operator.forward(_as_real(x0[b])) - y))
-            for b in range(x0.shape[0])
-        ])
+        x0 = range_replace(x0, y, operator, self.consistency_device)
         return eps - x0, x0
 
     def sample(

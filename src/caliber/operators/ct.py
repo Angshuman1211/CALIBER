@@ -106,10 +106,17 @@ class CTProjectionOperator(ForwardOperator):
         return rotated.sum(dim=2).reshape(len(self.angles), self.n_det)
 
     def adjoint(self, y: Tensor) -> Tensor:
-        """``A^H y`` — exact transpose, obtained as the VJP of the linear forward map."""
-        x = torch.zeros(self.image_shape, dtype=torch.float32, device=y.device, requires_grad=True)
-        out = self.forward(x)
-        (grad,) = torch.autograd.grad(out, x, grad_outputs=y.to(torch.float32))
+        """``A^H y`` — exact transpose, obtained as the VJP of the linear forward map.
+
+        Autograd is switched on locally because the samplers run under ``no_grad``: without
+        it the first consistency step raised, which is why no solver had ever run on a CT
+        operator before T2.6. Local, so it builds no graph the caller can see.
+        """
+        with torch.enable_grad():
+            x = torch.zeros(self.image_shape, dtype=torch.float32, device=y.device,
+                            requires_grad=True)
+            out = self.forward(x)
+            (grad,) = torch.autograd.grad(out, x, grad_outputs=y.to(torch.float32))
         return grad.detach()
 
     def _ramp_filter(self, sino: Tensor) -> Tensor:

@@ -15,12 +15,14 @@ from .splits import (
     verify_no_patient_straddles,
 )
 from .synthetic import PhantomDataset
+from .totalsegmentator import TotalSegmentatorDataset
 
 DATASETS: dict[str, type[SliceDataset]] = {
     "phantom": PhantomDataset,
     "fastmri": FastMRIDataset,
     "m4raw": M4RawDataset,
     "lodopab": LoDoPaBDataset,
+    "totalsegmentator": TotalSegmentatorDataset,
 }
 
 
@@ -44,6 +46,7 @@ __all__ = [
     "M4RawDataset",
     "PhantomDataset",
     "SliceDataset",
+    "TotalSegmentatorDataset",
     "assign_splits",
     "build_dataset",
     "center_crop",

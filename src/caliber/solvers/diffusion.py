@@ -51,6 +51,31 @@ def _as_real(x: Tensor) -> Tensor:
     return x.real if x.is_complex() else x
 
 
+def range_replace(x0: Tensor, y: Tensor, operator: ForwardOperator,
+                  device: str | None = None) -> Tensor:
+    """``x0 - A^+(A x0 - y)`` for each draw: the range component pinned to the data.
+
+    The inverse is ``operator.decomposition_pinv``, the one the score's range/null split
+    uses, not ``operator.pinv``. For MRI they are the same function, so MRI draws are
+    unchanged bit for bit. For CT ``pinv`` is filtered backprojection, which is not a
+    pseudo-inverse: a step built on it left a real slice *less* consistent with its data
+    as views got sparser (residual 0.064 to 0.207 at 30 views, against 0.001 with the CG
+    inverse, T2.6). That is D-012's defect re-entering through the solver, and it would
+    confound the view-count axis with the solver's failure to fit the data.
+
+    ``device`` runs just this step elsewhere -- the CG inverse is 4-6x faster on the GPU
+    at 256^2 -- and returns the result on ``x0``'s device. ``None`` keeps it where ``x0``
+    is, which is what every MRI config does and what keeps those banks reproducible.
+    """
+    out = []
+    for b in range(x0.shape[0]):
+        xb = x0[b] if device is None else x0[b].to(device)
+        yb = y if device is None else y.to(device)
+        fixed = _as_real(xb - operator.decomposition_pinv(operator.forward(_as_real(xb)) - yb))
+        out.append(fixed if device is None else fixed.to(x0.device))
+    return torch.stack(out)
+
+
 class _DiffusionSampler(PosteriorSampler):
     """Shared machinery: schedule, batching, seeding, and the consistency diagnostic."""
 
@@ -66,11 +91,15 @@ class _DiffusionSampler(PosteriorSampler):
         eta: float = 1.0,
         device: str = "cpu",
         max_draws_per_batch: int = 0,
+        consistency_device: str | None = None,
     ):
         self.checkpoint = checkpoint
         self.n_steps = int(n_steps)
         self.eta = float(eta)
         self.device = device
+        # Where the data-consistency step runs (see range_replace). Opt-in, for CT, whose
+        # CG inverse dominates the cost of a pair on the CPU.
+        self.consistency_device = consistency_device
         # 0 = all draws in one forward batch. Lower it to fit memory (P-24); the result
         # is unchanged either way, because each draw carries its own seed (D-044).
         self.max_draws_per_batch = int(max_draws_per_batch)
@@ -262,10 +291,7 @@ class DDNMSampler(_DiffusionSampler):
                 t_prev = steps[i + 1] if i + 1 < len(steps) else -1
                 eps = self.denoiser.predict_noise(x, t)
                 x0 = self.schedule.predict_x0(x, eps, t)
-                x0 = torch.stack([
-                    _as_real(x0[b] - operator.pinv(operator.forward(_as_real(x0[b])) - y))
-                    for b in range(x0.shape[0])
-                ])
+                x0 = range_replace(x0, y, operator, self.consistency_device)
                 noise = self._noise_like(x, gens) if self.eta > 0 else None
                 x = self.schedule.ddim_step(x0, eps, t_prev, eta=self.eta, noise=noise)
         return x

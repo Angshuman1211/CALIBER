@@ -1,24 +1,39 @@
-# Week 7 — CT onboarding. The card requires the CT pipeline to mirror the MRI
-# pipeline *exactly*, using the shared score-bank format.
+# Week 7 — CT onboarding: the full CT operator grid on TotalSegmentator (T2.6).
 #
-# Read this config against w04_mri_operator_grid.yaml: only the operator block
-# and the dataset block differ. Everything else — regions, scoring, score bank,
-# metrics — is identical. If anything else has to change to make CT work, that
-# is a leak in the abstraction and belongs back in the shared layer.
+#   D:/venvs/caliber-gpu/Scripts/python.exe -u -m caliber.runner \
+#       configs/experiments/w07_ct_onboarding.yaml
 #
-# Two honest caveats carried by the CT operator, both recorded in the manifest:
-#   - pinv is filtered backprojection, so the range/null-space split is approximate
-#   - null_space_dim is a dimension-count bound, not a computed rank
+# The card requires the CT pipeline to mirror the MRI pipeline *exactly*, using the shared
+# score-bank format. Read this against w05_mri_full_val_gpu.yaml: the solver, its steps and
+# draws, the regions, the split fractions and the scoring are the same; only the operator
+# block, the dataset block, and the two device settings below differ. If anything else had
+# to change to make CT work, that would be a leak in the abstraction.
+#
+# Rewritten in T2.6. The first version could not run: it read LoDoPaB with split: calib
+# (LoDoPaB's shards are named train/validation/test, and it has no annotations), and asked
+# for DPS without a checkpoint. D-013 made TotalSegmentator the CT substrate.
+#
+# Caveats carried by the CT operator, both recorded in the manifest:
+#   - the range/null split is a CG solve (D-012), approximate to its tolerance; pinv (FBP)
+#     is display-only
+#   - null_space_dim is a dimension-count bound, not a computed rank (D-007)
+# Not reportable: the prior is the face model (D-016, D-035); no CT prior exists yet.
 
 include: base
 
 experiment:
   name: w07_ct_onboarding
   solver:
-    name: dps
-    n_steps: 200
-  n_posterior: 8
+    name: ddnm
+    checkpoint: checkpoints/ddpm-celebahq-256
+    n_steps: 24
+    device: cuda
+    max_draws_per_batch: 1
+    consistency_device: cuda   # the CG inverse in DDNM's consistency step (T2.6)
+  n_posterior: 4
   operators:
+    # Sparse-view: six densities at the full arc. Limited-angle: three arcs at 120 views.
+    # Each arc is its own calibration group (T2.6), as each density is.
     - modality: ct
       n_views: [180, 120, 90, 60, 45, 30]
       angular_range_deg: 180.0
@@ -29,12 +44,16 @@ experiment:
 data:
   image_shape: [256, 256]
   dataset:
-    name: lodopab
-    root: data/raw/lodopab
-    split: calib
+    name: totalsegmentator
+    root: data/raw/totalsegmentator
+    split: auto
     image_shape: [256, 256]
-    slices_per_file: 4
+    slices_per_volume: 1
+    calib_fraction: 0.5     # as w05 (D-057): 8 design / 41 calib / 51 test subjects
+    design_fraction: 0.10
 
 run:
-  limit: 200
-  cache_reconstructions: 12
+  limit: null               # all 100 extracted subjects (P-10: 100 of 1,228 on disk)
+  cache_reconstructions: 6
+  checkpoint_every: 10
+  scoring_device: cuda      # n_posterior + 4 CG solves per pair (T2.6)
