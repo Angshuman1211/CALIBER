@@ -25,7 +25,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from caliber.evaluation.bank import derive_score_and_label
+from caliber.evaluation.bank import CANDIDACY_QUANTILE, candidacy_gate, derive_score_and_label
 from caliber.scorebank import read_bank, read_manifest
 from caliber.scoring.weights import DEFAULT_GRID, select_weights
 
@@ -36,6 +36,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--calibration-operator", default=None)
     ap.add_argument("--alpha", type=float, default=0.10)
     ap.add_argument("--tau", type=float, default=1.75, help="D37's ratified value")
+    ap.add_argument("--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
+                    help="D-060's candidacy gate, a quantile of free_content on the design "
+                         "split; 0 = the ratio-only label, defective, for comparison only")
     ap.add_argument("--cluster", default="sample_id")
     ap.add_argument("--points", type=int, default=len(DEFAULT_GRID),
                     help="sweep resolution; more points does not make a flat curve sharper")
@@ -45,7 +48,12 @@ def main(argv: list[str] | None = None) -> int:
     df = read_bank(args.bank)
     provenance = read_manifest(args.bank).get("provenance") or {}
     calib_op = args.calibration_operator or sorted(df["operator_id"].unique())[0]
-    df = derive_score_and_label(df, calib_op, threshold=args.tau)
+    try:
+        gate = candidacy_gate(df, args.candidacy_quantile)
+    except ValueError as exc:  # no design side: the same refusal select_weights makes
+        print(f"[weights] {exc}", file=sys.stderr)
+        return 1
+    df = derive_score_and_label(df, calib_op, threshold=args.tau, min_free_content=gate)
 
     print(f"[weights] bank             {args.bank}")
     print(f"[weights] reportable       {provenance.get('reportable')}")

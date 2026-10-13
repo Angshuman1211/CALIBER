@@ -1,0 +1,59 @@
+# Week 5 - the mask-seed noise floor, at one operator (Track 1's request after D-057).
+#
+#   D:/venvs/caliber-gpu/Scripts/python.exe -u -m caliber.runner \
+#       configs/experiments/w05_seed_noise_floor_gpu.yaml
+#
+# Why: T2.4 §8.4 measured coverage moving +/-0.028 (sd) when only the patient split
+# changes. Every ablation cell in T1.4 §6 is compared against a floor like that, and an
+# effect smaller than the noise is not an effect. The other noise source nobody has
+# measured is the mask itself: same operator, same acceleration, different random lines.
+# D-023 makes the seed a member of a calibration group rather than a group of its own, so
+# if the seed moves coverage as much as the split does, that ruling needs revisiting.
+#
+# Why only seeds 1 and 2: seed 0 of random1d R4 is already in the w05 bank, and the draws
+# are a pure function of config and pair (D-041) - regenerated draws were shown to match
+# that bank bit for bit (dispersion_baseline.py's reproduction check, relative difference
+# 0.0). Recomputing seed 0 would buy nothing. This bank is merged with w05's seed-0 rows
+# at analysis time; everything else here is identical to w05 so the merge is coherent:
+# same solver, steps, draws, split fractions and salt, so the same patients sit on the
+# same sides.
+#
+# Why random1d R4: random1d is the family whose lines are drawn at random, so the seed
+# changes the mask (29% of mask entries differ between seeds 0 and 1, same 64 lines kept);
+# R4 is the interior of the graded within-family axis. 2 seeds x 199 volumes = 398 pairs,
+# ~1.5 h at the measured 13 s/pair on the RTX 3050.
+
+include: base
+
+experiment:
+  name: w05_seed_noise_floor_gpu
+  solver:
+    name: ddnm
+    checkpoint: checkpoints/ddpm-celebahq-256
+    n_steps: 24
+    device: cuda
+    max_draws_per_batch: 1   # measured: 1 draw is as fast as 2, and 4 do not fit (w05)
+  n_posterior: 4
+  operators:
+    - modality: mri
+      family: random1d
+      acceleration: 4
+      center_fraction: 0.08
+      mask_seed: [1, 2]
+
+data:
+  image_shape: [256, 256]
+  dataset:
+    name: fastmri
+    root: data/raw/fastmri/singlecoil_val
+    annotations_csv: data/annotations/fastmri_plus/knee.csv
+    split: auto
+    image_shape: [256, 256]
+    slices_per_volume: 1
+    calib_fraction: 0.5     # identical to w05 (D-057), so the patients sit on the same sides
+    design_fraction: 0.10
+
+run:
+  limit: null
+  cache_reconstructions: 0
+  checkpoint_every: 10

@@ -40,6 +40,8 @@ def derive_score_and_label(
     weights: ScoreWeights | None = None,
     threshold: float = 1.75,
     relative: bool = True,
+    absolute_floor: float | None = None,
+    min_free_content: float | None = None,
 ) -> pd.DataFrame:
     """Add ``score`` and ``label`` columns to a bank frame, from cache alone.
 
@@ -50,6 +52,17 @@ def derive_score_and_label(
 
     ``threshold`` defaults to Track 1's ratified ``tau = 1.75`` under the relative
     criterion (their D37, cross-track D-037/D-038).
+
+    **The reported label uses the candidacy gate** (D-060, Track 1's ruling, superseding
+    D-059's gate): ``min_free_content`` set to the 33rd percentile of ``free_content`` on the design
+    split, via :func:`design_quantile`. The ratio alone is driven more by its denominator
+    than its numerator and labels smooth tissue as hallucinated (D-059). D-059's first fix,
+    ``absolute_floor`` on ``err_free``, removed that but selected exactly the regions where
+    ``err_free`` approaches ``s_free`` (D-037's identity), so the score began to measure the
+    label's own numerator (AUROC 0.99-1.00). A region where the operator hides almost
+    nothing cannot host a null-space hallucination, so it is not a candidate: one gate, on
+    ``free_content``. ``absolute_floor`` stays available only to reproduce that comparison.
+    Leaving both ``None`` reproduces numbers measured before D-059.
     """
     if calibration_operator not in set(df["operator_id"]):
         raise ValueError(
@@ -69,8 +82,54 @@ def derive_score_and_label(
         free_content=torch.tensor(out["free_content"].to_numpy()),
         ann_coverage=torch.tensor(out["ann_coverage"].to_numpy()),
     )
-    out["label"] = label_hallucinated(truth, threshold=threshold, relative=relative).numpy()
+    gate = {} if min_free_content is None else {"min_free_content": min_free_content}
+    out["label"] = label_hallucinated(
+        truth, threshold=threshold, relative=relative, absolute_floor=absolute_floor, **gate
+    ).numpy()
     return out
+
+
+# D-060's ruled candidacy quantile. Every script that reports a label-dependent number takes
+# its default from here, so the ruled value lives in one place (P-19).
+CANDIDACY_QUANTILE = 0.33
+
+
+def candidacy_gate(df: pd.DataFrame, quantile: float = CANDIDACY_QUANTILE) -> float | None:
+    """The value to pass as ``min_free_content``: D-060's gate, valued on the design split.
+
+    ``quantile = 0`` opts out and returns ``None``, which reproduces the ratio-only label of
+    before D-059 -- defective, and only for comparison. A bank with no design side is
+    refused by :func:`design_quantile` rather than gated on something else.
+    """
+    if quantile == 0:
+        return None
+    try:
+        return design_quantile(df, "free_content", quantile)
+    except ValueError as exc:
+        raise ValueError(
+            f"{exc} For a bank built before D-051, pass a candidacy quantile of 0 to get the "
+            "ratio-only label, knowing it is the defective one (D-059)."
+        ) from None
+
+
+def design_quantile(df: pd.DataFrame, column: str, quantile: float,
+                    split_col: str = "split") -> float:
+    """A label gate's value: a quantile of ``column`` over the **design** patients, to freeze.
+
+    Gate values are magnitudes, and magnitudes do not transfer across substrates (D-020), so
+    each is set on the bank it is used with -- but only from the design side (D-051).
+    Fitting it on calib or test rows would let the label see the patients whose coverage it
+    is about to score, which is the in-sample shape behind P-19, P-23 and D-058. A bank with
+    no design side is refused rather than quietly fitted on something else.
+    """
+    if not 0.0 < quantile < 1.0:
+        raise ValueError(f"quantile must be in (0, 1), got {quantile}")
+    if split_col not in df.columns or not (df[split_col] == "design").any():
+        raise ValueError(
+            "no design rows: a label gate must come from the design split (D-051). Build the "
+            "bank with data.dataset.design_fraction > 0."
+        )
+    return float(df.loc[df[split_col] == "design", column].quantile(quantile))
 
 
 def cluster_bootstrap_coverage(
