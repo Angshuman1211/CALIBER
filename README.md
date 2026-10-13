@@ -103,7 +103,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-060` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
-| `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-27`), unresolved first, plus an index of every decision |
+| `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-31`), unresolved first, plus an index of every decision |
 | `T1.1_score_design.md` | Track 1 | Operator-aware score design |
 | `T1.2_shift_robust_calibration.md` | Track 1 | The three calibration tools, what they control, and what they refuse |
 | `T1.3_operator_distance_formulation.md` | Track 1 | The locked operator-distance measure and why |
@@ -113,6 +113,8 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `T2.1_data_and_operator_pipeline.md` | Track 2 | Week 1 record — what was built, the numbers, honest limitations — plus dataset provenance, licensing and download (App. A) |
 | `T2.2_solver_integration.md` | Track 2 | Week 2 record — DPS, DDNM and FlowDPS behind one interface; the Stage-2 split measured on real output |
 | `T2.3_score_bank_and_baselines.md` | Track 2 | Week 3 record — the first fastMRI score bank, both baselines, and why neither can yet be read as a coverage result |
+| `T2.4_operator_grid_and_harness.md` | Track 2 | Week 4 record — the 3 × 3 MRI operator grid, the evaluation harness, and the full 199-volume bank on the laptop GPU (§8 carries a correction box: its numbers predate the corrected label) |
+| `T2.5_corrected_label_and_midterm_figures.md` | Track 2 | Weeks 5–6 record — every coverage number re-measured under D-060's candidacy gate, the 13-split and mask-seed noise floors, the posterior-dispersion baseline, the midterm figures |
 | `T3.1`–`T3.5_*.md` | Track 3 | Formal review, distance candidates, L1 stability result, ill-posedness scaling, numerical verification |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.
@@ -135,7 +137,9 @@ Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent 
 | **Calibration** | All three tools — naive baseline, group-conditional backbone, operator-distance weighted — with thin-group refusal and effective-sample-size tracking |
 | **Analytical result** | Coverage gap bounded by the Kolmogorov distance of the label-conditional score law (tighter than the original TV statement), with a √d_op reduction to operator distance derived under stated assumptions; constants not yet measured |
 | **Substrates** | fastMRI+ annotations parsed (16,154 boxes); M4Raw verified end to end on real k-space; LoDoPaB CT running end to end |
-| **Engineering** | 177 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
+| **Score banks** | The full fastMRI knee validation set across the 3 × 3 MRI grid: 1,791 pairs, 458,496 regions, 6.4 h on the laptop's GPU. Mask-seed banks at `random1d` R4 and R8. Development banks only: the prior is a face model (D-016) |
+| **Coverage failure (O3)** | Measured on fastMRI under D-060's label: calibrated at `random1d` R2, naive transfer catches 0.328 [0.151, 0.492] of hallucinations at `variable_density2d` R2, and fails in 7 of 16 deployment cells on every one of 13 patient splits; group-conditional calibration averages 0.895 against a nominal 0.90. Development values (T2.5) |
+| **Engineering** | 596 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
 
 ---
 
@@ -156,7 +160,7 @@ Owns the central claim, the design of the method, and the decisions that set dir
 | **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Near complete** — Q6 answered on a real prior (D43); `s_residual` ruled out (D42); `w_free`'s selection rule pre-registered (D49), awaiting one run with a design split |
 | **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | **Implemented; Tool 2 evaluated (D52)** — valid where the nearest-operator baseline is not, no better than the conservative fallback; the cause is tail domination, not bandwidth |
 | **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19, amended for direction (D47): the gap is not symmetric in the operator pair, so the plotted axis is signed. CT cross-check pending T2.5 |
-| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | **Substantially delivered** — estimand (D45), operator grid (D50: both shift directions), ablation matrix. Seed noise floor unmeasured |
+| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | **Substantially delivered** — estimand (D45), operator grid (D50: both shift directions), ablation matrix. Seed noise floor measured by Track 2 (T2.5 §7) |
 | **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | **Week 1 sign-off delivered** (D19–D24); standing |
 | **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | **Phase 1 gate delivered**; standing |
 | **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | Not started |
@@ -169,11 +173,11 @@ Owns the reconstruction and evaluation infrastructure, and carries the study int
 |------|-------------|--------|
 | **T2.1** Data and operator pipeline | Dataset access, preprocessing, and reproducible generation of acquisition operators across both modalities | **Delivered** — both modalities, seeded registry, health checks, annotations parsed |
 | **T2.2** Solver integration | Configured, verified pretrained reconstruction back-ends behind the common interface | **Delivered** — DPS, DDNM and FlowDPS across two families, one config word apart; Stage-2 split measured on their output |
-| **T2.3** Score-bank production | Cached reconstructions and non-conformity scores across the full operator grid | **First real bank** — 23,040 fastMRI regions at three accelerations; not reportable (face prior, D-035) and too few test volumes to measure coverage (P-23) |
-| **T2.4** Evaluation harness | Coverage, efficiency, and region-level detection utilities with automated logging | **Delivered** — coverage, flag area, region FDR/power, ESS, coverage gap |
+| **T2.3** Score-bank production | Cached reconstructions and non-conformity scores across the full operator grid | **Full MRI bank** — all 199 fastMRI validation volumes × 9 operators (458,496 regions), plus mask-seed banks; checkpointed and resumable. Not reportable (face prior, D-016) |
+| **T2.4** Evaluation harness | Coverage, efficiency, and region-level detection utilities with automated logging | **Delivered** — coverage, flag area, region FDR/power, ESS, coverage gap; intervals by patient (D-027); one candidacy-gated label for every reporting script (D-060); patient-split and mask-seed noise floors |
 | **T2.5** Cross-domain experiments | Execution of the protocol in the second modality and the supporting appendix domain | **In progress** — CT path runs end to end; projector fix (D-012) precedes reported curves |
-| **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | **First pass** — naive-transferred and matched-per-operator reproduced, held out; interpretation blocked on the criterion (P-21) and on sample size (P-23) |
-| **T2.7** Figures and packaging | Visualisations, reproducibility package, and experimental-setup write-ups | Not started |
+| **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | **In progress** — naive-transferred, matched-per-operator and posterior dispersion run on the full MRI bank under D-060's label. Dispersion tracks `s_disagree` to within 0.012 AUROC on DDNM. Published hallucination index not started |
+| **T2.7** Figures and packaging | Visualisations, reproducibility package, and experimental-setup write-ups | **Midterm figures drawn** — coverage by operator, gap against signed distance, coverage against flag area (`scripts/make_figures.py`); reproducibility package not started |
 
 ### Track 3 — Analytical Foundations and Numerical Verification
 
