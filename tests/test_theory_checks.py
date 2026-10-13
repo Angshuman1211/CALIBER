@@ -144,3 +144,25 @@ def test_bank_check_script_runs_on_the_committed_bank(capsys):
     t3_5_bank_check.main([str(REPO_ROOT / "banks" / "w02_solver_smoke")])
     out = capsys.readouterr().out
     assert "R4->R8" in out and "bound_agreement" in out
+
+
+def test_cluster_proposition_grid_step_holds_with_the_stated_probability():
+    """T3.3 sec. 2b(c): the grid deviation exceeds eps with probability <= 2K exp(-2 m eps^2)."""
+    from scipy.stats import norm
+
+    rng = np.random.default_rng(6)
+    m, r, K, eps = 60, 16, 20, 0.25
+    grid = norm.ppf(np.arange(1, K) / K)  # F_cal(t_k) = k/K for the common marginal N(0, 1.25)
+    scale = np.sqrt(1.0 + 0.25)
+    bad = 0
+    reps = 400
+    for _ in range(reps):
+        centres = rng.normal(0, 1.0, (m, 1))  # shared per-image component -> dependent regions
+        scores = (centres + 0.5 * rng.normal(0, 1, (m, r))).ravel()
+        t = grid * scale
+        emp = (scores[None, :] <= t[:, None]).mean(axis=1)
+        dev = np.abs(emp - np.arange(1, K) / K)
+        # between grid points monotonicity adds at most 1/K to the sup deviation
+        if dev.max() > eps:
+            bad += 1
+    assert bad / reps <= 2 * K * np.exp(-2 * m * eps**2) + 0.02
