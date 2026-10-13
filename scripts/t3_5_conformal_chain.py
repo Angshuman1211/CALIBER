@@ -118,6 +118,8 @@ def main(argv=None):
     s = scores[2]
     n_img = s.shape[0]
     for m in (2, 5, 10, 25, 100):
+        if m + 50 > n_img:  # not enough images for disjoint calibration and test sets
+            continue
         covs = []
         for _ in range(1500):
             perm = rng.permutation(n_img)
