@@ -24,6 +24,17 @@ from pathlib import Path
 import pandas as pd
 
 
+def patient_map(data_root: str | Path) -> dict[str, str]:
+    """``{sample_id: patient_id}`` read from the volumes' own ``patient_id`` attribute."""
+    import h5py
+
+    patient = {}
+    for f in Path(data_root).rglob("*.h5"):
+        with h5py.File(f, "r") as fh:
+            patient[f.stem] = str(fh.attrs.get("patient_id", "")) or f.stem
+    return patient
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("bank")
@@ -31,19 +42,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=None, help="default: <bank>_by_patient")
     args = ap.parse_args(argv)
 
-    import h5py
-
     src = Path(args.bank)
     out = Path(args.out) if args.out else src.with_name(src.name + "_by_patient")
     if out.exists():
         print(f"[patients] {out} already exists; refusing to overwrite it", file=sys.stderr)
         return 1
 
-    patient = {}
-    for f in Path(args.data_root).rglob("*.h5"):
-        with h5py.File(f, "r") as fh:
-            patient[f.stem] = str(fh.attrs.get("patient_id", "")) or f.stem
-
+    patient = patient_map(args.data_root)
     df = pd.read_parquet(src / "scores.parquet")
     df["patient_id"] = df["sample_id"].map(patient)
     missing = df.loc[df["patient_id"].isna(), "sample_id"].unique()
