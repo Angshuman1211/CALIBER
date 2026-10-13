@@ -70,7 +70,12 @@ from caliber.calibration import (
     certification_note,
 )
 from caliber.evaluation import flag_area, miss_rate, region_fdr
-from caliber.evaluation.bank import cluster_bootstrap_coverage, derive_score_and_label
+from caliber.evaluation.bank import (
+    CANDIDACY_QUANTILE,
+    candidacy_gate,
+    cluster_bootstrap_coverage,
+    derive_score_and_label,
+)
 from caliber.operators.distance import compute_distance
 from caliber.operators.registry import build_operator
 from caliber.scorebank import read_bank, read_manifest
@@ -107,6 +112,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("bank")
     ap.add_argument("--alpha", type=float, default=0.10)
     ap.add_argument("--tau", type=float, default=1.75, help="D37's ratified value")
+    ap.add_argument("--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
+                    help="D-060's candidacy gate, a quantile of free_content on the design "
+                         "split; 0 = the ratio-only label, defective, for comparison only")
     ap.add_argument("--distance", default="null_space_projection",
                     help="D19's ratified metric; the weighting needs a metric, not D47's "
                          "signed axis")
@@ -162,6 +170,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[tool2] reportable       {provenance.get('reportable')}")
     print(f"[tool2] operators        {len(operators)}")
     print(f"[tool2] distance         {args.distance}/{args.normalise} (D19)")
+    # valued once on the whole bank's design rows, so every fold is scored on one label
+    try:
+        gate = candidacy_gate(df, args.candidacy_quantile)
+    except ValueError as exc:
+        print(f"[tool2] {exc}", file=sys.stderr)
+        return 1
+    print(f"[tool2] label           ratio > {args.tau}"
+          + (f", candidates free_content > {gate:.4f} (D-060)" if gate is not None
+             else " only -- the defective label, for comparison"))
     if not provenance.get("reportable", False):
         print(
             "[tool2] NOT REPORTABLE -- these numbers exercise the comparison, they do not "
@@ -176,7 +193,8 @@ def main(argv: list[str] | None = None) -> int:
         # held-out operator is the one you do not have calibration data for, so its own
         # scales are not available either. Freezing on the nearest available group is the
         # honest choice and matches what D27 forbids — re-estimating per deployment.
-        scored = derive_score_and_label(df, held_out, threshold=args.tau)
+        scored = derive_score_and_label(df, held_out, threshold=args.tau,
+                                        min_free_content=gate)
         deployment_group = group_of(scored, held_out)
         others = [o for o in operators if o != held_out]
 

@@ -71,9 +71,20 @@ def test_analyse_bank_runs_to_completion(bank, capsys):
 
 
 def test_analyse_bank_runs_with_the_relative_criterion(bank, capsys):
-    """The A1 / D21 form has to work from the script, not only from the library."""
-    assert analyse_bank.main([str(bank), "--relative", "--label-threshold", "1.0"]) == 0
+    """The A1 / D21 form has to work from the script, not only from the library.
+
+    This smoke bank has no design side, so it opts out of D-060's gate explicitly.
+    """
+    assert analyse_bank.main([str(bank), "--relative", "--label-threshold", "1.0",
+                              "--candidacy-quantile", "0"]) == 0
     assert "err_free / free_content" in capsys.readouterr().out
+
+
+def test_the_relative_label_is_gated_by_default_and_refused_without_a_design_side(bank):
+    """D-060: the reported relative label carries the candidacy gate, valued on the design
+    split. A bank without one is refused, never quietly given the defective label."""
+    with pytest.raises(ValueError, match="candidacy quantile of 0"):
+        analyse_bank.main([str(bank), "--relative", "--label-threshold", "1.0"])
 
 
 def test_the_score_is_standardised_not_a_raw_sum(bank, capsys):

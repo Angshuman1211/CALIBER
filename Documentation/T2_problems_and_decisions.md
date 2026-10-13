@@ -23,6 +23,38 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
+#### P-31 - The ruled label is still led by its denominator within operators
+
+**Open - blocks:** reading coverage at high acceleration and at `variable_density2d R2` as
+coverage of *hallucinations*; **decides:** Track 1 (the label is theirs, D-059/D-060) -
+**See:** D-060, D-059, D-037, P-30
+
+D-060 judged the candidacy gate by one pooled number, AUROC(`-free_content`) over all
+regions, and reported 0.499 on M4Raw. On the fastMRI bank that number is 0.395, and it
+ranges from 0.321 to 0.608 by operator. Splitting candidates from non-candidates shows the
+gate doing two things that the pooled number adds together. It forces the lowest-content
+regions negative, which pushes the AUROC below 0.5. And inside the candidates the ratio is
+still denominator-led (pooled 0.752). A pooled value near chance can be the two cancelling.
+
+Pooled over operators, among candidates, the numerator now leads (AUROC 0.797 against
+0.752), so the gate is a real improvement on the ratio-only label (0.721 against 0.833).
+Per operator it is not enough:
+
+| Candidates at | AUROC(`-free_content`) | AUROC(`err_free`) | rho(ratio, `free_content`) | rho(ratio, `err_free`) |
+|---|---|---|---|---|
+| `random1d R2` | 0.726 | **0.865** | -0.489 | +0.397 |
+| `random1d R8` | **0.920** | 0.651 | -0.771 | +0.463 |
+| `variable_density2d R2` | 0.829 | 0.878 | -0.668 | **+0.026** |
+
+At `variable_density2d R2`, the headline cell, the ratio among candidates is uncorrelated
+with the error and driven by how little each region hides. T2.5 reports every number
+against the label as ruled and states this beside them. The check that would settle it is
+the within-candidate, per-operator decomposition above. Measuring it on M4Raw would show
+whether 0.499 there is the same cancellation. `component_auroc.py` prints the per-operator
+label check on any bank.
+
+---
+
 #### P-24 - At 256² the solver dies with a silent segfault when the machine is short of memory
 
 **Blocks:** reliable 256² runs of any length; DPS at 256² entirely - **See:** P-16, P-10, D-033
@@ -634,6 +666,72 @@ rather than producing plausible-looking but systematically mis-scaled reconstruc
 ---
 
 ### Resolved
+
+#### P-30 - T2.4's headline coverage numbers were measured against a defective label
+
+**Re-measured (Week 5)** - **See:** D-059, D-060, D-056, D-037, P-21, P-31
+
+T2.4 §8.3 reported O3 in the descending direction: calibrated at `random1d R8`, naive
+transfer caught **0.507** [0.380, 0.610] of the hallucinations at `variable_density2d R2`.
+Track 1's review (D-059) then found the label itself was wrong. `err_free / free_content >
+1.75` is driven more by its denominator than its numerator, so a region with little hidden
+content earns a large ratio from a negligible error. On this bank it labelled **60.4%** of
+all regions as hallucinated.
+
+**The first fix was wrong too, and the second is the reported one.** D-059 added a floor on
+`err_free`. That removed the denominator artefact but kept exactly the regions where
+`err_free` approaches `s_free` (D-037's identity), so the score was graded against its own
+numerator, at AUROC 0.99-1.00. Under that floor the result reversed: ascending failed in 7
+of 8 cells and descending in none. D-060 replaced it with the **candidacy gate**. A region
+is a candidate only if its `free_content` exceeds the 33rd percentile on the design split
+(**0.252** here), because a region where the operator hides almost nothing cannot host a
+null-space hallucination. The positive rate falls to **27.9%**, and to 2.8% at
+`variable_density2d R2`.
+
+Re-measured on the same bank and split, with no GPU (counts are over the 8 deployment cells
+per direction; "fails" means the whole 95% interval is below 0.90):
+
+| | Ratio only (T2.4 §8) | `err_free` floor q62 (D-059) | **Candidacy gate (D-060)** |
+|---|---|---|---|
+| Positive rate | 0.604 | - | **0.279** |
+| Naive fails, ascending | 2 (worst `vd R2` 0.659) | 7 (worst `eq R2` 0.298) | **4** (worst `vd R2` **0.328** [0.151, 0.492]) |
+| Naive fails, descending | 4 (worst `vd R2` 0.507) | 0 | **3** (worst `eq R2` 0.719 [0.655, 0.777]) |
+| Group-conditional misses nominal, of 18 | 7 (mean 0.864) | 0 (mean 0.887) | **2** (mean 0.875) |
+| rho(signed distance, ascending naive gap) | -0.80 | - | **-0.73** (p = 0.04, n = 8) |
+
+**What survives and what does not.** The ascending collapse appears under both gates, and
+under the ruled one it is deepest at `variable_density2d R2`, where naive transfer flags
+5% of regions and catches a third of the hallucinations. The descending failures depend on
+the gate. So D-056's claim about *which* direction collapses does not survive. D-060 traces
+that claim to the phantom bank, where the reference sampler orders scores purely by
+null-space size. On fastMRI both directions lose coverage, and ascending loses more. O3
+itself survives as the blueprint wrote it: naive transfer loses coverage under operator
+shift, and group-conditional calibration restores it.
+
+**Everything else T2.4 §8 reported is re-measured too** (T2.5 §2.1, §3, §3.1):
+
+- **13 patient splits.** Every naive-transfer failure on the project split fails on all 13
+  (the headline cell averages 0.315 and never exceeds 0.425). Group-conditional averages
+  0.895 (sd 0.026), and the project split is again the second-lowest.
+- **Component ordering** (D-059's request). `s_free` and `s_disagree` are tied to within
+  0.012, and equal weights never beat the best single component.
+- **Weight selection.** All 11 points are tied, so the rule returns NOT SELECTED, with equal
+  weights.
+- **Tool 2.** Valid on 2 of 3 interior folds, and dominated by the nearest-operator arm,
+  which is now valid on 3 of 3.
+
+The first attempt at this re-analysis ran out of memory beside other jobs. Most of that
+memory was OpenBLAS thread buffers, not data: with `OPENBLAS_NUM_THREADS=1` the same
+analysis peaks at 0.53 GB instead of 1.83 GB (T2.5 §8). Track 1's `select_weights.py` and
+`tool2_holdout.py` still computed the old label, and now take the shared gate.
+
+The label itself is only partly fixed. That is a separate problem with a different owner:
+P-31.
+
+T2.4 was merged in PR #33, so it gets a correction box at the top of §8 instead of
+rewritten numbers. T2.5 carries the corrected results.
+
+---
 
 #### P-16 - No GPU: torch here is the CPU build
 

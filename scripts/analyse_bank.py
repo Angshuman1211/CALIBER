@@ -31,6 +31,8 @@ from caliber.calibration import (
 )
 from caliber.calibration.conformal import min_positives
 from caliber.evaluation import (
+    CANDIDACY_QUANTILE,
+    candidacy_gate,
     coverage_curve,
     derive_score_and_label,
     evaluate_groups,
@@ -73,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--relative", action="store_true",
         help="use the relative criterion err_free/free_content > tau (A1/D21, D-034)",
+    )
+    ap.add_argument(
+        "--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
+        help="with --relative: D-060's candidacy gate, a quantile of free_content on the "
+             "design split; 0 = the ratio-only label, defective, for comparison only",
     )
     ap.add_argument("--calibration-operator", default=None)
     ap.add_argument("--distance", default="null_space_projection")
@@ -118,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     df = derive_score_and_label(
         df, calib_op, weights=weights,
         threshold=args.label_threshold, relative=args.relative,
+        min_free_content=candidacy_gate(df, args.candidacy_quantile) if args.relative else None,
     )
     scales = ScoreScales.from_components(
         ScoreComponents(

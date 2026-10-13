@@ -13,9 +13,12 @@ import pandas as pd
 import pytest
 
 from caliber.evaluation import (
+    CANDIDACY_QUANTILE,
+    candidacy_gate,
     cluster_bootstrap_coverage,
     clusters_for_precision,
     derive_score_and_label,
+    design_quantile,
 )
 from caliber.scoring.score import ScoreWeights
 
@@ -80,6 +83,83 @@ def test_weights_are_honoured():
     a = derive_score_and_label(df, "op", weights=ScoreWeights.only("free"))
     b = derive_score_and_label(df, "op", weights=ScoreWeights.only("residual"))
     assert not np.allclose(a["score"].to_numpy(), b["score"].to_numpy())
+
+
+# -- the candidacy gate (D-060) --------------------------------------------------
+
+
+def test_the_candidacy_gate_unlabels_regions_that_hide_too_little():
+    """A region whose free_content is at or below the gate cannot host a null-space
+    hallucination, so it is never labelled, however large its ratio (D-060)."""
+    df = _bank()
+    gate = float(df["free_content"].median())
+    gated = derive_score_and_label(df, "op", min_free_content=gate)
+    ungated = derive_score_and_label(df, "op")
+    assert ungated["label"].all()                      # every ratio is 2.2 > 1.75
+    assert not gated.loc[df["free_content"] <= gate, "label"].any()
+    assert gated.loc[df["free_content"] > gate, "label"].all()
+
+
+def test_the_gate_does_not_touch_the_score():
+    df = _bank()
+    gated = derive_score_and_label(df, "op", min_free_content=float(df["free_content"].max()))
+    ungated = derive_score_and_label(df, "op")
+    assert np.array_equal(gated["score"].to_numpy(), ungated["score"].to_numpy())
+
+
+def _split_bank():
+    df = _bank()
+    sides = {f"vol{v:02d}": side for v, side in
+             zip(range(12), ["design"] * 2 + ["calib"] * 5 + ["test"] * 5, strict=True)}
+    df["split"] = df["sample_id"].map(sides)
+    return df
+
+
+def test_the_gate_value_comes_from_the_design_split_only():
+    """D-051: a label fitted on the patients it is about to score is in-sample."""
+    df = _split_bank()
+    expected = df.loc[df["split"] == "design", "free_content"].quantile(0.33)
+    before = design_quantile(df, "free_content", 0.33)
+    assert before == pytest.approx(expected)
+    df.loc[df["split"] != "design", "free_content"] *= 100   # calib and test cannot move it
+    assert design_quantile(df, "free_content", 0.33) == pytest.approx(before)
+
+
+def test_a_bank_without_a_design_side_is_refused():
+    df = _split_bank()
+    df["split"] = df["split"].replace("design", "calib")
+    with pytest.raises(ValueError, match="design split"):
+        design_quantile(df, "free_content", 0.33)
+    with pytest.raises(ValueError, match="design split"):
+        design_quantile(df.drop(columns="split"), "free_content", 0.33)
+
+
+@pytest.mark.parametrize("q", [0.0, 1.0, -0.1, 33])
+def test_a_quantile_outside_the_open_unit_interval_is_refused(q):
+    with pytest.raises(ValueError, match="quantile"):
+        design_quantile(_split_bank(), "free_content", q)
+
+
+def test_the_ruled_candidacy_quantile_is_d060s():
+    """Every reporting script defaults to this constant, so it is pinned once, here."""
+    assert CANDIDACY_QUANTILE == 0.33
+
+
+def test_the_candidacy_gate_is_the_design_quantile_of_free_content():
+    df = _split_bank()
+    assert candidacy_gate(df) == design_quantile(df, "free_content", CANDIDACY_QUANTILE)
+    assert candidacy_gate(df, 0.5) == design_quantile(df, "free_content", 0.5)
+
+
+def test_quantile_zero_opts_out_of_the_gate():
+    """The explicit route to the old label, which is how its numbers are reproduced."""
+    assert candidacy_gate(_split_bank(), 0) is None
+    assert candidacy_gate(_bank(), 0) is None            # no design side needed to opt out
+
+
+def test_a_bank_without_a_design_side_is_told_how_to_opt_out():
+    with pytest.raises(ValueError, match="candidacy quantile of 0"):
+        candidacy_gate(_bank())
 
 
 # -- the interval that matters --------------------------------------------------

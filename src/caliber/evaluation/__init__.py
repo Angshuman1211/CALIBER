@@ -1,9 +1,12 @@
 """Coverage, efficiency, and region-level detection metrics with logging (T2.4)."""
 
 from .bank import (
+    CANDIDACY_QUANTILE,
+    candidacy_gate,
     cluster_bootstrap_coverage,
     clusters_for_precision,
     derive_score_and_label,
+    design_quantile,
 )
 from .metrics import (
     bound_agreement,
@@ -28,12 +31,15 @@ from .paired import (
 )
 
 __all__ = [
+    "CANDIDACY_QUANTILE",
     "bound_agreement",
+    "candidacy_gate",
     "cluster_bootstrap_coverage",
     "clusters_for_precision",
     "coverage_curve",
     "coverage_gap",
     "derive_score_and_label",
+    "design_quantile",
     "effective_sample_size",
     "empirical_coverage",
     "evaluate_groups",
