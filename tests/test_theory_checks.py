@@ -166,3 +166,55 @@ def test_cluster_proposition_grid_step_holds_with_the_stated_probability():
         if dev.max() > eps:
             bad += 1
     assert bad / reps <= 2 * K * np.exp(-2 * m * eps**2) + 0.02
+
+
+def test_label_conditional_decomposition_is_exact_algebra():
+    """T3.3 sec. 3b: d_K^+ <= (sup|G_A - G_B| + |pi_A - pi_B|) / pi_A for any coupled sample."""
+    from t3_5_conditional_link import sup_joint_gap
+
+    rng = np.random.default_rng(7)
+    for _ in range(40):
+        n = 600
+        sa = rng.normal(0, 1, n)
+        sb = sa + rng.normal(0.3, 0.5, n)
+        la = rng.random(n) < 0.3 + 0.4 * (sa > 0.5)
+        lb = rng.random(n) < 0.3 + 0.4 * (sb > 0.2)
+        if la.sum() < 5 or lb.sum() < 5:
+            continue
+        alg = (sup_joint_gap(sa, la, sb, lb) + abs(la.mean() - lb.mean())) / la.mean()
+        assert ks_distance(sa[la], sb[lb]) <= alg + 1e-9
+
+
+def test_ratio_of_sums_lemma_is_exact_algebra():
+    """|A_bar/p_hat - A/p_bar| <= (|A_bar - A| + |p_bar - p_hat|)/p_hat whenever A <= p_bar."""
+    rng = np.random.default_rng(8)
+    for _ in range(2000):
+        p_bar, p_hat = rng.uniform(0.05, 1, 2)
+        a = rng.uniform(0, p_bar)
+        a_bar = rng.uniform(0, p_hat)
+        lhs = abs(a_bar / p_hat - a / p_bar)
+        assert lhs <= (abs(a_bar - a) + abs(p_bar - p_hat)) / p_hat + 1e-12
+
+
+def test_ratio_of_sums_hoeffding_events_for_variable_positives_per_image():
+    """T3.3 sec. 2b(d): the Hoeffding events fail with probability <= 2(K+1) exp(-2 m eta^2)."""
+    rng = np.random.default_rng(9)
+    m, r, K, eta = 400, 16, 10, 0.1
+
+    def draw(n_img):
+        centre = rng.normal(0, 1, (n_img, 1))
+        s = centre + 0.5 * rng.normal(0, 1, (n_img, r))
+        lab = rng.random((n_img, r)) < 1 / (1 + np.exp(-(centre + 0.5 * s)))
+        return s, lab
+
+    s0, l0 = draw(20_000)
+    p_bar = l0.mean()
+    tk = np.quantile(s0, np.arange(1, K + 1) / (K + 1))  # grid in score space
+    a_pop = np.array([((s0 <= t) & l0).mean() for t in tk])
+    bad, reps = 0, 300
+    for _ in range(reps):
+        s, lab = draw(m)
+        a_hat = np.array([((s <= t) & lab).mean() for t in tk])
+        if np.abs(a_hat - a_pop).max() > eta or abs(lab.mean() - p_bar) > eta:
+            bad += 1
+    assert bad / reps <= 2 * (K + 1) * np.exp(-2 * m * eta**2) + 0.01
