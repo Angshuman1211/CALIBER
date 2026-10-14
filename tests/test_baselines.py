@@ -17,6 +17,7 @@ from caliber.evaluation.baselines import (
     auroc,
     average_precision,
     cluster_bootstrap_metric,
+    hallucination_index,
     posterior_dispersion,
 )
 from caliber.scoring.regions import RegionGrid
@@ -83,3 +84,53 @@ def test_the_cluster_bootstrap_brackets_its_point_estimate():
     assert r["n_clusters"] == 30
     assert r["lo"] <= r["value"] <= r["hi"]
     assert 0.5 < r["value"] < 1.0
+
+
+# -- the Hallucination Index [22] --------------------------------------------
+
+
+def test_the_closed_form_is_the_hellinger_distance_between_equal_variance_gaussians():
+    """Checked against the definition, integrated numerically, not against itself."""
+    mu_p, mu_q, sigma = 0.7, 0.0, 0.5
+    x = np.linspace(-6, 7, 200001)
+
+    def pdf(m):
+        return np.exp(-((x - m) ** 2) / (2 * sigma**2)) / (sigma * np.sqrt(2 * np.pi))
+
+    integrate = getattr(np, "trapezoid", None) or np.trapz  # renamed in NumPy 2
+    bc = integrate(np.sqrt(pdf(mu_p) * pdf(mu_q)), x)
+    hellinger = np.sqrt(1 - bc)
+    # one pixel, and so many draws that the Monte Carlo correction vanishes
+    hi, hnr = hallucination_index([abs(mu_p - mu_q)], [sigma], n_pixels=1, n_draws=10**9)
+    assert hi[0] == pytest.approx(hellinger, rel=1e-6)
+    assert hnr[0] == pytest.approx((mu_p - mu_q) ** 2 / sigma**2, rel=1e-6)
+
+
+def test_a_mean_off_only_by_its_monte_carlo_error_scores_zero():
+    """The mean of N draws misses the truth by sigma/sqrt(N) even with no hallucination."""
+    sigma, n = 0.2, 4
+    hi, hnr = hallucination_index([sigma / np.sqrt(n)], [sigma], n_pixels=256, n_draws=n)
+    assert hnr[0] == 0.0 and hi[0] == 0.0
+
+
+def test_unbiased_draws_average_to_no_hallucination():
+    """Simulated: draws = truth + noise. The corrected ratio sits near zero, not near 1/N."""
+    rng = np.random.default_rng(0)
+    sigma, n, pix = 0.1, 4, 256
+    draws = rng.normal(0.0, sigma, size=(2000, n, pix))
+    err = np.sqrt((draws.mean(axis=1) ** 2).mean(axis=1))
+    std = draws.std(axis=1, ddof=1).mean(axis=1)
+    _, hnr = hallucination_index(err, std, n_pixels=pix, n_draws=n)
+    assert float(np.mean(hnr)) < 0.05
+
+
+def test_the_index_is_bounded_and_grows_with_the_bias():
+    hi, hnr = hallucination_index([0.05, 0.1, 0.2, 0.4], [0.1] * 4, n_pixels=16, n_draws=4)
+    assert np.all((hi >= 0) & (hi < 1))
+    assert np.all(np.diff(hnr) > 0) and np.all(np.diff(hi) >= 0)
+
+
+@pytest.mark.parametrize("std, n_pixels, n_draws", [([0.0], 1, 4), ([0.1], 0, 4), ([0.1], 1, 1)])
+def test_degenerate_inputs_are_refused(std, n_pixels, n_draws):
+    with pytest.raises(ValueError):
+        hallucination_index([0.1], std, n_pixels=n_pixels, n_draws=n_draws)

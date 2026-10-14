@@ -13,6 +13,10 @@ baseline would compare CALIBER against one of its own components, so the full-im
 version is computed here, with the same per-region reduction and the same reference scale
 so the two stay directly comparable.
 
+**The published Hallucination Index needs the ground truth** (:func:`hallucination_index`),
+so it enters as a reference measure of hallucination -- a yardstick for the project's own
+label and its score -- not as a detector to compete with them.
+
 The ranking metrics are written out rather than imported: the project has no scikit-learn,
 and two short, tested functions are cheaper than a dependency.
 """
@@ -40,6 +44,46 @@ def posterior_dispersion(samples: Tensor, grid: RegionGrid, ref: float) -> Tenso
     draws = samples.abs() if samples.is_complex() else samples
     spread = draws.std(dim=0)
     return grid.reduce(spread, how="mean") / (ref or 1.0)
+
+
+def hallucination_index(err_rms, noise_std, n_pixels: int, n_draws: int):
+    """Tivnan et al.'s Hallucination Index [22], per region, from cached statistics.
+
+    **The published index** is the Hellinger distance between the distribution of a
+    generative model's reconstructions and a *zero-hallucination reference*: the ground truth
+    plus noise at the reconstructions' own apparent signal-to-noise ratio. Both are taken as
+    Gaussian, the reconstructions' covariance as shift-invariant (one noise power spectrum),
+    and the index reads as the share of the error that is hallucination rather than noise.
+    It needs the ground truth, so it is an evaluation metric, never a deployable detector.
+
+    **Adaptation, stated rather than hidden.**
+
+    - The reference shares the reconstructions' covariance: "the same apparent noise" taken
+      literally. With equal covariances the closed form reduces to
+      ``H = sqrt(1 - exp(-D2 / 8))`` with ``D2 = (mu - x0)' S^-1 (mu - x0)``; the
+      log-determinant terms cancel.
+    - The covariance is locally stationary: one variance per region (``noise_std``,
+      the region's posterior spread), the regional form of the paper's per-image spectrum.
+    - The mean comes from ``n_draws`` samples (4 here, against the paper's 64), so the
+      observed ``err_rms**2`` carries ``noise_std**2 / n_draws`` of Monte Carlo variance.
+      That is subtracted, so a hallucination-free region scores 0 on average rather than
+      ``n_pixels / n_draws``.
+
+    Returns ``(hi, hnr)``. ``hnr`` is the hallucination-to-noise ratio, squared bias over noise
+    variance per pixel. ``D2 = n_pixels * hnr``, so ``hi`` is a monotone function of ``hnr``.
+    Over a 256-pixel region ``hi`` saturates near 1 once ``hnr`` passes ~0.2 -- Hellinger
+    distances do in high dimension -- so rank by ``hnr``, which loses nothing.
+    """
+    err = np.asarray(err_rms, dtype=float)
+    std = np.asarray(noise_std, dtype=float)
+    if n_pixels < 1 or n_draws < 2:
+        raise ValueError("need at least one pixel and two draws")
+    if (std <= 0).any():
+        raise ValueError("noise_std must be positive: a region with no spread has no index")
+    bias2 = np.maximum(err**2 - std**2 / n_draws, 0.0)
+    hnr = bias2 / std**2
+    hi = np.sqrt(1.0 - np.exp(-n_pixels * hnr / 8.0))
+    return hi, hnr
 
 
 def auroc(scores, labels) -> float:
@@ -99,4 +143,5 @@ def cluster_bootstrap_metric(metric, scores, labels, clusters, n_boot: int = 500
     return {"value": point, "lo": float(lo), "hi": float(hi), "n_clusters": len(ids)}
 
 
-__all__ = ["auroc", "average_precision", "cluster_bootstrap_metric", "posterior_dispersion"]
+__all__ = ["auroc", "average_precision", "cluster_bootstrap_metric", "hallucination_index",
+           "posterior_dispersion"]
