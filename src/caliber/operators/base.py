@@ -76,7 +76,10 @@ class OperatorDescriptor:
         was used.
 
         Granularity is ``mri/{family}/R{acceleration}`` and
-        ``ct/{family}/v{n_views}`` -- one group per (family, severity). Mask
+        ``ct/{family}/v{n_views}/a{angular_range}`` -- one group per (family, severity).
+        CT carries both axes because limited-angle's severity is the arc, not the view
+        count: naming by views alone put 150, 120 and 90 degrees in one group and would
+        have pooled three regimes in one Mondrian threshold (T2.6). Mask
         seeds are *members* of a group, not groups of their own (D-023), and
         noise is deliberately not a group axis in v1 (D-021): it multiplies the
         group count exactly where per-regime calibration data is scarcest. If
@@ -89,7 +92,8 @@ class OperatorDescriptor:
         if self.modality == "mri":
             return f"mri/{self.params['family']}/R{self.params['acceleration']:g}"
         if self.modality == "ct":
-            return f"ct/{self.family}/v{self.params['n_views']}"
+            return (f"ct/{self.family}/v{self.params['n_views']}"
+                    f"/a{self.params['angular_range_deg']:g}")
         return f"{self.modality}/{self.family}"
 
     def to_row(self) -> dict[str, Any]:

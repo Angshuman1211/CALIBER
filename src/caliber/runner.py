@@ -182,6 +182,10 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     # at 256² this machine can kill the solver with a silent segfault, and the
     # Week 3 bank took 7.2 hours to build, so a long run should always set this.
     checkpoint_every = int(run_cfg.get("checkpoint_every", 0) or 0)
+    # Where scoring and labelling run. Opt-in: CT's range/null split is a CG solve, n+4 of
+    # them per pair, 4-6x faster on the GPU at 256^2 (T2.6). Unset, everything stays on
+    # the CPU where it always was, which is what keeps existing banks reproducible.
+    scoring_device = run_cfg.get("scoring_device")
     region_rows = grid.table()
 
     writer = ScoreBankWriter(
@@ -280,9 +284,13 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                     f"{NONFINITE_RETRIES} retries (P-29). Completed pairs are saved; "
                     "rerun the same command to resume once the cause is fixed."
                 )
-            components = compute_score_components(samples, y, op, grid)
+            s_in, y_in, x_in, ann_in = samples, y, item.image, item.annotation
+            if scoring_device:
+                s_in, y_in, x_in = (t.to(scoring_device) for t in (samples, y, item.image))
+                ann_in = None if ann_in is None else ann_in.to(scoring_device)
+            components = compute_score_components(s_in, y_in, op, grid)
             truth = compute_region_truth(
-                samples, item.image, op, grid, item.annotation, components.ref_intensity
+                s_in, x_in, op, grid, ann_in, components.ref_intensity
             )
 
             writer.add_item(

@@ -88,6 +88,7 @@ def set_by_path(cfg: dict, dotted: str, value: Any) -> None:
 OPTIONAL_KEYS = frozenset({
     "run.checkpoint_every",
     "run.id",
+    "run.scoring_device",
     "run.skip_memory_check",
     "experiment.n_posterior",
 })

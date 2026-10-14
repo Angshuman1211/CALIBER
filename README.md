@@ -64,7 +64,7 @@ Sec. 15.2 makes flag area a reported metric alongside coverage.
 
 ## Data
 
-The Front I substrate is accelerated MRI with raw k-space (fastMRI; M4Raw as an open stopgap while access clears), with fastMRI+ pathology annotations for region-level evaluation. The Front II substrate (Phase 3) is a low-dose / sparse-view CT benchmark exposing **projection data** — LoDoPaB-CT — for the same reason: raw measurements permit angle subsampling, angular-range restriction, and dose reduction to be applied retrospectively. Region-level ground truth there comes from anatomical segmentation (TotalSegmentator, AbdomenCT-1K).
+The Front I substrate is accelerated MRI with raw k-space (fastMRI; M4Raw as an open stopgap while access clears), with fastMRI+ pathology annotations for region-level evaluation. The Front II substrate is CT from **TotalSegmentator** (D-013): ground-truth CT volumes with 117 aligned anatomical masks per subject, re-projected through the project's own parallel-beam operator (D-005). The operator is ours for the same reason the MRI masks are: angle subsampling and angular-range restriction must be applied, and varied, retrospectively. LoDoPaB-CT was the original plan, but it carries no region annotations, and TotalSegmentator's masks cannot be laid over its images, as they are different cohorts (P-03). Organ masks supply the region-level overlay (D20).
 
 Nothing is committed. See [T2.1 Appendix A](Documentation/T2.1_data_and_operator_pipeline.md#appendix-a--data-access-and-provenance) for provenance, licensing and download.
 
@@ -115,6 +115,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `T2.3_score_bank_and_baselines.md` | Track 2 | Week 3 record — the first fastMRI score bank, both baselines, and why neither can yet be read as a coverage result |
 | `T2.4_operator_grid_and_harness.md` | Track 2 | Week 4 record — the 3 × 3 MRI operator grid, the evaluation harness, and the full 199-volume bank on the laptop GPU (§8 carries a correction box: its numbers predate the corrected label) |
 | `T2.5_corrected_label_and_midterm_figures.md` | Track 2 | Weeks 5–6 record — every coverage number re-measured under D-060's candidacy gate, the 13-split and mask-seed noise floors, the posterior-dispersion baseline, the midterm figures |
+| `T2.6_ct_onboarding_and_first_ct_bank.md` | Track 2 | Week 7 record — the TotalSegmentator CT substrate, three CT solver bugs fixed, the first CT bank (900 pairs), and why its coverage awaits a CT label |
 | `T3.1`–`T3.5_*.md` | Track 3 | Formal review, distance candidates, L1 stability result, ill-posedness scaling, numerical verification |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.
@@ -136,10 +137,11 @@ Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent 
 | **Hallucination score** | Three-component operator-aware score, cached as separable components; validated against *constructed* data-consistent hallucinations |
 | **Calibration** | All three tools — naive baseline, group-conditional backbone, operator-distance weighted — with thin-group refusal and effective-sample-size tracking |
 | **Analytical result** | Coverage gap bounded by the Kolmogorov distance of the label-conditional score law (tighter than the original TV statement), with a √d_op reduction to operator distance derived under stated assumptions; constants not yet measured |
-| **Substrates** | fastMRI+ annotations parsed (16,154 boxes); M4Raw verified end to end on real k-space; LoDoPaB CT running end to end |
-| **Score banks** | The full fastMRI knee validation set across the 3 × 3 MRI grid: 1,791 pairs, 458,496 regions, 6.4 h on the laptop's GPU. Mask-seed banks at `random1d` R4 and R8. Development banks only: the prior is a face model (D-016) |
+| **Substrates** | fastMRI+ annotations parsed (16,154 boxes); M4Raw verified end to end on real k-space; TotalSegmentator CT wired as the CT substrate (100 subjects split by subject, organ annotations on every one) |
+| **Score banks** | The full fastMRI knee validation set across the 3 × 3 MRI grid: 1,791 pairs, 458,496 regions, 6.4 h on the laptop's GPU. Mask-seed banks at `random1d` R4 and R8. **The first CT bank:** 100 TotalSegmentator subjects × 9 CT operators (sparse-view 180–30 views, limited-angle 150–90°), 900 pairs, ~16 h on the GPU. Development banks only: the prior is a face model (D-016) |
 | **Coverage failure (O3)** | Measured on fastMRI under D-060's label: calibrated at `random1d` R2, naive transfer catches 0.328 [0.151, 0.492] of hallucinations at `variable_density2d` R2, and fails in 7 of 16 deployment cells on every one of 13 patient splits; group-conditional calibration averages 0.895 against a nominal 0.90. Development values (T2.5) |
-| **Engineering** | 596 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
+| **Second modality (O5)** | The CT pipeline runs end to end and mirrors MRI's. Group-conditional calibration reaches nominal on CT on average (0.901 over 13 subject splits), and naive transfer fails mainly by flagging 96–100% of regions. The MRI-ratified label does not transfer, though: 88% of CT candidate regions label as hallucinated. So CT coverage awaits a CT label threshold from Track 1 (T2.6, D-020) |
+| **Engineering** | 619 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
 
 ---
 
@@ -173,9 +175,9 @@ Owns the reconstruction and evaluation infrastructure, and carries the study int
 |------|-------------|--------|
 | **T2.1** Data and operator pipeline | Dataset access, preprocessing, and reproducible generation of acquisition operators across both modalities | **Delivered** — both modalities, seeded registry, health checks, annotations parsed |
 | **T2.2** Solver integration | Configured, verified pretrained reconstruction back-ends behind the common interface | **Delivered** — DPS, DDNM and FlowDPS across two families, one config word apart; Stage-2 split measured on their output |
-| **T2.3** Score-bank production | Cached reconstructions and non-conformity scores across the full operator grid | **Full MRI bank** — all 199 fastMRI validation volumes × 9 operators (458,496 regions), plus mask-seed banks; checkpointed and resumable. Not reportable (face prior, D-016) |
+| **T2.3** Score-bank production | Cached reconstructions and non-conformity scores across the full operator grid | **Full MRI bank and first CT bank** — all 199 fastMRI validation volumes × 9 operators (458,496 regions), mask-seed banks, and 100 CT subjects × 9 operators (230,400 regions); checkpointed and resumable. Not reportable (face prior, D-016) |
 | **T2.4** Evaluation harness | Coverage, efficiency, and region-level detection utilities with automated logging | **Delivered** — coverage, flag area, region FDR/power, ESS, coverage gap; intervals by patient (D-027); one candidacy-gated label for every reporting script (D-060); patient-split and mask-seed noise floors |
-| **T2.5** Cross-domain experiments | Execution of the protocol in the second modality and the supporting appendix domain | **In progress** — CT path runs end to end; projector fix (D-012) precedes reported curves |
+| **T2.5** Cross-domain experiments | Execution of the protocol in the second modality and the supporting appendix domain | **First CT bank** — TotalSegmentator substrate (D-013), CT solver path fixed (no solver could run on CT before; DDNM now uses the CG inverse, not FBP), 900 pairs. Coverage is readable once CT has its own label threshold (D-020); dose axis and CT distances not yet built |
 | **T2.6** Baseline reproduction | Published comparison methods reproduced under the shared protocol | **In progress** — naive-transferred, matched-per-operator and posterior dispersion run on the full MRI bank under D-060's label. Dispersion tracks `s_disagree` to within 0.012 AUROC on DDNM. Published hallucination index not started |
 | **T2.7** Figures and packaging | Visualisations, reproducibility package, and experimental-setup write-ups | **Midterm figures drawn** — coverage by operator, gap against signed distance, coverage against flag area (`scripts/make_figures.py`); reproducibility package not started |
 
@@ -205,7 +207,7 @@ Blueprint §20 groups the tasks into four term phases, sequenced so a valid, dem
 |-------|-------|---------------|------------|--------|
 | 1 | Setup, infrastructure and baselines | Operator pipeline and score bank in MRI; reproduced baselines; formal review of the analytical setting | Topic approval and feasibility | **Complete but for baselines** — see `Documentation/T1.6_analysis_and_course_correction.md` |
 | 2 | Empirical core and guaranteed backbone | Operator-aware score; demonstrated coverage failure; group-conditional remedy; first analytical result; preprint draft | Midterm review | In progress — score and L1 delivered early |
-| 3 | Generalisation and primary contribution | Second-modality score bank and results; weighted recalibration; coverage-gap-against-distance curves in both modalities; ill-posedness scaling | Interim results | Not started |
+| 3 | Generalisation and primary contribution | Second-modality score bank and results; weighted recalibration; coverage-gap-against-distance curves in both modalities; ill-posedness scaling | Interim results | **Started** — CT substrate wired and the first CT bank produced (T2.6) |
 | 4 | Consolidation and dissemination | Bound-versus-measurement study; ablations; manuscript submission; open-source release; final report | Final presentation and viva | Not started |
 
 ---

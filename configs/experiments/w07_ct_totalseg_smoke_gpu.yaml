@@ -1,0 +1,54 @@
+# Week 7 - CT onboarding smoke run: the first CT bank with a real solver (T2.6).
+#
+#   D:/venvs/caliber-gpu/Scripts/python.exe -u -m caliber.runner \
+#       configs/experiments/w07_ct_totalseg_smoke_gpu.yaml
+#
+# What it checks, end to end, on real CT: TotalSegmentator slices split by subject (D-013),
+# organ annotations reaching ann_coverage, DDNM with the CG inverse as its consistency step
+# (not FBP), the CT range/null split in scoring, and the s/pair that sizes the Week 8 bank.
+# Not reportable: the prior is still the face model (D-016, D-035) -- no CT prior exists.
+#
+# Same solver settings as the w05 MRI bank (DDNM, 24 steps, 4 draws), so the two modalities
+# differ only in operator and data (Sec. 13).
+
+include: base
+
+experiment:
+  name: w07_ct_totalseg_smoke_gpu
+  solver:
+    name: ddnm
+    checkpoint: checkpoints/ddpm-celebahq-256
+    n_steps: 24
+    device: cuda
+    max_draws_per_batch: 1
+    # The CG inverse in DDNM's consistency step runs on the GPU: 0.2-0.85 s per solve at
+    # 256^2 against 0.9-5.3 s on the CPU, ~96 solves per pair (T2.6).
+    consistency_device: cuda
+  n_posterior: 4
+  operators:
+    # Three sparse-view densities and one limited-angle arc: both CT families, the
+    # cheapest and the most expensive CG solves, in four operators.
+    - modality: ct
+      n_views: [180, 60, 30]
+      angular_range_deg: 180.0
+    - modality: ct
+      n_views: 120
+      angular_range_deg: 120.0
+
+data:
+  image_shape: [256, 256]
+  dataset:
+    name: totalsegmentator
+    root: data/raw/totalsegmentator
+    split: auto
+    image_shape: [256, 256]
+    slices_per_volume: 1
+    calib_fraction: 0.5     # as w05 (D-057)
+    design_fraction: 0.10
+
+run:
+  limit: 6
+  cache_reconstructions: 4
+  checkpoint_every: 4
+  # n_posterior + 4 CG solves per pair in scoring and labelling, on the GPU (T2.6).
+  scoring_device: cuda

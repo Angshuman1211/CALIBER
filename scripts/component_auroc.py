@@ -65,13 +65,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
                     help="the label's candidacy gate (D-060); 0 = the ratio-only label")
     ap.add_argument("--boot", type=int, default=300)
+    ap.add_argument("--cluster", default="patient_id",
+                    help="the patient column; sample_id where one subject is one patient "
+                         "(TotalSegmentator, D-013)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
 
     root = Path(args.bank)
     path = root / "scores.parquet" if root.is_dir() else root
     try:
-        raw = pd.read_parquet(path, columns=COLUMNS)
+        cols = [args.cluster if c == "patient_id" else c for c in COLUMNS]
+        raw = pd.read_parquet(path, columns=cols).rename(columns={args.cluster: "patient_id"})
     except Exception as exc:  # a missing column is the usual cause: no patient_id yet
         print(f"[components] cannot read {COLUMNS} from {path} ({exc}); "
               "run scripts/add_patient_ids.py first", file=sys.stderr)

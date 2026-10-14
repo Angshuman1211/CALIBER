@@ -439,34 +439,6 @@ R=8, monotonicity rho = +0.829 against operator distance.
 
 ---
 
-#### P-03 - TotalSegmentator masks do not annotate LoDoPaB images
-
-**Blocks:** region-level CT evaluation - **See:** D-013
-
-> **Decided in the Week 1 sign-off (Option A).** TotalSegmentator becomes the CT
-> substrate. Track 1 does not object, and D20 removed the coupling that made this a
-> cross-track question: annotations are an evaluation overlay, not the region definition.
-> The remaining work is the Week 7 loader, so this stays listed until that is wired.
-
-The plan listed LoDoPaB-CT as the CT substrate and TotalSegmentator as the
-source of region labels for that substrate. Inspecting both showed the two
-roles do not compose: TotalSegmentator's masks segment TotalSegmentator's own
-volumes, a different cohort from LoDoPaB (which derives from LIDC-IDRI). There
-is no subject correspondence, so LoDoPaB slices cannot be annotated this way at
-all.
-
-This was found by reading the datasets rather than by a failing test, which is
-the only reason it surfaced before Week 7.
-
-**Where it stands:** needs a kickoff decision. The recommended option is to
-make TotalSegmentator the CT substrate outright - it ships clean images plus
-117 aligned organ masks per subject, and since D-005 already means we
-re-project ground truth with our own operator, no projection data is needed at
-all. The decision also determines which ~49 GB of archives can be deleted, so
-it is holding up disk as well as code.
-
----
-
 #### P-04 - Randomised spectral estimation barely separates CT operators
 
 **See:** D-011, D-007
@@ -546,6 +518,14 @@ patients, 52/44 patients, 108/91 volumes. See D-027.
 
 **Still open: LoDoPaB.** `LoDoPaBDataset` still indexes by file and slice offset and
 does not read the patient CSVs. The hazard is live there until that is wired (Week 7).
+
+**Update (Week 7, T2.6): moot while LoDoPaB is unused.** D-013's Option A is now wired, so
+the CT substrate is TotalSegmentator, split by subject with the same registry as fastMRI.
+No config reads LoDoPaB. If one ever does, two things need fixing first. The CSV lookup has
+to be per slice, at global index `shard * 128 + slice`, because slices are shuffled within
+each split and every validation patient spans more than one shard. And the last shard of
+each split is zero-padded (`validation_027` has 66 real slices, `test_027` has 97), which the
+stride sampler can pick as a blank image.
 
 ---
 
@@ -666,6 +646,95 @@ rather than producing plausible-looking but systematically mis-scaled reconstruc
 ---
 
 ### Resolved
+
+#### P-34 - The three limited-angle CT operators shared one calibration group
+
+**Fixed (Week 7, T2.6)** - **See:** D-021, D-023
+
+The group name for CT was `ct/{family}/v{n_views}`. For limited-angle CT the severity is the
+arc, not the view count, so 150, 120 and 90 degrees at 120 views all became
+`ct/limited_angle/v120`. Mondrian calibration would have pooled three regimes into one
+threshold, against D-021/D-023's own rule of one group per (family, severity). The name is
+now `ct/{family}/v{n_views}/a{arc}`, so the 9-operator CT grid has 9 groups (it would have
+had 7). The start angle stays inside a group, as a mask seed does. No CT bank existed, so
+nothing was renamed. Pinned in `tests/test_ct_solver.py`.
+
+---
+
+#### P-33 - DDNM and FlowDPS used filtered backprojection for data consistency on CT
+
+**Fixed (Week 7, T2.6)** - **See:** D-012, P-01
+
+Both samplers pin the range component with `x0 - A^+(A x0 - y)`, and they took `A^+` from
+`operator.pinv`. For CT that is FBP, the display inverse, which D-012 had already removed
+from the decomposition because it is not a pseudo-inverse. The solver still used it. One
+step from `truth + noise` on a real slice at 128^2:
+
+| views | residual before | after an FBP step | after a CG step |
+|---|---|---|---|
+| 180 | 0.063 | 0.046 | 0.006 |
+| 60 | 0.064 | 0.086 | 0.003 |
+| 30 | 0.064 | **0.207** | 0.001 |
+
+The FBP step made sparse-view estimates *less* consistent with their data, which would have
+confounded the view-count axis with the solver failing to fit. The step now uses
+`decomposition_pinv` (`solvers.diffusion.range_replace`). For MRI that is the same function
+as `pinv`, so MRI draws are bit-identical, which a test asserts. On the CT smoke bank the
+whole-image `||P_N e|| / ||e||` came out at 0.984-1.000 over every pair: DDNM's error now
+lies almost entirely in the null space, as a data-consistent solver's should. The CG
+inverse can run on the GPU (`solver.consistency_device`), 4-6x faster at 256^2.
+
+---
+
+#### P-32 - No solver could run on a CT operator: the adjoint failed under `no_grad`
+
+**Fixed (Week 7, T2.6)** - **See:** D-005
+
+`CTProjectionOperator.adjoint` is the VJP of the forward map, computed with
+`torch.autograd.grad`. The diffusion samplers run their loop under `torch.no_grad()`, where
+no graph is built, so the first consistency step raised. Every solver declares CT support,
+and none had ever run on CT (T2.2, T2.3), so nothing had exercised the combination. The
+adjoint now turns autograd on locally, which the caller cannot see. Found by
+`test_ddnm_runs_on_a_ct_operator_and_ends_consistent_with_the_data`, the first test to put a
+solver on a CT operator.
+
+---
+
+#### P-03 - TotalSegmentator masks do not annotate LoDoPaB images
+
+**Fixed (Week 7, T2.6)** - **See:** D-013, D20
+
+**Resolved by wiring Option A.** `TotalSegmentatorDataset` (`src/caliber/data/totalsegmentator.py`) is the CT substrate: each subject is one patient
+and the split key, slices come from the middle of the organ-bearing z-range, and the union
+of 24 organ masks (bones, muscles and vessels excluded) feeds `ann_coverage`. The masks
+share the CT grid to 2e-4 mm, and the loader refuses any that do not. A rendered check
+confirmed the outlines sit on the organs, since a misplaced mask produces no error.
+All 100 extracted subjects get an annotated slice (median organ coverage 8% of the slice).
+LoDoPaB is no longer read by any run.
+
+> **Decided in the Week 1 sign-off (Option A).** TotalSegmentator becomes the CT
+> substrate. Track 1 does not object, and D20 removed the coupling that made this a
+> cross-track question: annotations are an evaluation overlay, not the region definition.
+> The remaining work is the Week 7 loader, so this stays listed until that is wired.
+
+The plan listed LoDoPaB-CT as the CT substrate and TotalSegmentator as the
+source of region labels for that substrate. Inspecting both showed the two
+roles do not compose: TotalSegmentator's masks segment TotalSegmentator's own
+volumes, a different cohort from LoDoPaB (which derives from LIDC-IDRI). There
+is no subject correspondence, so LoDoPaB slices cannot be annotated this way at
+all.
+
+This was found by reading the datasets rather than by a failing test, which is
+the only reason it surfaced before Week 7.
+
+**Where it stands:** needs a kickoff decision. The recommended option is to
+make TotalSegmentator the CT substrate outright - it ships clean images plus
+117 aligned organ masks per subject, and since D-005 already means we
+re-project ground truth with our own operator, no projection data is needed at
+all. The decision also determines which ~49 GB of archives can be deleted, so
+it is holding up disk as well as code.
+
+---
 
 #### P-30 - T2.4's headline coverage numbers were measured against a defective label
 
