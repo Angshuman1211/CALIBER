@@ -68,12 +68,17 @@ def main(argv: list[str] | None = None) -> int:
                     help="D-060's candidacy gate; 0 = the ratio-only label, for comparison")
     ap.add_argument("--calib-fraction", type=float, default=0.5)
     ap.add_argument("--design-fraction", type=float, default=0.10)
+    ap.add_argument("--cluster", default="patient_id",
+                    help="the patient column; sample_id where one subject is one patient "
+                         "(TotalSegmentator, D-013)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
     nominal = 1.0 - args.alpha
 
     root = Path(args.bank)
-    df = pd.read_parquet(root / "scores.parquet" if root.is_dir() else root, columns=COLUMNS)
+    cols = [args.cluster if c == "patient_id" else c for c in COLUMNS]
+    df = pd.read_parquet(root / "scores.parquet" if root.is_dir() else root,
+                         columns=cols).rename(columns={args.cluster: "patient_id"})
     df["operator_id"] = df["operator_id"].astype(str)
     patients = df["patient_id"].unique()
 
