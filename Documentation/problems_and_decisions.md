@@ -833,6 +833,61 @@ D50 ruled that ascending the grid breaks efficiency and descending breaks validi
 
 ---
 
+### D62 — No function of `(err_free, free_content)` is anatomy-neutral; stop fixing it in the label and stratify the analysis [T1.1/O2, supersedes the gate in D60, answers P-31 and the CT label]
+Track 2 reports that on CT the label marks **88%** of candidate regions as hallucinated with AUROC 0.912 on "how little a region hides" against 0.527 on the actual error, and that on MRI the denominator problem **persists within operators** — 0.920 at `random1d R8` (P-31). They offered two options: a CT-specific τ, or a criterion that does not divide by `free_content`.
+
+**Neither, and first I have to retract how D60 was validated.** I checked the candidacy gate on a **pooled** AUROC and got 0.499 — "exactly chance". Measured per operator on the same bank:
+
+| label | pooled | R4 | R8 |
+|---|---|---|---|
+| ratio only | 0.826 | 0.941 | 0.901 |
+| ratio + candidacy q33 (D60) | **0.499** | thin | **0.662** |
+| absolute `err_free` > q75 | 0.277 | **0.054** | 0.421 |
+
+**The 0.499 was two opposite biases cancelling, not neutrality.** The gate reduced the within-operator artefact and did not remove it. That is the fourth time in this project a pooled or in-sample statistic has reported the number someone was hoping for (P-19, P-23, D55, now this), and I validated a criterion on one after writing the entry that warns about the others.
+
+**And the second option does not work either — I tested it.** An absolute label inverts the bias rather than removing it: AUROC(`-free_content`) of 0.277 pooled and **0.054 at R4** means *high* anatomy now predicts the label, which is exactly the confound D21 introduced the ratio to fix. The ratio over-corrects, the absolute form under-corrects, and the gated ratio sits in between. **No function of `err_free` and `free_content` alone is anatomy-neutral within an operator**, because both quantities scale with anatomical density.
+
+**A third route is also closed, and for an informative reason.** The principled label is the *invented* content — the part of the reconstruction's hidden content orthogonal to the truth's, which by D38 is `s_free·|sin θ|` and involves no division. On this bank `cos θ` has median 0.073, so `sin θ ≈ 0.997` and **`corr(invented content, s_free) = 0.9992`**. The label would be the score. That is not a defect in the criterion: it is what a prior that recovers *none* of the hidden content looks like (D-016, a face prior on anatomy). With a matched prior `cos θ` would be substantially positive and the quantity would discriminate. **So no criterion can be validated against this prior**, and that bounds what Week 8 may claim whatever is chosen.
+
+**Ruling: the label stops trying to be anatomy-neutral, and the analysis controls anatomy instead.**
+
+1. **Label:** absolute, `err_free > ε`, with `ε` a **quantile of `err_free` on each substrate's own design split**, frozen. Simple, monotone in the thing it names, and no denominator. P-02's failure was a fixed *constant* (`0.10` flagged every region); a quantile cannot do that by construction.
+2. **Analysis:** every detection number is reported **stratified by `free_content` tercile**, within operator. The machinery exists — `stratified_auc` and `attribute_components` already do it, and they are what caught Q6.
+3. **Secondary reading on MRI only:** `require_annotation=True` against fastMRI+ boxes. That is the one anchor not defined by our own error arithmetic. It is unavailable on CT — TotalSegmentator does not annotate LoDoPaB (P-03) — so it cannot be the primary.
+
+This is the standard move and I should have reached it sooner: **do not encode a confound correction in the outcome definition; adjust for it in the analysis.** A divisor in the label makes the label depend on the confound. Stratification leaves the label clean and puts the control where it can be checked.
+
+*Consequence:* τ and the candidacy gate are both retired from the reported criterion. D37's τ, D57's floor and D60's gate were three attempts at the same impossible thing. CT becomes readable, and P-31 is answered for MRI by the same change.
+
+*And the project now has no external validation of its label.* Track 2 reports the published Hallucination Index (Tivnan 2024) disagrees at kappa ~ 0 and mostly flags background. That was the independent check. Its absence is a **stated scope limit for the write-up**, not a gap to be quietly filled: the criterion is ours, it is defined in §4's terms, and the annotation-restricted reading is the nearest thing to an outside anchor.
+
+---
+
+### D63 — CT dose is not a grid axis [T1.4, answers Week 8 scope]
+**No.** Three reasons, in order of how badly they bite.
+
+1. **Dose changes the noise, not the operator.** `A` is unchanged between two photon counts, so the null space is identical and **`d_op` between two doses is exactly zero**. Two distinct cells would sit at the same x on the headline coverage-gap-against-distance axis, which is the same non-functional axis problem D47 found for direction — and this time with no sign to recover.
+2. **It multiplies calibration groups against D32's floor.** CT groups are now `ct/{family}/v{views}/a{arc}` (P-34); a dose axis multiplies that again, and the floor is nine positives per group.
+3. **D22 already settled the form:** noise is a group axis *if* it is varied. Varying it here buys a confound rather than a result, because the project's claim is about the acquisition geometry.
+
+*If there is appetite for it:* a **robustness check at one fixed geometry** — does the flag survive a dose change at constant `A`? — which is a short appendix, not a grid dimension. Worth doing precisely because `d_op = 0` there: it isolates noise sensitivity from operator shift.
+
+---
+
+### D64 — CT signed distances are needed, but only a handful of pairs [T1.3, answers Week 8 scope]
+**Yes, still needed, and they are the point of the CT side for T1.3** — but not the full matrix.
+
+D-052 found four of five distance measures coincide to 1.1e-16 on MRI masks, because a mask operator is diagonal in k-space so "which frequencies it keeps" *is* its range. CT view subsampling is not diagonal, so **CT is the only operator class in the project where those measures can differ at all**. That makes a small number of CT pairs worth more than the whole MRI matrix for this question.
+
+Minimum set, at minutes per pair:
+- the CT calibration operator against **each** deployment operator (k−1 pairs) — T1.3's cross-modality checklist item, and the x-axis for the CT curves;
+- **one pair that changes arc at fixed views**, and one that changes views at fixed arc — the two that test whether range and null space have come apart from a coordinate mask, which is D-052's open question.
+
+That is roughly k+1 pairs rather than k(k−1)/2. Report `null_space_projection` and `null_space_growth` for them, plus `spectral_divergence` on the same pairs if it runs — it is the measure D-052 could never compute on MRI, and CT is its first chance.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)

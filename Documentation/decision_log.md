@@ -2495,6 +2495,72 @@ descending-collapse reading were label artefacts. The claim never needed reframi
 
 *Affects:* O2, O3, T1.1, T1.4, D21, D37, D43, D50, D57, D-056, P-21, the midterm figures.
 
+---
+
+## D-061 · The label stops chasing anatomy-neutrality; stratify the analysis instead. Plus Week 8 scope
+**Date:** Week 8 · **Status:** ACCEPTED · **Proposed by:** Track 1 · **Found by:** Track 2
+**See:** D62, D63, D64 · **Supersedes:** D37's tau, D57's floor, D60's gate · **Answers:** P-31, T2.5 Sec. 4, T2.6 Sec. 4.3
+
+**First, a retraction.** I validated D60's candidacy gate on a **pooled** AUROC of 0.499 and
+called it chance. Per operator on the same bank it is **0.662 at R8** -- the pooled figure
+was two opposite biases cancelling. Your 0.920 at `random1d R8` and 0.912 on CT are the
+correct measurements and mine was the misleading one. Fourth time a pooled or in-sample
+statistic in this project has returned the hoped-for number (P-19, P-23, D55, this).
+
+**Neither of your two options works, and I tested both.**
+
+| label | pooled | R4 | R8 |
+|---|---|---|---|
+| ratio only | 0.826 | 0.941 | 0.901 |
+| ratio + candidacy q33 | 0.499 | thin | 0.662 |
+| absolute err_free > q75 | 0.277 | **0.054** | 0.421 |
+
+Dropping the division **inverts** the bias rather than removing it -- 0.054 at R4 means high
+anatomy now predicts the label, which is the confound D21 added the ratio to fix. No function
+of `err_free` and `free_content` alone is anatomy-neutral within an operator; both scale with
+anatomical density. A CT-specific tau fixes neither modality's within-operator bias.
+
+**A third route is closed too, informatively.** The principled label is the *invented* content,
+`s_free*|sin theta|` by D-037, with no division. But `cos theta` has median 0.073 here, so
+`corr(invented, s_free) = 0.9992` -- the label would be the score. That is what a prior
+recovering none of the hidden content looks like (D-016). **No criterion can be validated
+against this prior**, which bounds Week 8's claims whatever we pick.
+
+**Ruling.** (1) Label: **absolute**, `err_free > eps`, `eps` a quantile of `err_free` on each
+substrate's **own** design split, frozen. P-02 was a fixed constant; a quantile cannot flag
+everything by construction. (2) Analysis: report every detection number **stratified by
+`free_content` tercile, within operator** -- `stratified_auc` already does this. (3) Secondary
+on MRI only: `require_annotation=True` against fastMRI+ boxes, the one anchor not defined by
+our own arithmetic; unavailable on CT (P-03).
+
+Do not encode a confound correction in the outcome definition; adjust for it in the analysis.
+tau, the floor and the gate were three attempts at the same impossible thing. **This makes CT
+readable and answers P-31 by the same change.**
+
+**And the Tivnan result matters more than it looks.** kappa ~ 0 and mostly background means
+the project has **no external validation of its label**. That is a stated scope limit for the
+write-up, not a gap to fill quietly: the criterion is ours, in Sec. 4's terms, with the
+annotation-restricted reading as the nearest outside anchor.
+
+**Week 8 scope.** **Dose: no.** It changes the noise, not `A`, so `d_op` between two doses is
+exactly **zero** -- two cells at the same x on the headline axis, with no sign to recover this
+time. It also multiplies the `ct/{family}/v{views}/a{arc}` groups against D32's nine-positive
+floor, and D22 already makes noise a group axis only if varied. Worth a **robustness check at
+one fixed geometry** instead -- an appendix, and interesting precisely because `d_op = 0`
+isolates noise from operator shift.
+
+**CT distances: yes, but ~k+1 pairs, not the matrix.** CT is the only class in the project
+where the five measures *can* differ -- D-052 showed they coincide on MRI because a mask
+operator is diagonal. Compute: the calibration operator against each deployment operator
+(the CT x-axis and T1.3's cross-modality item), plus one arc-change-at-fixed-views and one
+views-change-at-fixed-arc, which are what test whether range and null space have come apart.
+Include `spectral_divergence` on those pairs -- it never ran on MRI and CT is its first chance.
+
+Good catch on P-34; that is D-021/D-023 enforced.
+
+*Affects:* O2, O3, T1.1, T1.3, T1.4, T2.5, T2.6, D21, D37, D43, D57, D60, P-02, P-03, P-31,
+every label-dependent number in both modalities.
+
 ## Template
 
 ```
