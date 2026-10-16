@@ -32,7 +32,7 @@ import torch
 
 from caliber.config import load_config
 from caliber.data import build_dataset
-from caliber.evaluation import CANDIDACY_QUANTILE, candidacy_gate, derive_score_and_label
+from caliber.evaluation import add_label_args, derive_score_and_label, label_from_args
 from caliber.evaluation.baselines import (
     auroc,
     average_precision,
@@ -135,12 +135,10 @@ def evaluate(args) -> int:
     if "patient_id" not in bank.columns:
         print("[dispersion] no patient_id; run scripts/add_patient_ids.py first", file=sys.stderr)
         return 1
-    # the reported label: the candidacy gate, valued on the design split and frozen
-    gate = candidacy_gate(bank, args.candidacy_quantile)
-    print(f"[dispersion] label: ratio > {args.tau} among candidates with free_content > "
-          f"{gate:.4f} (q={args.candidacy_quantile} on the design split)")
-    scored = derive_score_and_label(bank, args.calibration_operator, threshold=args.tau,
-                                    min_free_content=gate)
+    # the reported label (D-061), valued on the design split and frozen
+    label = label_from_args(bank, args)
+    print(f"[dispersion] label: {label.text}")
+    scored = derive_score_and_label(bank, args.calibration_operator, **label.kwargs)
     disp = pd.read_parquet(args.dispersion)[KEYS + ["s_dispersion"]]
     df = scored[scored["split"] == "test"].merge(disp, on=KEYS, how="inner")
     if df.empty:
@@ -188,9 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("bank", help="a bank with patient_id (add_patient_ids.py)")
     e.add_argument("--dispersion", required=True)
     e.add_argument("--calibration-operator", required=True)
-    e.add_argument("--tau", type=float, default=1.75, help="D37's ratified value")
-    e.add_argument("--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
-                   help="the label's candidacy gate (D-060), as in coverage_by_patient")
+    add_label_args(e)
     e.add_argument("--boot", type=int, default=300)
     e.add_argument("--out", default=None)
     args = ap.parse_args(argv)

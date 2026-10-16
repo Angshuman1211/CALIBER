@@ -27,7 +27,7 @@ import pandas as pd
 
 from caliber.calibration import apply_threshold, split_threshold
 from caliber.data.splits import split_for
-from caliber.evaluation import CANDIDACY_QUANTILE, candidacy_gate, derive_score_and_label
+from caliber.evaluation import add_label_args, derive_score_and_label, label_from_args
 from caliber.evaluation.metrics import empirical_coverage
 
 PROJECT_SALT = "caliber-split-v1"
@@ -36,14 +36,14 @@ COLUMNS = ["operator_id", "split", "patient_id", "s_free", "s_disagree", "s_resi
            "err_total", "err_free", "free_content", "ann_coverage"]
 
 
-def coverage_cells(df: pd.DataFrame, side: pd.Series, low: str, high: str, tau: float,
-                   quantile: float, alpha: float) -> tuple[list[dict], float | None]:
+def coverage_cells(df: pd.DataFrame, side: pd.Series, low: str, high: str, args,
+                   alpha: float) -> tuple[list[dict], float]:
     """Naive and group-conditional coverage at every deployment operator, both directions."""
     split_df = df.assign(split=side.to_numpy())
-    gate = candidacy_gate(split_df, quantile)
+    label = label_from_args(split_df, args)
     rows = []
     for direction, calib_op in (("ascending", low), ("descending", high)):
-        scored = derive_score_and_label(split_df, calib_op, threshold=tau, min_free_content=gate)
+        scored = derive_score_and_label(split_df, calib_op, **label.kwargs)
         cal, test = scored[scored["split"] == "calib"], scored[scored["split"] == "test"]
         own = cal[cal["operator_id"] == calib_op]
         naive_tau = split_threshold(own["score"], own["label"], alpha=alpha).threshold
@@ -54,7 +54,7 @@ def coverage_cells(df: pd.DataFrame, side: pd.Series, low: str, high: str, tau: 
                 flagged = apply_threshold(part, t, "score")
                 rows.append({"direction": direction, "deployed_at": oid, "method": method,
                              "coverage": empirical_coverage(flagged["flag"], flagged["label"])})
-    return rows, gate
+    return rows, label.kwargs.get("threshold")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -63,9 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--low", required=True, help="least aggressive operator (ascending)")
     ap.add_argument("--high", required=True, help="most aggressive operator (descending)")
     ap.add_argument("--alpha", type=float, default=0.10)
-    ap.add_argument("--tau", type=float, default=1.75, help="D37's ratified value")
-    ap.add_argument("--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
-                    help="D-060's candidacy gate; 0 = the ratio-only label, for comparison")
+    add_label_args(ap)
     ap.add_argument("--calib-fraction", type=float, default=0.5)
     ap.add_argument("--design-fraction", type=float, default=0.10)
     ap.add_argument("--cluster", default="patient_id",
@@ -95,14 +93,14 @@ def main(argv: list[str] | None = None) -> int:
 
     rows, gates = [], {}
     for salt in PROBE_SALTS:
-        cells, gates[salt] = coverage_cells(df, sides(salt), args.low, args.high, args.tau,
-                                            args.candidacy_quantile, args.alpha)
+        cells, gates[salt] = coverage_cells(df, sides(salt), args.low, args.high, args,
+                                            args.alpha)
         rows += [{"salt": salt, **c} for c in cells]
     t = pd.DataFrame(rows)
     gate_values = [g for g in gates.values() if g is not None]
     if gate_values:
-        print(f"[splits] gate re-valued per split: free_content > "
-              f"{min(gate_values):.4f}-{max(gate_values):.4f}")
+        print(f"[splits] label threshold re-valued per split on its own design side: "
+              f"{min(gate_values):.4f}-{max(gate_values):.4f} ({args.label})")
 
     print(f"\n[splits] {len(PROBE_SALTS)} patient splits; coverage per cell as mean, sd, "
           f"range, and where the project's split ranks (1 = lowest)")

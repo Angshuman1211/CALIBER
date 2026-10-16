@@ -23,25 +23,7 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
-#### P-31 - The ruled label is still led by its denominator within operators
-
-**Open - blocks:** reading coverage at high acceleration and at `variable_density2d R2` as
-coverage of *hallucinations*; **decides:** Track 1 (the label is theirs, D-059/D-060) -
-**See:** D-060, D-059, D-037, P-30
-
-D-060 judged the candidacy gate by one pooled number, AUROC(`-free_content`) over all
-regions, and reported 0.499 on M4Raw. On the fastMRI bank that number is 0.395, and it
-ranges from 0.321 to 0.608 by operator. Splitting candidates from non-candidates shows the
-gate doing two things that the pooled number adds together. It forces the lowest-content
-regions negative, which pushes the AUROC below 0.5. And inside the candidates the ratio is
-still denominator-led (pooled 0.752). A pooled value near chance can be the two cancelling.
-
-Pooled over operators, among candidates, the numerator now leads (AUROC 0.797 against
-0.752), so the gate is a real improvement on the ratio-only label (0.721 against 0.833).
-Per operator it is not enough:
-
-| Candidates at | AUROC(`-free_content`) | AUROC(`err_free`) | rho(ratio, `free_content`) | rho(ratio, `err_free`) |
-|---|---|---|---|---|
+--|---|---|---|
 | `random1d R2` | 0.726 | **0.865** | -0.489 | +0.397 |
 | `random1d R8` | **0.920** | 0.651 | -0.771 | +0.463 |
 | `variable_density2d R2` | 0.829 | 0.878 | -0.668 | **+0.026** |
@@ -647,7 +629,25 @@ rather than producing plausible-looking but systematically mis-scaled reconstruc
 
 ### Resolved
 
-#### P-34 - The three limited-angle CT operators shared one calibration group
+#### P-31 - The ruled label is still led by its denominator within operators
+
+**Resolved (Week 8) by D-061** - **See:** D-061, D-060, D-059, D-037, P-30, T2.7
+
+**Resolved by taking the denominator out of the label.** D-061 accepted these measurements over its own pooled check: per operator the gate's AUROC was 0.662 at R8, and the pooled 0.499 was two biases cancelling. It ruled that no function of `err_free` and `free_content` is anatomy-neutral within an operator. So the label is now absolute, `err_free > eps` with `eps` the design split's q75, and the confound is handled in the analysis by stratifying on `free_content` beside an anatomy control (T2.7 §1, §4). Under that label the within-candidate decomposition below no longer applies. Its successor limit is in T2.7 §4: under this prior `err_free` is nearly √(`s_free`² + `free_content`²), so stratified detection measures that identity.
+
+D-060 judged the candidacy gate by one pooled number, AUROC(`-free_content`) over all
+regions, and reported 0.499 on M4Raw. On the fastMRI bank that number is 0.395, and it
+ranges from 0.321 to 0.608 by operator. Splitting candidates from non-candidates shows the
+gate doing two things that the pooled number adds together. It forces the lowest-content
+regions negative, which pushes the AUROC below 0.5. And inside the candidates the ratio is
+still denominator-led (pooled 0.752). A pooled value near chance can be the two cancelling.
+
+Pooled over operators, among candidates, the numerator now leads (AUROC 0.797 against
+0.752), so the gate is a real improvement on the ratio-only label (0.721 against 0.833).
+Per operator it is not enough:
+
+| Candidates at | AUROC(`-free_content`) | AUROC(`err_free`) | rho(ratio, `free_content`) | rho(ratio, `err_free`) |
+|---|-#### P-34 - The three limited-angle CT operators shared one calibration group
 
 **Fixed (Week 7, T2.6)** - **See:** D-021, D-023
 
@@ -739,6 +739,8 @@ it is holding up disk as well as code.
 #### P-30 - T2.4's headline coverage numbers were measured against a defective label
 
 **Re-measured (Week 5)** - **See:** D-059, D-060, D-056, D-037, P-21, P-31
+
+> **Superseded (Week 8).** D-061 retired the candidacy-gate label these numbers use. The absolute-label numbers, for both modalities, are in T2.7.
 
 T2.4 §8.3 reported O3 in the descending direction: calibrated at `random1d R8`, naive
 transfer caught **0.507** [0.380, 0.610] of the hallucinations at `variable_density2d R2`.

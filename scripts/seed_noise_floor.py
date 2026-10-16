@@ -36,10 +36,10 @@ from add_patient_ids import patient_map
 from caliber.calibration import apply_threshold, split_threshold
 from caliber.data.splits import split_for
 from caliber.evaluation import (
-    CANDIDACY_QUANTILE,
-    candidacy_gate,
+    add_label_args,
     cluster_bootstrap_coverage,
     derive_score_and_label,
+    label_from_args,
 )
 from caliber.evaluation.metrics import empirical_coverage
 from caliber.scorebank import read_bank
@@ -61,9 +61,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="operator id without the seed suffix, e.g. mri.random1d.R4.c0.08")
     ap.add_argument("--data-root", default="data/raw/fastmri/singlecoil_val")
     ap.add_argument("--alpha", type=float, default=0.10)
-    ap.add_argument("--tau", type=float, default=1.75, help="D37's ratified value")
-    ap.add_argument("--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
-                    help="the label's candidacy gate (D-060), as in coverage_by_patient")
+    add_label_args(ap)
     ap.add_argument("--calib-fraction", type=float, default=0.5)
     ap.add_argument("--design-fraction", type=float, default=0.10)
     ap.add_argument("--out", default=None)
@@ -74,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     base = read_bank(args.base_bank)
     # The gate is valued on the base bank's design split over every operator, so it is the
     # same number coverage_by_patient.py uses -- a seed run must not re-fit its own label.
-    gate = candidacy_gate(base, args.candidacy_quantile)
+    label = label_from_args(base, args)
     extra = read_bank(args.seed_bank)
     df = pd.concat([base[base["operator_id"].astype(str).str.startswith(prefix)],
                     extra[extra["operator_id"].astype(str).str.startswith(prefix)]],
@@ -94,11 +92,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     df["patient_id"] = df["sample_id"].map(patient_map(args.data_root))
-    df = derive_score_and_label(df, seeds[0], threshold=args.tau, min_free_content=gate)
+    df = derive_score_and_label(df, seeds[0], **label.kwargs)
     df["operator_id"] = df["operator_id"].astype(str)
     cal, test = df[df["split"] == "calib"], df[df["split"] == "test"]
-    print(f"[seeds] label: ratio > {args.tau} among candidates with free_content > {gate:.4f} "
-          f"(q={args.candidacy_quantile} on the base bank's design split)")
+    print(f"[seeds] label: {label.text}, valued on the base bank")
     print(f"[seeds] {args.operator}: seeds {[s.split('.s')[-1] for s in seeds]}, "
           f"{df['sample_id'].nunique()} volumes, "
           f"{test['patient_id'].nunique()} test patients")

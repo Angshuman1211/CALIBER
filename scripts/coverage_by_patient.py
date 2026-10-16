@@ -26,10 +26,10 @@ import pandas as pd
 
 from caliber.calibration import apply_threshold, split_threshold
 from caliber.evaluation import (
-    CANDIDACY_QUANTILE,
-    candidacy_gate,
+    add_label_args,
     cluster_bootstrap_coverage,
     derive_score_and_label,
+    label_from_args,
 )
 from caliber.scorebank import read_bank
 
@@ -40,13 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--low", required=True, help="least aggressive operator (ascending)")
     ap.add_argument("--high", required=True, help="most aggressive operator (descending)")
     ap.add_argument("--alpha", type=float, default=0.10)
-    ap.add_argument("--tau", type=float, default=1.75, help="D37's ratified value")
+    add_label_args(ap)
     ap.add_argument("--cluster", default="patient_id")
-    ap.add_argument("--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
-                    help="the label's candidacy gate: a region is a candidate only if its "
-                         "free_content exceeds this quantile of free_content on the design "
-                         "split (D-060). 0 reproduces the ratio-only label of "
-                         "before D-059")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
 
@@ -56,17 +51,12 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
     nominal = 1.0 - args.alpha
-    gate = candidacy_gate(raw, args.candidacy_quantile)
-    if gate is not None:
-        print(f"[coverage] label: ratio > {args.tau} among candidates with free_content > "
-              f"{gate:.4f} (q={args.candidacy_quantile} on the design split)")
-    else:
-        print("[coverage] WARNING  ratio-only label, the defective one of before D-059; for "
-              "comparison only", file=sys.stderr)
+    label = label_from_args(raw, args)
+    print(f"[coverage] label: {label.text}")
 
     rows = []
     for direction, calib_op in (("ascending", args.low), ("descending", args.high)):
-        df = derive_score_and_label(raw, calib_op, threshold=args.tau, min_free_content=gate)
+        df = derive_score_and_label(raw, calib_op, **label.kwargs)
         cal, test = df[df["split"] == "calib"], df[df["split"] == "test"]
         own_calib = cal[cal["operator_id"] == calib_op]
         naive_tau = split_threshold(own_calib["score"], own_calib["label"], alpha=args.alpha)
