@@ -14,11 +14,13 @@ import pytest
 
 from caliber.evaluation import (
     CANDIDACY_QUANTILE,
+    LABEL_QUANTILE,
     candidacy_gate,
     cluster_bootstrap_coverage,
     clusters_for_precision,
     derive_score_and_label,
     design_quantile,
+    label_spec,
 )
 from caliber.scoring.score import ScoreWeights
 
@@ -232,3 +234,52 @@ def test_more_clusters_are_needed_for_a_tighter_interval():
 def test_degenerate_inputs_are_refused(se, target):
     with pytest.raises(ValueError, match="positive"):
         clusters_for_precision(se, 12, target)
+
+
+# -- D-061's absolute label --------------------------------------------------------
+
+
+def test_the_reported_label_quantile_is_pinned():
+    """D-061 names no quantile; q75 is the one its table tested. Pinned once, here."""
+    assert LABEL_QUANTILE == 0.75
+
+
+def test_the_absolute_label_is_err_free_above_its_design_quantile_and_nothing_else():
+    df = _split_bank()
+    spec = label_spec(df)
+    eps = df.loc[df["split"] == "design", "err_free"].quantile(0.75)
+    assert spec.name == "absolute" and spec.kwargs == {"threshold": eps, "relative": False}
+    labelled = derive_score_and_label(df, "op", **spec.kwargs)
+    assert (labelled["label"] == (df["err_free"] > eps)).all()   # no division, no gate
+    df.loc[df["split"] != "design", "err_free"] *= 100           # calib and test cannot move it
+    assert label_spec(df).kwargs["threshold"] == pytest.approx(eps)
+
+
+def test_the_superseded_labels_reproduce_for_comparison():
+    df = _split_bank()
+    gate = design_quantile(df, "free_content", CANDIDACY_QUANTILE)
+    assert label_spec(df, "candidacy").kwargs == {"threshold": 1.75, "relative": True,
+                                                  "min_free_content": gate}
+    assert label_spec(_bank(), "ratio").kwargs == {"threshold": 1.75, "relative": True}
+
+
+def test_the_annotation_reading_keeps_only_annotated_positives():
+    df = _split_bank()
+    df["ann_coverage"] = 0.0
+    df.loc[df.index[:100], "ann_coverage"] = 0.5
+    spec = label_spec(df, require_annotation=True)
+    assert spec.name == "absolute+annotation"
+    labelled = derive_score_and_label(df, "op", **spec.kwargs)
+    assert not labelled.loc[df.index[100:], "label"].any()
+    plain = derive_score_and_label(df, "op", **label_spec(df).kwargs)
+    assert (labelled["label"] <= plain["label"]).all()
+
+
+def test_a_bank_without_a_design_side_is_told_to_read_the_ratio_label():
+    with pytest.raises(ValueError, match="--label ratio"):
+        label_spec(_bank())
+
+
+def test_an_unknown_label_is_refused():
+    with pytest.raises(ValueError, match="unknown label"):
+        label_spec(_split_bank(), "nonsense")

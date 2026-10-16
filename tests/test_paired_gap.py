@@ -220,9 +220,10 @@ def test_the_sizing_script_runs_and_no_longer_divides_the_budget(capsys):
     crossed design every operator sees every patient, so the 'test patients each' column
     must be constant down the table.
     """
-    # The committed smoke bank predates the design split, so it opts out of D-060's gate;
-    # what this test checks does not depend on the label.
-    assert sizing.main([str(BANK), "--tau", "1.75", "--candidacy-quantile", "0"]) == 0
+    # The committed smoke bank predates the design split, so it cannot value D-061's
+    # absolute label and reads the ratio label instead; what this test checks does not
+    # depend on the label.
+    assert sizing.main([str(BANK), "--label", "ratio"]) == 0
     out = capsys.readouterr().out
     assert "CROSSED" in out
     assert "paired coverage gap" in out

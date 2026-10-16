@@ -17,6 +17,8 @@ which is the only version of the interval that means anything.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 import numpy as np
 import pandas as pd
 import torch
@@ -42,6 +44,8 @@ def derive_score_and_label(
     relative: bool = True,
     absolute_floor: float | None = None,
     min_free_content: float | None = None,
+    require_annotation: bool = False,
+    annotation_min_coverage: float = 0.10,
 ) -> pd.DataFrame:
     """Add ``score`` and ``label`` columns to a bank frame, from cache alone.
 
@@ -84,9 +88,95 @@ def derive_score_and_label(
     )
     gate = {} if min_free_content is None else {"min_free_content": min_free_content}
     out["label"] = label_hallucinated(
-        truth, threshold=threshold, relative=relative, absolute_floor=absolute_floor, **gate
+        truth, threshold=threshold, relative=relative, absolute_floor=absolute_floor,
+        require_annotation=require_annotation, annotation_min_coverage=annotation_min_coverage,
+        **gate,
     ).numpy()
     return out
+
+
+#: D-061's ruling: the reported label is **absolute**, ``err_free > eps``, with ``eps`` this
+#: quantile of ``err_free`` on the bank's *own* design split, frozen. D-061 names no quantile;
+#: 0.75 is the one its table tested. Every reporting script defaults to it (P-19).
+LABEL_QUANTILE = 0.75
+#: The labels a script can be asked for. Only ``absolute`` is reported; the other two
+#: reproduce numbers from before D-061, for comparison.
+LABELS = ("absolute", "candidacy", "ratio")
+
+
+@dataclass(frozen=True)
+class LabelSpec:
+    """A named label, valued on a bank: the arguments for :func:`derive_score_and_label`."""
+
+    name: str
+    text: str
+    kwargs: dict = field(default_factory=dict)
+
+
+def label_spec(df: pd.DataFrame, label: str = "absolute", quantile: float | None = None,
+               tau: float = 1.75, require_annotation: bool = False) -> LabelSpec:
+    """The label a script reports, valued on ``df``'s design split and frozen.
+
+    - ``absolute`` (D-061, the reported label): ``err_free > eps``, ``eps`` the ``quantile``
+      (default :data:`LABEL_QUANTILE`) of ``err_free`` over the design rows. No denominator:
+      D-061 found no function of ``err_free`` and ``free_content`` that is anatomy-neutral
+      within an operator, so the confound is handled in the analysis, by stratifying on
+      ``free_content``, not in the outcome. A quantile cannot flag everything by
+      construction, which was P-02's failure with a fixed constant.
+    - ``candidacy`` (D-060, superseded): the ratio among regions above a design quantile
+      of ``free_content``.
+    - ``ratio`` (D37 alone): the ratio, with no gate. It needs no design side, which is why
+      a bank built before D-051 can still be read with it.
+
+    ``require_annotation`` gives D-061's secondary reading for MRI: a positive must also lie
+    in an annotated region (fastMRI+). That is the one anchor not defined by the project's
+    own error arithmetic. It does not exist on CT (P-03).
+    """
+    if label == "absolute":
+        q = LABEL_QUANTILE if quantile is None else quantile
+        try:
+            eps = design_quantile(df, "err_free", q)
+        except ValueError as exc:
+            raise ValueError(
+                f"{exc} For a bank built before D-051, pass --label ratio for the ratio-only "
+                "label, knowing it is not the reported one (D-061)."
+            ) from None
+        spec = LabelSpec("absolute", f"err_free > {eps:.4f} (q={q:g} of err_free on the "
+                         "design split, D-061)", {"threshold": eps, "relative": False})
+    elif label == "candidacy":
+        q = CANDIDACY_QUANTILE if quantile is None else quantile
+        gate = candidacy_gate(df, q)
+        spec = LabelSpec("candidacy", f"ratio > {tau:g} among candidates with free_content > "
+                         f"{gate:.4f} (D-060, superseded by D-061)",
+                         {"threshold": tau, "relative": True, "min_free_content": gate})
+    elif label == "ratio":
+        spec = LabelSpec("ratio", f"ratio > {tau:g}, no gate (D37; superseded by D-061)",
+                         {"threshold": tau, "relative": True})
+    else:
+        raise ValueError(f"unknown label {label!r}; the labels are {list(LABELS)}")
+    if require_annotation:
+        spec = LabelSpec(spec.name + "+annotation",
+                         spec.text + ", and in an annotated region (ann_coverage >= 0.10)",
+                         {**spec.kwargs, "require_annotation": True})
+    return spec
+
+
+def add_label_args(ap) -> None:
+    """The label options every reporting script takes, so they mean the same everywhere."""
+    ap.add_argument("--label", choices=LABELS, default="absolute",
+                    help="D-061's absolute label (default); candidacy and ratio reproduce "
+                         "earlier numbers, for comparison only")
+    ap.add_argument("--label-quantile", type=float, default=None,
+                    help=f"absolute: quantile of err_free on the design split (default "
+                         f"{LABEL_QUANTILE}); candidacy: of free_content ({CANDIDACY_QUANTILE})")
+    ap.add_argument("--tau", type=float, default=1.75,
+                    help="the ratio threshold, for the candidacy and ratio labels (D37)")
+    ap.add_argument("--require-annotation", action="store_true",
+                    help="D-061's secondary MRI reading: positives only in annotated regions")
+
+
+def label_from_args(df: pd.DataFrame, args) -> LabelSpec:
+    return label_spec(df, args.label, args.label_quantile, args.tau, args.require_annotation)
 
 
 # D-060's ruled candidacy quantile. Every script that reports a label-dependent number takes

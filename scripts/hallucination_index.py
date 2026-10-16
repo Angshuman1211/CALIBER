@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from caliber.evaluation import CANDIDACY_QUANTILE, candidacy_gate, derive_score_and_label
+from caliber.evaluation import add_label_args, derive_score_and_label, label_from_args
 from caliber.evaluation.baselines import auroc, cluster_bootstrap_metric, hallucination_index
 
 KEYS = ["sample_id", "slice_idx", "operator_id", "region_id"]
@@ -56,8 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("bank", help="a bank with patient_id (add_patient_ids.py)")
     ap.add_argument("--dispersion", required=True, help="dispersion_baseline.py generate output")
     ap.add_argument("--calibration-operator", required=True)
-    ap.add_argument("--tau", type=float, default=1.75, help="D37's ratified value")
-    ap.add_argument("--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE)
+    add_label_args(ap)
     ap.add_argument("--hnr-threshold", type=float, default=1.0,
                     help="index label: squared bias over noise variance above this")
     ap.add_argument("--boot", type=int, default=300)
@@ -69,9 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     raw["operator_id"] = raw["operator_id"].astype(str)
     region = int(json.loads((root / "manifest.json").read_text(encoding="utf-8"))
                  ["config"]["regions"]["size"])
-    gate = candidacy_gate(raw, args.candidacy_quantile)
-    df = derive_score_and_label(raw, args.calibration_operator, threshold=args.tau,
-                                min_free_content=gate)
+    label = label_from_args(raw, args)
+    df = derive_score_and_label(raw, args.calibration_operator, **label.kwargs)
     disp = pd.read_parquet(args.dispersion, columns=KEYS + ["s_dispersion"])
     disp["operator_id"] = disp["operator_id"].astype(str)
     df = df[df["split"] == "test"].merge(disp, on=KEYS, how="inner")
@@ -89,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     df["hi"], df["hnr"] = hi, hnr
     df["hi_label"] = df["hnr"] > args.hnr_threshold
     print(f"[hi] {len(df):,} test regions, {df['patient_id'].nunique()} patients, "
-          f"{region}x{region} regions, {n_draws} draws; D-060 gate free_content > {gate:.4f}")
+          f"{region}x{region} regions, {n_draws} draws; label: {label.text}")
     print(f"[hi] index saturation: {float((df['hi'] > 0.99).mean()):.1%} of regions have "
           "HI > 0.99, so everything below ranks by the hallucination-to-noise ratio")
 

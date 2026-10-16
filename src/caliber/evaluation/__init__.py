@@ -2,11 +2,17 @@
 
 from .bank import (
     CANDIDACY_QUANTILE,
+    LABEL_QUANTILE,
+    LABELS,
+    LabelSpec,
+    add_label_args,
     candidacy_gate,
     cluster_bootstrap_coverage,
     clusters_for_precision,
     derive_score_and_label,
     design_quantile,
+    label_from_args,
+    label_spec,
 )
 from .metrics import (
     bound_agreement,
@@ -32,6 +38,12 @@ from .paired import (
 
 __all__ = [
     "CANDIDACY_QUANTILE",
+    "LABELS",
+    "LABEL_QUANTILE",
+    "LabelSpec",
+    "add_label_args",
+    "label_from_args",
+    "label_spec",
     "bound_agreement",
     "candidacy_gate",
     "cluster_bootstrap_coverage",

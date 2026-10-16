@@ -25,7 +25,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from caliber.evaluation.bank import CANDIDACY_QUANTILE, candidacy_gate, derive_score_and_label
+from caliber.evaluation.bank import add_label_args, derive_score_and_label, label_from_args
 from caliber.scorebank import read_bank, read_manifest
 from caliber.scoring.weights import DEFAULT_GRID, select_weights
 
@@ -35,10 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("bank")
     ap.add_argument("--calibration-operator", default=None)
     ap.add_argument("--alpha", type=float, default=0.10)
-    ap.add_argument("--tau", type=float, default=1.75, help="D37's ratified value")
-    ap.add_argument("--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
-                    help="D-060's candidacy gate, a quantile of free_content on the design "
-                         "split; 0 = the ratio-only label, defective, for comparison only")
+    add_label_args(ap)
     ap.add_argument("--cluster", default="sample_id")
     ap.add_argument("--points", type=int, default=len(DEFAULT_GRID),
                     help="sweep resolution; more points does not make a flat curve sharper")
@@ -49,16 +46,16 @@ def main(argv: list[str] | None = None) -> int:
     provenance = read_manifest(args.bank).get("provenance") or {}
     calib_op = args.calibration_operator or sorted(df["operator_id"].unique())[0]
     try:
-        gate = candidacy_gate(df, args.candidacy_quantile)
+        label = label_from_args(df, args)
     except ValueError as exc:  # no design side: the same refusal select_weights makes
         print(f"[weights] {exc}", file=sys.stderr)
         return 1
-    df = derive_score_and_label(df, calib_op, threshold=args.tau, min_free_content=gate)
+    df = derive_score_and_label(df, calib_op, **label.kwargs)
 
     print(f"[weights] bank             {args.bank}")
     print(f"[weights] reportable       {provenance.get('reportable')}")
     print(f"[weights] calibration op   {calib_op}")
-    print(f"[weights] tau              {args.tau}  (D37)")
+    print(f"[weights] label            {label.text}")
     if not provenance.get("reportable", False):
         print(
             "[weights] the weights selected here are DEVELOPMENT values. The score's "

@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from caliber.evaluation import CANDIDACY_QUANTILE, candidacy_gate, derive_score_and_label
+from caliber.evaluation import add_label_args, derive_score_and_label, label_from_args
 from caliber.evaluation.baselines import auroc
 
 COLUMNS = ["operator_id", "split", "patient_id", "s_free", "s_disagree", "s_residual",
@@ -61,9 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("bank", help="a bank with patient_id (add_patient_ids.py)")
     ap.add_argument("--calibration-operator", default="mri.random1d.R2.c0.08.s0",
                     help="where the combined score's scales are frozen (D26/D27)")
-    ap.add_argument("--tau", type=float, default=1.75, help="D37's ratified value")
-    ap.add_argument("--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
-                    help="the label's candidacy gate (D-060); 0 = the ratio-only label")
+    add_label_args(ap)
     ap.add_argument("--boot", type=int, default=300)
     ap.add_argument("--cluster", default="patient_id",
                     help="the patient column; sample_id where one subject is one patient "
@@ -82,15 +80,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     raw["operator_id"] = raw["operator_id"].astype(str)
 
-    gate = candidacy_gate(raw, args.candidacy_quantile)
-    if gate is not None:
-        print(f"[components] label: ratio > {args.tau} among candidates with free_content > "
-              f"{gate:.4f} (q={args.candidacy_quantile} on the design split)")
-    else:
-        print("[components] WARNING  ratio-only label, the defective one; for comparison only",
-              file=sys.stderr)
-    df = derive_score_and_label(raw, args.calibration_operator, threshold=args.tau,
-                                min_free_content=gate)
+    label = label_from_args(raw, args)
+    print(f"[components] label: {label.text}")
+    df = derive_score_and_label(raw, args.calibration_operator, **label.kwargs)
     df = df[df["split"] == "test"].copy()
     df["neg_free_content"] = -df["free_content"]
     cols = {**DETECTORS, LABEL_CHECK: "neg_free_content"}
