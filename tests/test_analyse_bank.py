@@ -63,7 +63,7 @@ def test_the_bank_carries_every_field_the_criterion_needs(bank):
 
 def test_analyse_bank_runs_to_completion(bank, capsys):
     """The regression itself: the script executed, end to end, exit 0."""
-    assert analyse_bank.main([str(bank), "--label-threshold", "0.05"]) == 0
+    assert analyse_bank.main([str(bank), "--label", "ratio", "--tau", "1.0"]) == 0
     out = capsys.readouterr().out
     assert "coverage by operator" in out
     for method in ("naive_transferred", "matched_per_operator", "group_conditional"):
@@ -75,16 +75,15 @@ def test_analyse_bank_runs_with_the_relative_criterion(bank, capsys):
 
     This smoke bank has no design side, so it opts out of D-060's gate explicitly.
     """
-    assert analyse_bank.main([str(bank), "--relative", "--label-threshold", "1.0",
-                              "--candidacy-quantile", "0"]) == 0
-    assert "err_free / free_content" in capsys.readouterr().out
+    assert analyse_bank.main([str(bank), "--label", "ratio", "--tau", "1.0"]) == 0
+    assert "ratio > 1" in capsys.readouterr().out
 
 
 def test_the_relative_label_is_gated_by_default_and_refused_without_a_design_side(bank):
-    """D-060: the reported relative label carries the candidacy gate, valued on the design
-    split. A bank without one is refused, never quietly given the defective label."""
-    with pytest.raises(ValueError, match="candidacy quantile of 0"):
-        analyse_bank.main([str(bank), "--relative", "--label-threshold", "1.0"])
+    """D-061: the reported label is absolute, valued on the design split. A bank without
+    one is refused and told how to read it, never quietly given another label."""
+    with pytest.raises(ValueError, match="--label ratio"):
+        analyse_bank.main([str(bank)])
 
 
 def test_the_score_is_standardised_not_a_raw_sum(bank, capsys):
@@ -93,13 +92,13 @@ def test_the_score_is_standardised_not_a_raw_sum(bank, capsys):
     The script must say which combination produced its table, so a number can
     never be quoted without it.
     """
-    analyse_bank.main([str(bank), "--label-threshold", "0.05"])
+    analyse_bank.main([str(bank), "--label", "ratio", "--tau", "1.0"])
     assert "standardised affine" in capsys.readouterr().out
 
 
 def test_a_bank_with_no_positives_is_refused_rather_than_divided_by_zero(bank, capsys):
     """An impossible threshold must exit non-zero, not produce an empty table."""
-    assert analyse_bank.main([str(bank), "--label-threshold", "1e9"]) == 1
+    assert analyse_bank.main([str(bank), "--label", "ratio", "--tau", "1e9"]) == 1
     assert "no positive regions" in capsys.readouterr().out
 
 
@@ -166,7 +165,7 @@ def test_every_threshold_is_fitted_on_calibration_rows_and_scored_on_test_rows(
     monkeypatch.setattr(analyse_bank, "mondrian_calibration_results", spy_mondrian)
     monkeypatch.setattr(analyse_bank, "evaluate_groups", spy_evaluate)
 
-    assert analyse_bank.main([str(two_split_bank), "--label-threshold", "0.05"]) == 0
+    assert analyse_bank.main([str(two_split_bank), "--label", "ratio", "--tau", "1.0"]) == 0
 
     # naive once, matched once per operator, mondrian once
     n_ops = bank_df["operator_id"].nunique()
