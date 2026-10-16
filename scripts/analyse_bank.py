@@ -31,11 +31,11 @@ from caliber.calibration import (
 )
 from caliber.calibration.conformal import min_positives
 from caliber.evaluation import (
-    CANDIDACY_QUANTILE,
-    candidacy_gate,
+    add_label_args,
     coverage_curve,
     derive_score_and_label,
     evaluate_groups,
+    label_from_args,
     monotonicity,
 )
 from caliber.operators.distance import compute_distance
@@ -68,22 +68,13 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Analyse a CALIBER score bank (CPU only)")
     ap.add_argument("bank", help="score-bank directory produced by the runner")
     ap.add_argument("--alpha", type=float, default=0.10, help="target region miss rate")
-    ap.add_argument(
-        "--label-threshold", type=float, default=0.10,
-        help="err_free > this; with --relative, err_free/free_content > this",
-    )
-    ap.add_argument(
-        "--relative", action="store_true",
-        help="use the relative criterion err_free/free_content > tau (A1/D21, D-034)",
-    )
-    ap.add_argument(
-        "--candidacy-quantile", type=float, default=CANDIDACY_QUANTILE,
-        help="with --relative: D-060's candidacy gate, a quantile of free_content on the "
-             "design split; 0 = the ratio-only label, defective, for comparison only",
-    )
+    add_label_args(ap)
     ap.add_argument("--calibration-operator", default=None)
     ap.add_argument("--distance", default="null_space_projection")
     ap.add_argument("--normalise", default="ambient")
+    ap.add_argument("--distances-from", default=None,
+                    help="CSV from ct_distances.py: reuse its distances for the calibration "
+                         "operator instead of recomputing them (CT costs minutes per pair)")
     # Weights are non-negative and sum to 1 (D25). Equal thirds is the ratified
     # default, not a placeholder: standardisation is what makes it meaningful.
     ap.add_argument("--w-free", type=float, default=1 / 3)
@@ -122,11 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     # One definition, in the library: `scripts/sizing.py` needs the same derivation, and
     # a second copy is how P-19 happened.
     weights = ScoreWeights(free=args.w_free, disagree=args.w_disagree, residual=args.w_residual)
-    df = derive_score_and_label(
-        df, calib_op, weights=weights,
-        threshold=args.label_threshold, relative=args.relative,
-        min_free_content=candidacy_gate(df, args.candidacy_quantile) if args.relative else None,
-    )
+    label = label_from_args(df, args)
+    df = derive_score_and_label(df, calib_op, weights=weights, **label.kwargs)
     scales = ScoreScales.from_components(
         ScoreComponents(
             s_free=torch.tensor(df[df["operator_id"] == calib_op]["s_free"].to_numpy()),
@@ -136,18 +124,17 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     print(f"[analyse] score {combination_note(weights, scales)}")
-    rule = "err_free / free_content" if args.relative else "err_free"
     print(
         f"[analyse] {int(df['label'].sum()):,} hallucinated regions "
-        f"({df['label'].mean():.1%} of all regions) at {rule} > {args.label_threshold}"
+        f"({df['label'].mean():.1%} of all regions); label: {label.text}"
     )
     if df["label"].sum() == 0:
-        print("[analyse] no positive regions -- lower --label-threshold")
+        print("[analyse] no positive regions under this label")
         return 1
     if bool(df["label"].all()):
         print(
             "[analyse] WARNING  every region is positive, so region FDR carries no "
-            "information. Raise --label-threshold, or use --relative (P-02, D-034).",
+            "information (P-02).",
             file=sys.stderr,
         )
 
@@ -238,11 +225,22 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     # Operator distance, computed from the registry alone.
-    ops = rebuild_operators(manifest)
-    distances = {
-        oid: compute_distance(ops[calib_op], op, args.distance, normalise=args.normalise)
-        for oid, op in ops.items()
-    }
+    if args.distances_from:
+        cached = pd.read_csv(args.distances_from)
+        cached = cached[(cached["calibration"] == calib_op) & (cached["measure"] == args.distance)]
+        distances = dict(zip(cached["deployment"], cached["value"].astype(float), strict=True))
+        distances[calib_op] = 0.0
+        missing = sorted(set(df["operator_id"].astype(str)) - set(distances))
+        if missing:
+            print(f"[analyse] {args.distances_from} lacks {args.distance} from {calib_op} to "
+                  f"{missing}", file=sys.stderr)
+            return 1
+    else:
+        ops = rebuild_operators(manifest)
+        distances = {
+            oid: compute_distance(ops[calib_op], op, args.distance, normalise=args.normalise)
+            for oid, op in ops.items()
+        }
 
     print(f"\n[analyse] coverage by operator (nominal {nominal:.2f})")
     for method in ("naive_transferred", "matched_per_operator", "group_conditional"):

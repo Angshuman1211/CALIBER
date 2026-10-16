@@ -238,6 +238,130 @@ def fig_coverage_vs_flag_area(t: pd.DataFrame, nominal: float, out: Path) -> Pat
     return save(fig, out / "fig3_coverage_vs_flag_area")
 
 
+# -- CT and the two modalities together (T2.8) ------------------------------------------
+
+#: CT operators in severity order within each family: views thin left to right, then arcs.
+CT_SPARSE = ["ct.sparse_view.v180.a180.dfull", "ct.sparse_view.v120.a180.dfull",
+             "ct.sparse_view.v90.a180.dfull", "ct.sparse_view.v60.a180.dfull",
+             "ct.sparse_view.v45.a180.dfull", "ct.sparse_view.v30.a180.dfull"]
+CT_LIMITED = ["ct.limited_angle.v120.a150.dfull", "ct.limited_angle.v120.a120.dfull",
+              "ct.limited_angle.v120.a90.dfull"]
+CT_MARKER = {"sparse_view": "o", "limited_angle": "D"}
+
+
+def ct_tick(oid: str) -> str:
+    parts = oid.split(".")
+    # mathtext keeps the source ASCII (tests/test_console_encoding.py); the figure shows a degree
+    return parts[2][1:] if parts[1] == "sparse_view" else parts[3][1:] + r"$^\circ$"
+
+
+def fig_ct_coverage_by_operator(t: pd.DataFrame, nominal: float, out: Path) -> Path:
+    """Figure 1's layout for CT: naive against group-conditional, both directions."""
+    fig, axes = plt.subplots(1, 2, figsize=(10.5, 3.9), sharey=True)
+    xs = {o: i for i, o in enumerate(CT_SPARSE)}
+    xs.update({o: len(CT_SPARSE) + 0.8 + i for i, o in enumerate(CT_LIMITED)})
+    for ax, (direction, part) in zip(axes, t.groupby("direction", sort=False), strict=True):
+        calib = part["calibrated_at"].iloc[0]
+        for oid, x in xs.items():
+            for method, dx in (("naive", -0.16), ("group", 0.16)):
+                r = part[(part["method"] == method) & (part["deployed_at"] == oid)].iloc[0]
+                point(ax, x + dx, r["coverage"], r["lo"], r["hi"], METHOD[method][1])
+        labels = [ct_tick(o) + ("\n(calib.)" if o == calib else "") for o in xs]
+        ax.set_xticks(list(xs.values()), labels)
+        ax.tick_params(axis="x", length=0)
+        ax.grid(axis="x", visible=False)
+        for text, centre in ((r"sparse-view: views over 180$^\circ$", 2.5),
+                             ("limited-angle: arc at 120 views", len(CT_SPARSE) + 1.8)):
+            ax.text(centre, -0.2, text, transform=ax.get_xaxis_transform(), ha="center",
+                    va="top", color=INK_2, fontsize=8.5)
+        ax.set_ylim(y_floor(t), 1.04)
+        nominal_line(ax, nominal, label=ax is axes[-1])
+        title = ("calibrated at 180 views, deployed to sparser and narrower"
+                 if direction == "ascending" else "calibrated at 30 views, deployed to the rest")
+        ax.set_title(title, loc="left", fontsize=9.5, pad=8)
+    axes[0].set_ylabel("coverage of hallucinated regions")
+    handles = [Line2D([], [], color=c, marker="o", markersize=7, markeredgecolor=SURFACE,
+                      linewidth=2.0, label=lab) for lab, c in METHOD.values()]
+    fig.legend(handles=handles, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.02))
+    fig.suptitle("Coverage under operator shift, CT (TotalSegmentator, 51 test subjects, "
+                 "95% intervals by subject)", x=0.01, ha="left", y=1.07, fontsize=10.5, color=INK)
+    fig.subplots_adjust(bottom=0.22, wspace=0.08, right=0.92)
+    return save(fig, out / "fig4_ct_coverage_by_operator")
+
+
+def ct_distances_from(csv: Path) -> dict[tuple[str, str], float]:
+    d = pd.read_csv(csv)
+    d = d[d["measure"] == "null_space_growth"]
+    return {(r.calibration, r.deployment): float(r.value) for r in d.itertuples(index=False)}
+
+
+def fig_gap_two_modalities(mri: pd.DataFrame, mri_dist: dict, ct: pd.DataFrame, ct_dist: dict,
+                           nominal: float, out: Path) -> Path:
+    """Figure 2 for both modalities: naive transfer's gap on D-053's signed axis.
+
+    Small multiples on one y-axis, so the two curves compare by position. Naive transfer
+    only, as in Figure 2; filled is calibrated at the least aggressive operator, open at the
+    most aggressive, and the marker is the family.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.2), sharey=True)
+    color = METHOD["naive"][1]
+    # MRI families share distances at matched acceleration, so they get figure 2's offsets;
+    # CT operators all sit at distinct x and need none.
+    jitter = {"random1d": -0.02, "equispaced1d": 0.0, "variable_density2d": 0.02}
+    omitted = []
+    for ax, (name, t, dist, marker_of) in zip(axes, (
+            ("MRI (fastMRI knee)", mri, mri_dist, lambda o: FAMILY_MARKER[o.split(".")[1]]),
+            ("CT (TotalSegmentator)", ct, ct_dist, lambda o: CT_MARKER[o.split(".")[1]])),
+            strict=True):
+        lows = t["calibrated_at"].drop_duplicates().tolist()
+        for _, r in t[t["method"] == "naive"].iterrows():
+            key = (r["calibrated_at"], r["deployed_at"])
+            if r["calibrated_at"] == r["deployed_at"] or key not in dist:
+                continue
+            ascending = r["calibrated_at"] == lows[0]
+            if r["hi"] - r["lo"] > 0.5:   # too few positives to estimate (T2.7 Sec. 3)
+                omitted.append(r["deployed_at"])
+                continue
+            family = r["deployed_at"].split(".")[1]
+            x = dist[key] + (jitter.get(family, 0.0) + (-0.03 if ascending else 0.03)
+                             if r["deployed_at"].startswith("mri") else 0.0)
+            gap, glo, ghi = nominal - r["coverage"], nominal - r["hi"], nominal - r["lo"]
+            ax.plot([x, x], [glo, ghi], color=color, linewidth=2.0, solid_capstyle="round",
+                    zorder=2, alpha=0.9)
+            ax.plot([x], [gap], marker=marker_of(r["deployed_at"]), markersize=7,
+                    linestyle="none", markerfacecolor=color if ascending else SURFACE,
+                    markeredgecolor=color, markeredgewidth=1.6, zorder=3)
+        ax.axhline(0.0, color=MUTED, linewidth=1.0, zorder=1)
+        ax.axvline(0.0, color=GRID, linewidth=1.0, zorder=0)
+        ax.set_title(name, loc="left", fontsize=9.5, pad=8)
+        ax.set_xlabel("signed operator distance, null_space_growth (D-053)")
+    axes[0].set_ylabel(r"coverage gap  (nominal $-$ coverage)")
+    axes[0].text(0.02, 0.97, r"$\uparrow$ misses hallucinations", transform=axes[0].transAxes,
+                 color=INK_2, fontsize=8, va="top")
+    axes[0].text(0.55, 0.03, r"$\downarrow$ over-flags", transform=axes[0].transAxes,
+                 color=INK_2, fontsize=8, va="bottom")
+    if omitted:
+        fig.text(0.01, -0.03, f"{len(omitted)} cells omitted, their 95% interval wider than "
+                 "0.5 (too few positives under the absolute label): "
+                 + ", ".join(sorted({o.split('.')[1] + ' ' + o.split('.')[2] for o in omitted})),
+                 color=MUTED, fontsize=7.5, ha="left")
+    handles = (
+        [Line2D([], [], color=INK_2, marker=m, linestyle="none", markersize=6, label=f)
+         for f, m in FAMILY_MARKER.items()]
+        + [Line2D([], [], color=INK_2, marker=m, linestyle="none", markersize=6,
+                  label=f.replace("_", "-")) for f, m in CT_MARKER.items()]
+        + [Line2D([], [], color=INK_2, marker="o", linestyle="none", markersize=6,
+                  label="calibrated at the least aggressive (filled)"),
+           Line2D([], [], color=INK_2, marker="o", linestyle="none", markersize=6,
+                  markerfacecolor=SURFACE, label="calibrated at the most aggressive (open)")])
+    fig.legend(handles=handles, loc="upper center", ncol=4, fontsize=8,
+               bbox_to_anchor=(0.5, 1.07))
+    fig.suptitle("Naive transfer's coverage gap against signed operator distance, both modalities "
+                 "(95% intervals by patient)", x=0.01, ha="left", y=1.14, fontsize=10.5, color=INK)
+    fig.subplots_adjust(wspace=0.08)
+    return save(fig, out / "fig5_gap_vs_distance_two_modalities")
+
+
 def save(fig, stem: Path) -> Path:
     for ext in ("png", "pdf"):
         fig.savefig(stem.with_suffix(f".{ext}"), dpi=200, bbox_inches="tight")
@@ -251,6 +375,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--bank", required=True, help="bank whose manifest lists the operators")
     ap.add_argument("--alpha", type=float, default=0.10)
     ap.add_argument("--out-dir", default="figures")
+    ap.add_argument("--ct-coverage", default=None,
+                    help="CT table from coverage_by_patient.py: adds Figures 4 and 5")
+    ap.add_argument("--ct-distances", default=None,
+                    help="ct_distances.py output, for Figure 5's CT x-axis")
     args = ap.parse_args(argv)
 
     t = pd.read_csv(args.coverage_csv)
@@ -262,6 +390,13 @@ def main(argv: list[str] | None = None) -> int:
                  fig_gap_vs_signed_distance(t, dist, nominal, out),
                  fig_coverage_vs_flag_area(t, nominal, out)):
         print(f"[figures] wrote {path} (+ .pdf)")
+    if args.ct_coverage:
+        ct = pd.read_csv(args.ct_coverage)
+        print(f"[figures] wrote {fig_ct_coverage_by_operator(ct, nominal, out)} (+ .pdf)")
+        if args.ct_distances:
+            path = fig_gap_two_modalities(t, dist, ct, ct_distances_from(Path(args.ct_distances)),
+                                          nominal, out)
+            print(f"[figures] wrote {path} (+ .pdf)")
     return 0
 
 
