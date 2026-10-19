@@ -12,6 +12,8 @@ from .attribution import (
 )
 from .labels import (
     CRITERION_VERSION,
+    DESIGN_QUANTILE,
+    absolute_threshold_from_design,
     MIN_FREE_CONTENT,
     RegionTruth,
     compute_region_truth,
@@ -37,6 +39,8 @@ from .weights import (
 
 __all__ = [
     "CRITERION_VERSION",
+    "DESIGN_QUANTILE",
+    "absolute_threshold_from_design",
     "MIN_FREE_CONTENT",
     "COMBINATION_VERSION",
     "SCORE_VERSION",

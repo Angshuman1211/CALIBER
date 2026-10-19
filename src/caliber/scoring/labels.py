@@ -227,3 +227,62 @@ def positive_rate_sweep(
         raise ValueError("no region has enough free content to apply the relative criterion")
     ratio = err_free[usable] / free_content[usable]
     return [(float(t), float((ratio > t).to(torch.float32).mean())) for t in thresholds]
+
+
+#: Default quantile of `err_free` on the design split for the absolute criterion (D62).
+#:
+#: The criterion is `err_free > eps`, and `eps` is set here rather than carried as a
+#: constant because D-020 established that error magnitudes transfer across neither
+#: modalities nor substrates. P-02's failure -- `err_free > 0.10` flagging every region --
+#: was a property of the *constant*, not of the absolute form: a quantile cannot flag
+#: everything by construction.
+#:
+#: 0.75 puts a quarter of candidate regions on the positive side, which keeps D32's
+#: nine-positives-per-group floor comfortable on every bank the project has produced,
+#: including the thin CT groups introduced by P-34's `ct/{family}/v{views}/a{arc}`.
+DESIGN_QUANTILE = 0.75
+
+
+def absolute_threshold_from_design(
+    df,
+    quantile: float = DESIGN_QUANTILE,
+    err_col: str = "err_free",
+    split_col: str = "split",
+    design_split: str = "design",
+) -> float:
+    """``eps`` for the absolute criterion, as a quantile of ``err_free`` on the design split.
+
+    **Why the design split and nothing else** (D62, following D48): choosing the threshold
+    on calibration rows biases the conformal threshold, and choosing it on test rows biases
+    the coverage number. Both fail silently. A missing design side is therefore a reason to
+    stop rather than to fall back, and this raises.
+
+    **Why a quantile and not a constant.** D-020 measured that an absolute error threshold
+    transfers across neither modalities nor substrates. A quantile is re-derived per
+    substrate from that substrate's own design rows, which is the only form that can be
+    stated once and applied to both MRI and CT.
+
+    **What this replaces.** D37's relative ``tau``, D57's conjunctive floor and D60's
+    candidacy gate were three attempts to make a function of ``err_free`` and
+    ``free_content`` anatomy-neutral within an operator. Measured per operator, none is:
+    the ratio carries a low-anatomy bias (AUROC 0.90-0.94), the absolute form carries a
+    high-anatomy one (0.05-0.42), and the gated ratio sits between (0.66). The correction
+    moved out of the label and into the analysis -- see
+    :func:`caliber.evaluation.detection_by_content`.
+    """
+    if split_col not in df.columns:
+        raise ValueError(
+            f"frame has no {split_col!r} column; the absolute threshold is set on the "
+            "design split and nowhere else (D62)"
+        )
+    design = df[df[split_col].astype(str) == design_split]
+    if design.empty:
+        raise ValueError(
+            f"no rows with {split_col}={design_split!r}. The threshold must be chosen on "
+            "the design side: calibration rows bias the conformal threshold and test rows "
+            "bias the coverage number, both silently (D-051). Regenerate the bank with the "
+            "dataset's design_fraction set."
+        )
+    if not 0.0 < quantile < 1.0:
+        raise ValueError(f"quantile must be in (0, 1), got {quantile}")
+    return float(design[err_col].quantile(quantile))

@@ -155,6 +155,11 @@ from .calibrators import (  # noqa: E402
     calibrate_weighted,
     certification_note,
 )
+from .fallbacks import (  # noqa: E402
+    calibrate_group_weighted,
+    group_weights,
+    nearest_certifiable_set,
+)
 from .conformal import (  # noqa: E402
     CalibrationResult,
     distance_weights,
