@@ -888,6 +888,60 @@ That is roughly k+1 pairs rather than k(k−1)/2. Report `null_space_projection`
 
 ---
 
+### D65 — D62 implemented, and the criterion has a usable band rather than a fix [T1.1/T1.4, amends D62]
+D62 moved the anatomy correction out of the label and into the analysis. Both halves are now built — `absolute_threshold_from_design` and `evaluation/stratified.py`, 8 gates — and building them turned up two things that change what D62 may claim.
+
+**1. My first `anatomy_auc` was one-directional and flattered the result.** I scored the artefact as `AUC(-free_content)`, which assumes the confound runs low-anatomy. That holds for the *ratio* label and is backwards for the *absolute* one, where it runs high-anatomy — so the measure reported `1 - truth` and the verdict came back "the score beats the anatomy artefact in every stratum by at least +0.329". Direction-agnostic (`max(auc, 1-auc)`), the same bank and the same label give **FAILS, worst margin -0.408**. Fixed, and it is the fifth time in this project a statistic has returned the hoped-for number because of how it was framed.
+
+**2. The honest reading of the corrected table, per operator:**
+
+| operator | positives | score AUC by stratum | anatomy AUC by stratum |
+|---|---|---|---|
+| `random1d R8` | 79 | **0.991 / 0.990 / 0.804** | 0.648 / 0.660 / 0.786 |
+| `random1d R4` | 17 (16 in q3) | — / — / 0.583 | — / — / **0.991** |
+
+At R8 the score wins decisively in every stratum. At R4 it loses badly — but the reason is visible: the absolute label puts **16 of 17 positives in the top anatomy tercile**, so within that tercile anatomy predicts the label at 0.991 and there is nothing left for a score to explain.
+
+**Why, from D38's identity.** `err_free² = s_free² + free_content² − 2·s_free·free_content·cos θ`. At **low** `u = s_free/free_content` the invention term is small and `err_free → free_content`: the label *is* anatomy. At **high** `u` the truth term is small and `err_free → s_free`: the label *is* the score, which is the circularity Track 2 found (`corr = 0.9992`). **The criterion is an anatomy meter at one end and a mirror of the score at the other, and is only meaningful in a middle band of `u`.** That is a property of the quantity, not of any threshold placed on it, which is why D37's τ, D57's floor, D60's gate and now D62's ε all failed in the same shape.
+
+**So D62 stands as the right form and is amended in what it promises.** The absolute label plus stratified analysis is the only arrangement that keeps the confound visible instead of buried — but it does not make every cell interpretable. **Report `u` per operator alongside the detection table, and read only the cells where `u` sits in the band.** `R8` qualifies on this bank; `R4` does not, and its numbers should be shown as uninterpretable rather than as a failure of the score.
+
+**What this does not resolve, and I want it on the record before the write-up.** Both ends of the band are consequences of D-016: a prior that recovers none of the hidden content (`cos θ` median 0.073) pushes every region toward the circular end, and a prior that invents little pushes them toward the anatomy end. **The criterion cannot be validated, and the detection numbers cannot be read, until the prior matches the modality.** That is one task, it is Track 2's, and it now gates the label as well as the reportability of every number.
+
+*Implementation notes:* `absolute_threshold_from_design` refuses a bank with no design side rather than falling back (D-051's two silent biases). `detection_by_content` cuts strata **within** operator and offers no cross-operator row at all, so D62's retraction cannot recur through it — pinned by a regression test that builds two operators with opposite biases and checks the report refuses to average them.
+
+---
+
+### D66 — Fallback [7] built: it fixes Tool 2's location error and the phantom grid cannot test it [T1.2, delivers D58's first item]
+`calibration/fallbacks.py`, 14 gates. Two changes from Tool 2, each addressing a measured defect rather than a hypothetical one.
+
+**1. Hard truncation.** Weight is per group and a group may receive *exactly* zero. D52's mechanism is that the alpha-quantile is a lower-tail statistic, so it is set by the lowest-scoring regime in the mixture, and an exponential kernel down-weights smoothly without ever excluding — at `h = 0.08` the far regime still held 14% relative weight, enough to occupy the alpha = 0.10 tail. Removing it outright is the one thing the kernel cannot do. **Tool 2 is the special case with nothing truncated**, so [7] generalises it rather than competing with it (tested: equal groups, no truncation, thresholds agree to 0.15).
+
+**2. Equal mass per group.** Tool 2 weights every *region*, so a group with ten times the regions contributes ten times the mass and a large distant regime outvotes a small near one on size alone. Here each retained group contributes a fixed share, divided among its own regions. **No bandwidth reproduces this**, which is what makes [7] a different method rather than a retuning. Live on CT's `ct/{family}/v{views}/a{arc}` groups after P-34; dormant on the MRI grid where every operator sees every item.
+
+**The selection rule resolves D52's tension instead of restating it.** D52 ended at "accuracy wants concentrated weight, certifiability wants spread weight, and no `h` gives both". But D32 says exactly how much is enough — nine positives at alpha = 0.1 — so `nearest_certifiable_set` adds groups in distance order and stops at the first set that certifies. That is the **tightest** calibration set that can still carry a guarantee, which answers both requirements at once. It reports failure honestly when every group is retained and the result still will not certify.
+
+**Measured on the interior fold where Tool 2 failed:**
+
+| arm | threshold | coverage | flag area |
+|---|---|---|---|
+| oracle (unavailable at deployment) | 0.8152 | 0.902 | 0.874 |
+| Mondrian fallback | 0.5298 | 1.000 | 1.000 |
+| Tool 2 | 0.5658 | 1.000 | 1.000 |
+| **[7] nearest-certifiable** | **0.8926** | 0.666 | 0.599 |
+
+**[7] fixes the location error** — 0.8926 against the oracle's 0.8152, where Tool 2 sat at 0.5658, below the deployment operator's minimum score. It got there by truncating the far group entirely, which is exactly the designed behaviour.
+
+**And it over-shoots, so by D51 it is invalid on this fold.** Coverage 0.666 against nominal 0.90. It retained only the nearest group, whose scores are *higher* than the deployment operator's, so the threshold is too high — which means on this fold [7] reduces exactly to D52's `nearest` arm (identical numbers), because retaining one group *is* using that group's threshold.
+
+**The honest limitation: two candidate groups cannot test [7].** Its content is choosing *how many* groups to retain, and with two there is nothing between "nearest" (under-covers) and "all" (vacuous). The phantom bank has two; the real nine-operator grid has eight candidates per fold, which is where the rule has somewhere to stop. **So [7] is built, correct, reduced to the right special cases, and unevaluated.** One command on Track 2's grid settles it: `tool2_holdout.py` with the arm added.
+
+**One cost to state, because it is not obvious.** Truncation makes the implied weight function discontinuous in operator distance, so T3.3's Lipschitz argument for the smooth kernel does not transfer. **A bound proved for Tool 2 does not cover [7]** — which is the reason [7] is a fallback rather than a replacement, and it belongs in any write-up that reports it.
+
+*Found while building it:* a scaling bug of mine. Passing `1/n_groups` as the test-point weight against group masses normalised to sum to one made the test atom's own probability 0.33 against alpha = 0.10, so the `-inf` atom satisfied the quantile condition alone and every threshold came back `-inf` — presenting as "the method refuses to certify" rather than as a scaling error, and the diagnostic note said so. Fixed, the note now distinguishes the two causes, and there is a regression test.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)

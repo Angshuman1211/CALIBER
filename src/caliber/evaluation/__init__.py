@@ -35,6 +35,7 @@ from .paired import (
     paired_gap_curve,
     paired_method_gap,
 )
+from .stratified import detection_by_content, stratification_verdict
 
 __all__ = [
     "CANDIDACY_QUANTILE",
@@ -67,4 +68,6 @@ __all__ = [
     "paired_coverage_gap",
     "paired_gap_curve",
     "paired_method_gap",
+    "detection_by_content",
+    "stratification_verdict",
 ]

@@ -60,10 +60,12 @@ import argparse
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from caliber.calibration import (
     apply_flags,
+    calibrate_group_weighted,
     calibrate_mondrian,
     calibrate_naive,
     calibrate_weighted,
@@ -213,8 +215,16 @@ def main(argv: list[str] | None = None) -> int:
         # exchangeable unit (D-027). `matched` was worse still: it calibrated on the
         # held-out operator's own rows and scored the same rows, which is why it landed on
         # exactly 0.900, the in-sample artefact P-23 was named for.
-        calib_side = scored[scored[split_col] == "calib"]
-        test_side = scored[scored[split_col] == "test"]
+        # With --allow-in-sample on a single-split bank there are no sides to filter on, so
+        # both become the whole frame. The warning above is the only thing standing between
+        # that and a number someone quotes, which is why it names P-23 explicitly: the first
+        # version of this flag printed the warning and then produced an empty table, which
+        # is a different bug wearing the same message.
+        if {"calib", "test"} <= sides:
+            calib_side = scored[scored[split_col] == "calib"]
+            test_side = scored[scored[split_col] == "test"]
+        else:
+            calib_side = test_side = scored
         pool = calib_side[calib_side["operator_id"] != held_out].copy()
         deploy = test_side[test_side["operator_id"] == held_out].copy()
         if pool.empty or deploy.empty:
@@ -252,11 +262,20 @@ def main(argv: list[str] | None = None) -> int:
             alpha=args.alpha, bandwidth=args.bandwidth,
             split_col="__already_filtered__",
         )
+        # Fallback [7] (D66): truncating group weights, with the retained set chosen as the
+        # nearest groups that still certify. Needs more than two candidate groups to differ
+        # from `nearest`, which is why the phantom bank cannot evaluate it.
+        arms["group_weighted"] = calibrate_group_weighted(
+            pool, deployment_group=deployment_group, distance_of=distance_of,
+            alpha=args.alpha, bandwidth=args.bandwidth,
+            split_col="__already_filtered__",
+        )
 
         for name, report in arms.items():
             flagged = apply_flags(deploy, report, out_col="flag")
             metrics = evaluate(flagged, "flag", args.cluster)
             ess = next(iter(report.results.values())).ess
+            truncation = getattr(report, "truncation", None)
             nominal = 1.0 - args.alpha
             rows.append(
                 {
@@ -269,6 +288,9 @@ def main(argv: list[str] | None = None) -> int:
                     # broken, and its area must not be read as efficiency.
                     "valid": bool(metrics["hi"] >= nominal),
                     "ess": ess,
+                    "retained": (
+                        len(truncation.retained) if truncation is not None else np.nan
+                    ),
                     "certifiable": report.reportable,
                 }
             )
@@ -282,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
         show = part.drop(columns=["held_out"])
         print(show.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
 
-    order = ["matched", "mondrian", "nearest", "weighted"]
+    order = ["matched", "mondrian", "nearest", "weighted", "group_weighted"]
     for label, subset in (
         ("interior deployment operators -- what Q4 is about", table[table["interior"]]),
         (
@@ -317,14 +339,19 @@ def main(argv: list[str] | None = None) -> int:
             arm: int(part["valid"].sum()) == n_folds for arm, part in inner.groupby("arm")
         }
         areas = inner.groupby("arm")["flag_area"].mean()
-        deployable = [a for a in ("mondrian", "nearest", "weighted") if valid.get(a)]
+        deployable = [
+            a for a in ("mondrian", "nearest", "weighted", "group_weighted")
+            if valid.get(a)
+        ]
         print(f"\n[tool2] Q4, on {n_folds} interior fold(s). Valid in every fold: "
               f"{', '.join(deployable) if deployable else 'none'}")
         if "weighted" not in deployable:
             print("        Tool 2 is NOT valid on every interior fold -- it has not earned "
                   "its place here.")
         else:
-            beaten = [a for a in deployable if a != "weighted" and areas[a] <= areas["weighted"]]
+            beaten = [
+                a for a in deployable if a != "weighted" and areas[a] <= areas["weighted"]
+            ]
             if beaten:
                 print(
                     f"        Tool 2 is valid but flags no less area than "
