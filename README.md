@@ -99,8 +99,8 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 
 | File | Owner | What |
 |---|---|---|
-| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D66`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-061` |
+| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D70`, open questions, cross-track contracts |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-062` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
 | `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-31`), unresolved first, plus an index of every decision |
@@ -110,6 +110,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `T1.4_experimental_design.md` | Track 1 | The estimand, the paired intervals, and what the design can and cannot measure |
 | `T1.5_cross_track_integration.md` | Track 1 | Shared interfaces, sign-off record, contracts, adjudication log |
 | `T1.6_analysis_and_course_correction.md` | Track 1 | Phase gate reviews — all three fronts against the central claim, one section per checkpoint |
+| `T1.7_manuscript_method_and_analysis.md` | Track 1 | The manuscript's method and analysis sections — what is claimed, what is not, and the gate on every number |
 | `T2.1_data_and_operator_pipeline.md` | Track 2 | Week 1 record — what was built, the numbers, honest limitations — plus dataset provenance, licensing and download (App. A) |
 | `T2.2_solver_integration.md` | Track 2 | Week 2 record — DPS, DDNM and FlowDPS behind one interface; the Stage-2 split measured on real output |
 | `T2.3_score_bank_and_baselines.md` | Track 2 | Week 3 record — the first fastMRI score bank, both baselines, and why neither can yet be read as a coverage result |
@@ -166,8 +167,8 @@ Owns the central claim, the design of the method, and the decisions that set dir
 | **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19, amended for direction (D47): the gap is not symmetric in the operator pair, so the plotted axis is signed. CT cross-check done: the signed measure orders the CT coverage gaps at ρ = +0.976 (T2.7) |
 | **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | **Substantially delivered** — estimand (D45), operator grid (D50/D61), ablation matrix, stratified reporting (D62/D65). Seed noise floor measured by Track 2 (T2.5 §7) |
 | **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | **Week 1 sign-off delivered** (D19–D24); standing |
-| **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | **Phase 1 gate delivered**; standing |
-| **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | Not started |
+| **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | **Phase 1 and Phase 2 gates delivered** — coverage claims stand, detection claims do not (D67); DPS ablation promoted (D68) |
+| **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | **Method section complete** (it does not depend on the prior); analysis structured with every number gated. `T1.7_manuscript_method_and_analysis.md` |
 
 ### Track 2 — Systems, Data Engineering and Cross-Domain Validation
 

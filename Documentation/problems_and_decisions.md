@@ -942,6 +942,52 @@ At R8 the score wins decisively in every stratum. At R4 it loses badly — but t
 
 ---
 
+### D67 — Coverage claims survive the label defects; detection claims do not [T1.6, Phase 2 gate]
+The separation that decides what the midterm may claim, and it had not been stated anywhere.
+
+**Coverage survives.** O3 and O5 are statements about calibration *behaviour* under a fixed label: a threshold transferred across operators loses coverage, a per-group threshold does not. Both arms are scored against the same label, so its defects change what "hallucination" *means*, not whether the comparison is valid. MRI: naive catches 0.328 [0.151, 0.492] at `variable_density2d R2`, missing nominal with the whole interval in 4 of 8 cells; CT: graded, 0.890 → 0.693 as views thin, below nominal on 13 of 13 splits at four operators. Group-conditional restores in both (MRI 0.895 mean, CT 0.902–0.923).
+
+**Detection does not survive.** It is a claim about the score's merit against a label that is approximately a function of the score. T2.7 measured `err_free ≈ sqrt(s_free² + free_content²)` to Spearman 0.99 — D38's identity at `cos θ ≈ 0` — so the stratified AUROCs of 0.95–1.00 measure the identity. D65 established this on one bank; it now holds on both modalities.
+
+**So the midterm reports the coverage failure and its restoration, with intervals, and does not report detection quality as a result.** Where detection numbers appear they are labelled as a consequence of the identity under a mismatched prior. This is a narrowing of the claim, not a weakening of it: the part that survives is the part the blueprint's O3 and O5 actually assert.
+
+---
+
+### D68 — The decomposition can only be tested on DPS; the solver ablation is promoted from ablation to load-bearing [T1.6/T1.4, Phase 2 gate]
+Two of Track 2's measurements say the operator decomposition is not earning its place on detection, and they say different things.
+
+**The combination result is inside the noise.** The equal-weight score is worse than its best single component in 7 of 9 operators, by 0.002–0.014 AUROC, against a patient-split noise floor of 0.034–0.048 in coverage units. One-sided sign test *p* = 0.090. Honest statement: **no evidence the combination helps** — not that it hurts.
+
+**The dispersion result is the serious one, and its mechanism is the finding.** Posterior dispersion ranks hallucinations within **0.001–0.012 AUROC of `s_disagree`** at every operator. That is not two methods agreeing: **DDNM replaces the range component structurally, so the posterior spread is already confined to the null space.** Dispersion and `s_disagree` are one quantity computed two ways, and on this solver the decomposition *cannot* contribute to `s_disagree` because the solver has already performed it.
+
+**Consequence.** The decomposition is testable only on a solver that does not structurally confine spread to the null space. D-033 measured DPS's null-error share at 0.817–0.852 at 24–48 steps against DDNM's 0.99. **So the solver ablation must include DPS, and it stops being an ablation: it is the only configuration in which the decomposition can earn its keep.** Run on DDNM alone it measures the solver's design rather than the score's.
+
+This is scheduled ahead of everything else in Phase 3, because it is the single experiment that could change what the project is able to claim about its own score.
+
+---
+
+### D69 — The MRI distance curve is not forced; CT carries the curve claim [T1.6/T1.4, Phase 2 gate]
+The headline coverage-gap-against-distance curve works on CT and does not on MRI: ρ = **+0.976** against **+0.316** (from `random1d R2`; +0.556 from R8). The reason is D47's, now confirmed on the full grid — MRI's worst failures sit at matched acceleration across mask families, where the scalar distance is ≈ 0, so a single curve would be a line fitted through two clusters.
+
+**Ruling: MRI is plotted as one line per mask family, and the curve claim is carried by CT.** This is the two-coordinate reading of D47 applied to the figure rather than to the axis definition, and it is also the more honest presentation: the modality where the distance is a genuine scalar gets the scalar axis.
+
+**And the noise floor is the patient split, not the seed** — 0.034–0.048 against 0.007 at R4 and 0.001 at R8. **This retires D59's emphasis**, which asked for a second seed sweep at R8 on the expectation that seed variation grows with acceleration. It does not; it is negligible at both. The bar an ablation effect must clear is ~0.05 coverage, and it belongs printed beside every ablation table.
+
+---
+
+### D70 — The strong form of the cross-domain claim fails; state the weaker one [T1.7/T1.4, §21 R5]
+Surfaced by drafting §0 of the manuscript. The cross-domain claim's strongest form is that the two modalities' coverage-gap curves **collapse onto one curve** against operator distance — which would mean the gap is a function of how far the operator moved and not of the modality, i.e. "the failure is a property of the acquisition in general".
+
+**The evidence already says the strong form fails.** The gap is ordered by signed distance on CT (ρ = +0.976) and barely on MRI (+0.316), because MRI's worst failures sit at matched acceleration across mask families where the scalar distance is ≈ 0 (D47, D69). There is no single curve for the two to collapse onto, so the curve-collapse test — which is Track 1's per the Week 9 card — is answered in the negative before being formally run.
+
+**Ruling: claim the weaker form, which is still the cross-domain result.** *The same failure and the same fix appear in both modalities, and the ordering by distance is demonstrated where the distance is a genuine scalar.* That is what §0 asserts. Claiming collapse would be claiming something the project has measured to be false, and a reviewer with `fig5` in front of them would see it immediately.
+
+**Why this is not a retreat.** The two modalities exercise structurally different operator classes, and that is itself measured rather than asserted: four of the five candidate distances coincide to 1.1e-16 on MRI because a mask operator is diagonal in k-space, and they genuinely differ on CT. A failure that reproduces across *that* difference is the cross-domain claim worth having. The scalar axis working on one of the two is a finding about the axis, which D47 and D69 already own.
+
+*Still owed by Track 1 on CT:* weighted recalibration and fallback [7], both unstarted. The CT grid has the most interior operators in the project, so it is the only place Tool 2 and [7] can be distinguished from the nearest-operator arm — and the bank is on Track 2's machine, so it is a request rather than a run.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)

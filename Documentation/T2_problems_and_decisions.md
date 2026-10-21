@@ -1510,7 +1510,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 61 entries, so a problem in Part I can be
+What lives here instead is the index — 62 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1576,3 +1576,4 @@ traced to the decision that settled it without opening the log.
 | [D-059](decision_log.md) | The relative criterion gains a conjunctive absolute gate; Week 5 fallback ownership | Week 5 | Track 1's entry -- see D57-D59 |
 | [D-060](decision_log.md) | The gate goes on free_content, not err_free; which direction collapses is solver-dependent | Week 5 | Track 1's entry -- see D60, D61 |
 | [D-061](decision_log.md) | The label stops chasing anatomy-neutrality; stratify the analysis instead. Week 8 scope | Week 8 | Track 1's ruling -- see D62-D64 |
+| [D-062](decision_log.md) | Phase 2 gate: coverage claims stand, detection claims do not, DPS ablation promoted | Week 9 | Track 1's gate -- see D67-D69 |

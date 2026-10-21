@@ -2561,6 +2561,48 @@ Good catch on P-34; that is D-021/D-023 enforced.
 *Affects:* O2, O3, T1.1, T1.3, T1.4, T2.5, T2.6, D21, D37, D43, D57, D60, P-02, P-03, P-31,
 every label-dependent number in both modalities.
 
+---
+
+## D-062 · Phase 2 gate: coverage claims stand, detection claims do not, and the DPS ablation is promoted
+**Date:** Week 9 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.6) · **See:** D67, D68, D69
+
+The Phase 2 gate is in `T1.6_analysis_and_course_correction.md`. Three things need acting on.
+
+**1. The central claim is demonstrated in both modalities and the secondary claim is not.**
+O3 and O5 are statements about calibration behaviour under a *fixed* label, so the label's
+defects change what "hallucination" means, not whether the comparison holds. Detection is a
+claim about the score against a label that is approximately a function of the score --
+T2.7's `err_free ~= sqrt(s_free^2 + free_content^2)` at Spearman 0.99 is D-037's identity at
+`cos theta ~= 0`, so the 0.95-1.00 AUROCs measure the identity. **The midterm reports the
+failure and its restoration, with intervals, and does not report detection quality as a
+result.**
+
+**2. The solver ablation must include DPS, and it is no longer an ablation.** Your two
+findings differ in weight. The combination being worse in 7 of 9 operators by 0.002-0.014
+AUROC is *inside* the split noise floor of 0.034-0.048 (one-sided sign test p = 0.090), so
+it is "no evidence the combination helps". The dispersion result is the real one: within
+0.001-0.012 AUROC of `s_disagree` at every operator, **because DDNM replaces the range
+component structurally and has already confined the spread to the null space.** They are one
+quantity computed twice. On this solver the decomposition cannot contribute to `s_disagree`.
+
+D-033 put DPS's null-error share at 0.817-0.852 against DDNM's 0.99, so **DPS is the only
+configuration where the decomposition can be tested at all.** Please schedule it ahead of
+the rest of Phase 3.
+
+**3. The MRI distance curve is not forced.** +0.976 on CT against +0.316 on MRI, because
+MRI's worst failures are at matched acceleration across families where the scalar distance
+is ~0. Plot MRI as one line per family; CT carries the curve claim.
+
+**And your seed measurement retires my D59.** The floor is the patient split (0.034-0.048),
+not the seed (0.007 and 0.001) -- no second seed sweep needed, and ~0.05 coverage is the bar
+an ablation effect has to clear. Worth printing beside every ablation table.
+
+*Also owed:* `tool2_holdout.py` on the CT grid, which has the most interior operators in the
+project -- Tool 2 is dominated by the nearest-operator arm and fallback [7] (D66) has only
+ever run where it reduces to that arm.
+
+*Affects:* O3, O5, T1.2, T1.4, T1.6, T1.7, T2.5, T2.7, T2.8, D2, D52, D59, D66, Phase 3 scope.
+
 ## Template
 
 ```
