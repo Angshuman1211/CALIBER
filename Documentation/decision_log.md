@@ -2603,6 +2603,79 @@ ever run where it reduces to that arm.
 
 *Affects:* O3, O5, T1.2, T1.4, T1.6, T1.7, T2.5, T2.7, T2.8, D2, D52, D59, D66, Phase 3 scope.
 
+---
+
+## D-063 · The holdout harness runs on CT now; interiority was blind to the angular arc
+**Date:** Week 9 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.2/T1.4) · **See:** D71
+
+Weighted recalibration on CT is Track 1's for Week 9. The bank is on your machine, so what I
+could deliver is the harness being able to read it -- and it could not, for two reasons.
+
+**It recomputed distances inline.** Every ordered pair, at minutes per pair on CT.
+`--distances-csv` now reads `ct_distances.py`'s cache and only computes a pair that is
+missing.
+
+**And interiority came from `measurement_dim`, which cannot see an arc change.** Measured on
+real CT operators at 32^2: `180deg/60v` and `90deg/60v` have the **same** measurement count
+(1920), while the signed growth between them is **+0.5029** -- larger than halving the views
+(+0.3370). So **narrowing the arc is the bigger operator shift and the old test scored it as
+no change**, which would have classified every arc fold as an endpoint and dropped it from
+Q4's comparison. Now defined on the signed axis: interior means some calibration operator
+hides more and some hides less, so the weighting interpolates rather than extrapolates. The
+MRI classification is unchanged, and that is a test rather than an assumption.
+
+**What it unblocks.** **The CT grid is the only one in the project with enough interior
+operators to tell Tool 2 and fallback [7] apart from the nearest-operator arm** -- where both
+D52's and D66's verdicts have been stuck, the phantom grid having only two candidate groups.
+Five arms, one command:
+
+```
+PYTHONPATH=src python3 scripts/tool2_holdout.py runs/<ct_run_id> \
+    --distances-csv <ct_distances.csv>
+```
+
+Thanks for wiring the label gate into it -- I hit it immediately and the message told me
+exactly which flag I wanted.
+
+*Affects:* T1.2, T1.4, Q4, D52, D66, Week 9 arm A, the CT grid analysis.
+
+---
+
+## D-064 · The curve-collapse test, and one command to run it
+**Date:** Week 9 · **Status:** ACCEPTED · **Proposed by:** Track 1 (T1.4) · **See:** D72, D70
+
+Sec. 21 R5 is Track 1's and it is now a test rather than a reading of `fig5`. Pooled against
+per-modality fits of gap on signed distance, with bootstrap slope intervals.
+
+**The verdict is a magnitude test, not a significance test.** Collapse requires overlapping
+slope intervals *and* the single curve to cost under **0.05 coverage** in RMSE -- your own
+patient-split floor (D-062). The F-test is reported and does not decide: on a control with
+slopes 0.3025 and 0.3029 it rejected at p = 0.031, because near-zero residuals make a trivial
+intercept difference look decisive. Third time in this project a rejecting test has had to be
+overruled by how much the difference is worth.
+
+**Two caveats it prints rather than hides.** The modalities occupy different distance ranges,
+so a *passing* test extrapolates one law into the other's range -- **a negative result is
+strong, a positive one is weak**, and the summary says so when the ranges are disjoint. A
+permutation test on modality labels is deliberately absent: with disjoint supports the labels
+are not exchangeable.
+
+**What I need from you, and the inputs already exist:**
+
+```
+PYTHONPATH=src python3 scripts/curve_collapse.py \
+    --mri-coverage <mri_coverage.csv> --mri-distances <mri_distances.csv> \
+    --ct-coverage  <ct_coverage.csv>  --ct-distances  <ct_distances.csv>
+```
+
+I did not run it on the real numbers on purpose: the MRI coverage table I hold predates the
+current label, and a number from it could be mistaken for a result. Please run it on
+`naive_transferred` for the claim and on `group_conditional` as the control -- a fix should
+show no trend in either modality, so a collapse there is two flat lines agreeing rather than
+a law.
+
+*Affects:* O5, T1.4, T1.7, Sec. 21 R5, D-053, D-062, `fig5`.
+
 ## Template
 
 ```
