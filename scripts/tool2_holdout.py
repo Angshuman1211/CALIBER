@@ -95,6 +95,24 @@ def group_of(df: pd.DataFrame, operator_id: str) -> str:
     return str(df[df["operator_id"] == operator_id]["calib_group"].iloc[0])
 
 
+def load_distances(path: str, measure: str) -> dict[tuple[str, str], float]:
+    """Precomputed ordered-pair distances, keyed (calibration, deployment).
+
+    CT distances cost minutes per pair at 256^2, and a leave-one-out sweep needs every
+    ordered pair of the grid, so recomputing them inline turns a CPU re-analysis into an
+    overnight job. `ct_distances.py` already caches them; this reads that cache.
+    """
+    frame = pd.read_csv(path)
+    rows = frame[frame["measure"] == measure]
+    if rows.empty:
+        have = sorted(frame["measure"].unique())
+        raise ValueError(f"no rows for measure {measure!r} in {path}; it holds {have}")
+    return {
+        (str(r.calibration), str(r.deployment)): float(r.value)
+        for r in rows.itertuples(index=False)
+    }
+
+
 def evaluate(frame: pd.DataFrame, flag_col: str, cluster_col: str) -> dict[str, float]:
     labels = frame["label"].to_numpy().astype(bool)
     flags = frame[flag_col].to_numpy().astype(bool)
@@ -120,6 +138,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--normalise", default="ambient")
     ap.add_argument("--cluster", default="sample_id")
     ap.add_argument("--split-col", default="split")
+    ap.add_argument("--distances-csv", default=None,
+                    help="precomputed distances from scripts/ct_distances.py. Required in "
+                         "practice on CT, where one pair costs minutes at 256^2 and this "
+                         "harness needs every ordered pair of the grid")
     ap.add_argument("--allow-in-sample", action="store_true",
                     help="proceed on a bank with one split side. Development only: every "
                          "coverage number is then in-sample and lands on nominal by "
@@ -156,15 +178,36 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[tool2] WARNING in-sample: {message}", file=sys.stderr)
 
     ops = rebuild_operators(manifest)
-    # A deployment operator is interior if some calibration operator measures more of
-    # k-space and some measures less. Weighting can only interpolate between the regimes
-    # it holds, so this distinction decides what the fold is even testing.
-    measured = {o: int(ops[o].descriptor().measurement_dim) for o in operators}
-    interior = {
-        o: any(measured[x] > measured[o] for x in operators if x != o)
-        and any(measured[x] < measured[o] for x in operators if x != o)
-        for o in operators
-    }
+    cached = (
+        load_distances(args.distances_csv, "null_space_growth")
+        if args.distances_csv else {}
+    )
+
+    def signed(a: str, b: str) -> float:
+        """Signed growth from a to b, from cache where available."""
+        if (a, b) in cached:
+            return cached[(a, b)]
+        if (b, a) in cached:
+            return -cached[(b, a)]
+        return float(
+            compute_distance(
+                ops[a], ops[b], measure="null_space_growth", normalise=args.normalise
+            )
+        )
+
+    # A deployment operator is interior when some calibration operator hides *more* than it
+    # does and some hides *less* -- i.e. the retained regimes bracket it on the signed axis,
+    # so the weighting can interpolate rather than extrapolate (D52: it cannot extrapolate).
+    #
+    # The first version tested this on `measurement_dim`, which works on MRI masks and is
+    # wrong on CT: narrowing the angular arc at a fixed view count changes what the operator
+    # hides while leaving the measurement count untouched, so every arc change would have
+    # been classified as an endpoint and the folds that matter most on CT thrown away.
+    interior = {}
+    for o in operators:
+        others = [x for x in operators if x != o]
+        growth = [signed(o, x) for x in others]
+        interior[o] = any(g > 0 for g in growth) and any(g < 0 for g in growth)
     print(f"[tool2] bank             {args.bank}")
     print(f"[tool2] reportable       {provenance.get('reportable')}")
     print(f"[tool2] operators        {len(operators)}")
@@ -194,14 +237,24 @@ def main(argv: list[str] | None = None) -> int:
         deployment_group = group_of(scored, held_out)
         others = [o for o in operators if o != held_out]
 
-        distance_of = {
-            group_of(scored, o): float(
+        metric_cache = (
+            load_distances(args.distances_csv, args.distance) if args.distances_csv else {}
+        )
+
+        def metric(a: str, b: str) -> float:
+            # The weighting needs a *metric* (D-053: the signed axis is for plotting), so
+            # this is symmetric and either stored order will do.
+            if (a, b) in metric_cache:
+                return metric_cache[(a, b)]
+            if (b, a) in metric_cache:
+                return metric_cache[(b, a)]
+            return float(
                 compute_distance(
-                    ops[held_out], ops[o], measure=args.distance, normalise=args.normalise
+                    ops[a], ops[b], measure=args.distance, normalise=args.normalise
                 )
             )
-            for o in others
-        }
+
+        distance_of = {group_of(scored, o): metric(held_out, o) for o in others}
         nearest = min(others, key=lambda o: distance_of[group_of(scored, o)])
 
         # Calibration data is every operator *except* the held-out one, restricted to the

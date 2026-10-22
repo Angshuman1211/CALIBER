@@ -14,6 +14,7 @@ from .bank import (
     label_from_args,
     label_spec,
 )
+from .collapse import CollapseResult, curve_collapse_test
 from .metrics import (
     bound_agreement,
     coverage_curve,
@@ -70,4 +71,6 @@ __all__ = [
     "paired_method_gap",
     "detection_by_content",
     "stratification_verdict",
+    "CollapseResult",
+    "curve_collapse_test",
 ]

@@ -988,6 +988,63 @@ Surfaced by drafting §0 of the manuscript. The cross-domain claim's strongest f
 
 ---
 
+### D71 — The leave-one-out harness could not run on CT, for two reasons neither of which announces itself [T1.2/T1.4, Week 9]
+Weighted recalibration on CT is Track 1's per the Week 9 card. The CT bank lives on Track 2's machine, so the deliverable here is the harness being *able* to run on it — and it could not, for two reasons.
+
+**1. It recomputed every ordered pair's distance inline.** On CT one pair costs minutes at 256², and a leave-one-out sweep needs every ordered pair of the grid. `ct_distances.py` already caches them, so `--distances-csv` now reads that cache, falling back to computing a pair only when it is absent. A CPU re-analysis stays a CPU re-analysis.
+
+**2. Interiority was decided from `measurement_dim`, which is blind to an angular-arc change.** This matters more, and it is the kind of defect that produces a quiet wrong answer rather than an error. Measured on real CT operators at 32²:
+
+| operator | `measurement_dim` | signed growth from `180°/60v` |
+|---|---|---|
+| `180°/60v` | 1920 | — |
+| `90°/60v` | **1920** | **+0.5029** |
+| `180°/30v` | 960 | +0.3370 |
+
+**Narrowing the arc at a fixed view count changes nothing `measurement_dim` can see, and it is the larger operator shift of the two** — bigger than halving the views. Under the old test every arc fold would have been classified as an *endpoint* and dropped from Q4's comparison, and the arc folds are a large part of what CT is in the project for.
+
+**Fixed by defining interiority on the signed axis**: a deployment operator is interior when some calibration operator hides more than it does and some hides less, so the retained regimes bracket it and the weighting can interpolate rather than extrapolate (D52's constraint). That is the right test in both modalities and it is measured from the same quantity the figure plots.
+
+**The MRI classification is unchanged** by the generalisation — R4 interior between R2 and R8, endpoints still endpoints — which is asserted as a test rather than assumed, because a generalisation that moves the case it generalises from is a different change.
+
+**What this unblocks, and what is still owed.** `tool2_holdout.py` now runs on a CT bank with five arms — matched, Mondrian, nearest, Tool 2, and fallback [7] — reading cached distances. **CT is the only grid in the project with enough interior operators to distinguish Tool 2 and [7] from the nearest-operator arm**, which is where D52's and D66's verdicts have both been stuck. The bank is not local, so this is one command for Track 2:
+
+```
+PYTHONPATH=src python3 scripts/tool2_holdout.py runs/<ct_run_id> \
+    --distances-csv <ct_distances.csv>
+```
+
+---
+
+### D72 — The curve-collapse test is built, and its verdict rests on magnitude rather than significance [T1.4, §21 R5, delivers D70's test]
+D70 ruled that the cross-domain claim's strong form fails and the weak form is what the manuscript asserts. That was a reading of a figure. §21 R5 asks for the *test*, and a reviewer will ask for the statistic, so here it is: `evaluation/collapse.py` and `scripts/curve_collapse.py`, 12 gates.
+
+**What it compares.** Two nested fits of coverage gap on signed operator distance — **pooled** (one slope and intercept for both modalities, the strong form) against **separate** (one each, the weak form) — with bootstrap intervals on each modality's slope.
+
+**The design decision, and it came from a control that failed.** My first version let an F-test decide. On a control with slopes **0.3025 and 0.3029** and overlapping intervals, it returned **p = 0.031** and declared no collapse. The F-test asks whether the fits differ *at all*, and it is hypersensitive where residuals are small: `RSS_separate` was near zero, so a negligible intercept difference filled the denominator.
+
+**So the verdict rests on magnitude against D69's noise floor.** Collapse requires the slope intervals to overlap *and* the single curve to cost less than **0.05 coverage** in RMSE — the patient split's own spread. The F-test is still reported, labelled as not decisive. This is the same significance-versus-magnitude distinction I have had to apply to Track 2's component ordering (D68) and to my own stratified verdict (D65); it is the third time in this project that a test which *rejects* has had to be overruled by a measurement of how much the difference is worth.
+
+**Validated on both controls:** equal slopes collapse (+0.0020 against the 0.05 floor) despite the F-test rejecting; a 25× slope difference does not (+0.1322, intervals disjoint).
+
+**Two caveats the result carries rather than hides.**
+- **The modalities occupy different distance ranges**, so a passing test would extrapolate one modality's law into the other's range. The summary prints a CAUTION when the ranges are disjoint, and the asymmetry is stated for the write-up: **a negative result here is strong, a positive one is weak.**
+- **A permutation test on modality labels is deliberately not offered.** With non-overlapping distance supports the labels are not exchangeable, so the permutation null would be answering a different question.
+
+**I also wrote the F survival function out rather than importing scipy** — one function is a heavyweight import on the analysis path, and scipy has broken a development install in this project. That makes it a liability unless checked, so it is verified against **seven published critical values to within 5e-3**, plus monotonicity and the `f = 0 → p = 1` edge case.
+
+**Not run on the real numbers, deliberately.** It needs the two coverage tables and the two distance CSVs; the MRI table I hold locally predates the current label, and producing a number from it risks that number being quoted. One command for Track 2, and the inputs are artefacts that already exist:
+
+```
+PYTHONPATH=src python3 scripts/curve_collapse.py \
+    --mri-coverage <mri_coverage.csv> --mri-distances <mri_distances.csv> \
+    --ct-coverage  <ct_coverage.csv>  --ct-distances  <ct_distances.csv>
+```
+
+Run it on `naive_transferred` for the claim, and on `group_conditional` as the control: a fix should show **no trend in either modality**, so a collapse there would be two flat lines agreeing, which is not evidence of a law.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
