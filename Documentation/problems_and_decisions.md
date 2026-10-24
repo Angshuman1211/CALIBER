@@ -1045,6 +1045,124 @@ Run it on `naive_transferred` for the claim, and on `group_conditional` as the c
 
 ---
 
+### D73 — The dispersion baseline is compared on the coverage axis, not the detection axis [T1.4, answers the D68 risk from the other side]
+D68 named the risk that sinks Track 1's own contribution: posterior dispersion ranks hallucinations within **0.001–0.012 AUROC** of `s_disagree` at every operator, so the decomposition appears to buy nothing. The planned answer was the DPS ablation, which needs Track 2's GPU.
+
+**There is a second answer, and it needs no GPU: the comparison was being held on the wrong axis.** `scripts/dispersion_baseline.py evaluate` reports AUROC and AP and nothing else — a pure detection comparison. D67 had already ruled detection numbers unreportable on this bank, because the label is near-determined by the score. So the number that threatens the contribution was measured on the axis the project disqualified, while the axis the project actually claims — coverage under operator shift — had never been run against the baseline at all. `scripts/coverage_by_patient.py` takes no `--score` flag; it is hardwired to CALIBER's score.
+
+**The estimand.** Absolute coverage is not comparable between detectors: different scales, different thresholds, different flag areas. The *loss from transferring* is, because it is within-detector:
+
+    penalty(d) = coverage(d, threshold fitted at the deployment operator)
+               - coverage(d, threshold fitted elsewhere)
+    delta      = penalty(baseline) - penalty(CALIBER)
+
+Each detector is measured against itself first, and only the two self-comparisons are compared. `delta > 0` is the decomposition buying **transferability** rather than detection power — which is the project's thesis, and is exactly what dispersion has no mechanism for, since nothing about full-image spread tracks what the operator changed.
+
+**This also survives the label's defects, and for a structural reason rather than by hope.** Both detectors are scored against the same label, so a label that is partly a function of CALIBER's score inflates CALIBER's coverage *in both of its arms equally* and cancels in the penalty. That is an argument about the estimand; it is not a repair of the label and does not license reading the AUROCs again.
+
+**I shipped this with a defective interval and the null caught it.** The first version resampled the test patients and held the thresholds fixed. But a split-conformal threshold is a single order statistic of a few dozen positives, and its variation is the *larger* term — so the interval measured patient variation, ignored threshold variation, and read as tight. Measured on a 10-calibration-patient fixture with **nothing drifting**: `|delta|` averaged **0.0386** and reached **0.1277**, against the 0.02 floor I had pre-registered. It would have called threshold noise a CALIBER win most of the time. This is the seventh instance of the project's recurring failure — a statistic returning the hoped-for number — and the fourth of them mine.
+
+**The fix is to resample the calibration side too and refit every threshold per replicate.** `_tau_replicates` calls `split_threshold` rather than reimplementing it, so the flooring rule and the `-inf` for an uncertifiable group are identical to the point estimate's. Validated both ways:
+
+| fixture | result |
+|---|---|
+| null, 40 fixtures, nothing drifts | interval covers zero **40/40**, **zero** directional verdicts |
+| 1.5-separation drift, 20 patients | detected **16/16** |
+| 0.75-separation drift | 10/16 at 20 patients, **15/16** at 40 |
+| interval width | 0.29 at 20 patients → 0.20 at 40 → 0.14 at 80 |
+
+**Two consequences for how this is read, both of which weaken what can be claimed.**
+- **A single detector's penalty is not evidence of transfer failure.** With no drift it is centred on zero but reaches 0.05 at 10 calibration patients (0.014 at 100). Only the difference between two detectors on the same patients is reportable.
+- **Equivalence now requires the whole interval inside the floor, not the point estimate.** `abs(delta) <= floor` would have called the null "the two transfer alike" off an estimate of 0.015 with an interval of ±0.15. At ~40 patients and a 0.02 floor that condition is unreachable, so the honest verdict on this bank will usually be **`undetermined`**, and `floor_for_equivalence` reports what it would take to leave it. The project cannot establish detector equivalence on the coverage axis at this sample size; it can detect a difference of ~0.2 coverage points.
+
+`evaluation/transfer.py` + `scripts/transfer_baseline.py`, 26 gates. The GPU step is already done — the 0.001–0.012 numbers prove `dispersion.parquet` exists — so this is one CPU command on Track 2's machine:
+
+```
+PYTHONPATH=src python3 scripts/transfer_baseline.py runs/<run_id>_by_patient \
+    --low mri.random1d.R2.c0.08.s0 --high mri.random1d.R8.c0.08.s0 \
+    --dispersion runs/<analysis>/dispersion.parquet
+```
+
+**Not run on the real bank, deliberately** — the local bank is calibration-only with 3 samples, and the guards correctly refuse it.
+
+### D74 — The hallucination label thresholds a direction, not a magnitude [T1.1, attacks D67's cause]
+D67 ruled detection claims unreportable because `err_free ≈ sqrt(s_free² + free_content²)` at Spearman 0.99 — the project's own identity at `cos θ ≈ 0` — so the 0.95–1.00 AUROCs measure the identity. Four label forms were tried and **all four thresholded a magnitude**: `err_free`, the ratio, the ratio under a candidacy gate, `err_free` under a design quantile. Each inherited the same tautology, which is why moving the threshold never fixed it.
+
+`cos θ` is the other coordinate of the same decomposition and it is **scale-free**: it says which way the invented content points, not how much there is. `attribution.py` has inverted the identity to recover it since Q6; no label had ever used it. D74's label is `cos θ < kappa`, with `kappa` a design-split quantile (0.25, pre-registered).
+
+**Why this is the right coordinate, physically.** A region where the prior recovered the hidden anatomy and one where it invented structure can carry *identical* `err_free`. Only the direction separates them, and the project's own definition (Sec. 4) says the first is reconstruction and a flag firing on it is a false positive.
+
+**Measured on the w02 M4Raw bank** (real prior, 384 regions — a smoke bank, not a reported one):
+
+| quantity | value |
+|---|---|
+| identity residual, max relative | **0.000e+00** — `cos θ` exactly recoverable |
+| `cos θ` spread | sd **0.0892**, range [−0.338, +0.269], median 0.073 |
+| ρ(`err_free`, `hypot(s_free, free_content)`) | **+0.971** ← what a magnitude label inherits |
+| ρ(`cos θ`, `s_free`) | **−0.435** ← what the direction label inherits |
+
+**The honest claim is that the dependence is moderate rather than algebraic, not that it is absent.** Nothing built from `(s_free, free_content, err_free)` can be independent of a score built from `s_free`, because the identity ties all three. What changes is that the score *can now fail* against this label, where against a magnitude label it could not.
+
+**And on the preliminary evidence it partly does fail.** Per operator, direction-agnostic (`max(auc, 1-auc)`, D65's rule), against the `free_content` anatomy control:
+
+| operator | label | score | anatomy | excess |
+|---|---|---|---|---|
+| R4 | magnitude | 0.572 | 0.946 | **−0.374** |
+| R4 | alignment | 0.618 | 0.770 | **−0.152** |
+| R8 | magnitude | 0.881 | 0.579 | +0.302 |
+| R8 | alignment | 0.615 | 0.515 | **+0.100** |
+
+So the direction label **removes the saturation** — AUCs fall from 0.88 to a believable 0.62 — and **halves the anatomy deficit at R4**, but does not by itself rescue a detection claim: at the milder operator the anatomy control still wins. Two caveats: R4 carries only 16–17 positives, barely above D32's nine-positive floor, so those AUCs are very noisy; and my first reading of this table was **pooled**, which gave `+0.097` and hid the sign reversal between operators — D60's retracted error, reproduced in the same session as the module built to avoid it.
+
+**One trap, encoded as a test rather than a comment.** A label like `s_free · sin θ` — invented *mass* rather than direction — looks more physical and restores the tautology intact: `sin θ ≈ 1` wherever `cos θ ≈ 0`, which is nearly everywhere on this bank, so the product collapses back to `s_free` (ρ > 0.95 measured). Do not "improve" the label this way.
+
+Undefined-`cos θ` regions are labelled **negative and counted**, never dropped: dropping them would make the label's support depend on score magnitude, which is the same confound by another route. `label_comparison.py` refuses any bank failing the identity, because `cos θ` is meaningless there.
+
+`attribution.py` + `evaluation/bank.py` (label `alignment`) + `scripts/label_comparison.py`, 17 gates. **D-061's absolute label remains the reported one** until this is run on a reportable bank.
+
+### D75 — Tool 2's defeat by the nearest-operator arm may be a property of the grid, not the method [T1.2/T1.4]
+Every grid run so far reports Tool 2 as valid but flagging no less area than `nearest`, recorded as a negative result. That comparison has a feature of the **grid** built into it: these grids are dense, so each held-out operator has a calibration operator close enough that borrowing its threshold wholesale is nearly right. Weighting cannot beat `nearest` when `nearest` is already nearly `matched`, and that says more about the operator grid than about the method.
+
+`--exclude-nearest N` drops the N closest calibration operators along with the held-out one, posing the deployment case Tool 2 was argued for (§9, D4): an operator with no near neighbour to borrow from. The `nearest` arm is recomputed over the survivors, so both arms face the same handicap.
+
+**The trap, and it is why interiority had to move inside the fold loop.** Removing a neighbour can leave a previously bracketed operator at the end of the retained signed axis, where the weighting can only extrapolate (D52). Counting such a fold as interior would credit Tool 2 with an interpolation it cannot perform. `is_interior` now takes the retained list rather than the whole grid, and the dropped operators leave the calibration pool as well — otherwise the weighting would still be borrowing from the operator the fold removed.
+
+A re-analysis of an existing bank; no new GPU. Both readings should be reported: Tool 2 buys nothing on a dense grid, and the open question is whether it buys anything on a sparse one. The harness now says so itself when `nearest` wins and the flag is unset.
+
+### D76 — "The weights could not be selected" and "the result depends on the weights" are different claims [T1.1, converts D54]
+D54 recorded that 8 design patients cannot separate any weighting from any other, so `WeightSelection` reports `discriminated=False` and the project ships equal weights as a stated default (D25). That reads as a gap: a score whose weights were never chosen.
+
+But only the first claim was ever established. If the coverage result holds at **every** weighting on the sweep, the inability to select one costs the project nothing — and that is a stronger position than a selected weight, which would invite the question of what the result would have been at another.
+
+`weight_sensitivity` sweeps `w_free` across D28's grid and recomputes the quantity the paper leads with — the paired within-patient coverage restoration — at each point. The verdict has **two** conditions, not one: the restoration must hold at every weighting, *and* the spread across the grid must be smaller than one weighting's own interval. A flat curve is evidence of insensitivity only if a single point is determined to better than the curve's spread; without that second condition it is a curve nobody can see the shape of, which is D72's lesson pointed the other way.
+
+The label is held fixed and **asserted** to be, per weight: every label form is a function of cached truth columns (and, for D74, of `s_free`), none of which move with the weighting. A label that moved would make each row answer a different question.
+
+**Also delivered: flag area at matched coverage** (`area_at_matched_coverage`). D39 ruled that detectors compete on area because a conformal threshold pins the miss rate; D51 added that an area means nothing unless the arm is valid, after the `nearest` arm posted the project's smallest area at coverage 0.547. Fixing *coverage* and comparing area closes that loop by construction — the degenerate detector cannot win, because reaching the target is what it is charged for, and a constant score has to flag the whole image to do it. Independent of any AUROC, so it stays available under D67: a statement about operating points, not about ranking.
+
+`evaluation/sensitivity.py` + `evaluation/transfer.py` + `scripts/weight_sensitivity.py`, 16 gates including a negative control — a bank where `s_disagree` is pure noise must **not** be reported as weight-insensitive.
+
+---
+
+### D77 — The preprint cut excludes both novel tools and leads with the failure [T1.7, delivers §23's first publication]
+`T1.7_preprint_draft.md`. The cut is narrower than the blueprint's §23 sketch, in three specific ways, each because the excluded thing is either not ready or not true.
+
+**Out: Tool 2.** Valid, and flags no less area than the nearest-operator arm on every grid run (D71). D75 raises the real possibility that this is a property of dense grids rather than of the method, and that experiment has not run. **A preprint is the wrong place to debut an unresolved negative about your own primary contribution** — it fixes the framing in the literature before the question is settled, and if `--exclude-nearest` later vindicates the weighting, the preprint has already conceded it.
+
+**Out: Tool 3.** T3.6 does not exist and the √null_frac law was refuted at p = 6.9e-15. §23 always planned a separate analytical paper; this just confirms the split was right.
+
+**Out: every detection claim**, per D67.
+
+**What is left is a complete contribution**: a demonstrated failure, a demonstrated fix, two modalities with structurally different operators, and the failure graded by a quantity computable from the operators alone. Every number in it is one Track 2 has already measured and reported — CT 0.890→0.693 along views and 0.888→0.796 along arc with 13/13-split failures at the severe end; group-conditional restoring 0.902–0.923 on CT and 0.884–0.901 on MRI; ρ = +0.976 for the signed distance against +0.762 symmetric. Nothing is invented and nothing waits on a run.
+
+**The title leads with the negative.** "Conformal reliability certificates ... do not survive a change of acquisition operator." The measured result *is* the failure; the fix is textbook once the failure is established, and claiming the fix as the contribution invites the correct objection that group-conditional CP is Vovk et al. Leading with the failure also makes the paper's novelty defensible at a workshop-tier venue, which is where this realistically lands.
+
+**§6.4 is promoted from limitation to result, and it is the part most likely to outlive the rest.** D67's finding — that a magnitude-based hallucination criterion becomes a function of the score under a mismatched prior, via the identity, at Spearman 0.99 — is a caution about how *the field* evaluates these detectors, not just about our bank. It comes with the identity that predicts when it happens, the four criteria that all inherit it, the anatomy control that beats the score (0.946 against 0.572), the pooling error that reads as "exactly chance" (0.499 pooled, 0.662 within operator), and D74's direction-based alternative. A reader can apply all of that without using anything else in the paper.
+
+**One hard blocker remains: medical weights (D-016).** The draft states at §6's head that every number is development output and why. The structure of the results should survive the prior change; the magnitudes will not.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
