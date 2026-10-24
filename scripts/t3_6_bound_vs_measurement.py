@@ -90,7 +90,11 @@ def main(argv=None) -> int:
         source = f"{bank} (reportable={prov.get('reportable', 'unknown')})"
     else:
         ap.error("give a bank directory or --synthetic")
-    label = label_from_args(df, args)
+    try:
+        label = label_from_args(df, args)
+    except ValueError as exc:
+        print(f"[t3.6] cannot value the label: {exc}")
+        return 2
     operators = sorted(df["operator_id"].unique())
     print(f"[t3.6] {source}: {len(df):,} rows, {len(operators)} operators")
     print(f"[t3.6] label: {label.text}")

@@ -72,7 +72,10 @@ class PairReport:
         return bool(self.gap <= self.ks_cond + 1e-9)
 
     @property
-    def holds_rate(self) -> bool:
+    def holds_rate(self) -> bool | None:
+        """``None`` when the rate bound is undefined (relative label, or a zero distance)."""
+        if not np.isfinite(self.rate_bound):
+            return None
         return bool(self.gap <= self.rate_bound + 1e-9)
 
     def as_row(self) -> dict:
