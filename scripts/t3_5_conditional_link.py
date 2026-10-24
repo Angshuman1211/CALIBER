@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 
 import numpy as np
+import torch
 
 from caliber.operators.distance import null_space_projection_distance
 from caliber.scoring.score import ScoreWeights
@@ -32,9 +33,11 @@ from caliber.theory import joint_cdf_gap as sup_joint_gap
 from caliber.theory import ks_distance
 from caliber.theory.harness import (
     HarnessConfig,
+    absolute_epsilon,
     frozen_scales,
     make_mri,
     positive_mask,
+    positive_mask_absolute,
     run_trials,
 )
 
@@ -43,6 +46,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--solver", default="prior", choices=["noise", "prior"])
     ap.add_argument("--trials", type=int, default=150)
+    ap.add_argument("--label", default="absolute", choices=["absolute", "ratio"],
+                    help="D-061 absolute label (default) or the superseded relative ratio")
     args = ap.parse_args(argv)
 
     cfg = HarnessConfig(solver=args.solver, center_fraction=0.04)
@@ -50,21 +55,39 @@ def main(argv=None):
     cal = make_mri(cfg, "random1d", 2)
     scales = frozen_scales(cal, cfg)
     base = run_trials(cal, cfg, args.trials, with_truth=True)
-    ratio_cal = base.err_ratio().numpy()
-    tau = float(np.quantile(ratio_cal, 0.6))
+    accs = (3, 4, 8, 16)
+    deps = {acc: make_mri(cfg, "random1d", acc) for acc in accs}
+    sets = {acc: run_trials(deps[acc], cfg, args.trials, with_truth=True) for acc in accs}
+    if args.label == "ratio":
+        tau = float(np.quantile(base.err_ratio().numpy(), 0.6))
+
+        def label_of(ts):
+            return positive_mask(ts, tau).numpy().ravel()
+
+        text = f"relative ratio tau={tau:.3f} (superseded)"
+    else:
+        pooled = type(base)(
+            torch.cat([base.components] + [sets[a].components for a in accs]),
+            list(base.truth) + [t for a in accs for t in sets[a].truth],
+        )
+        eps = absolute_epsilon(pooled, 0.75)
+
+        def label_of(ts):
+            return positive_mask_absolute(ts, eps).numpy().ravel()
+
+        text = f"absolute err_free > {eps:.4f} (D-061, 0.75 quantile pooled)"
     sa = base.scores(w, scales).numpy().ravel()
-    la = positive_mask(base, tau).numpy().ravel()
+    la = label_of(base)
     pi_a = la.mean()
-    print(f"solver={args.solver}  trials={args.trials}  tau={tau:.3f}  pi_cal={pi_a:.3f}\n")
+    print(f"solver={args.solver}  trials={args.trials}  label: {text}  pi_cal={pi_a:.3f}\n")
     print(
         f"{'dep':>4} {'d_op':>6} {'pi_dep':>7} {'P_flip':>7} {'cross':>7} {'supG':>7} "
         f"{'alg bound':>9} {'d_K^+':>7} {'holds':>6} {'d_K^+/sqrt d':>13} {'P_flip/sqrt d':>14}"
     )
-    for acc in (3, 4, 8, 16):
-        dep = make_mri(cfg, "random1d", acc)
-        ts = run_trials(dep, cfg, args.trials, with_truth=True)
+    for acc in accs:
+        dep, ts = deps[acc], sets[acc]
         sb = ts.scores(w, scales).numpy().ravel()
-        lb = positive_mask(ts, tau).numpy().ravel()
+        lb = label_of(ts)
         d = null_space_projection_distance(cal, dep)
         flip = float((la != lb).mean())
         cross = crossing_prob(sa, sb)

@@ -25,15 +25,18 @@ from __future__ import annotations
 import argparse
 
 import numpy as np
+import torch
 
 from caliber.calibration.conformal import split_threshold
 from caliber.scoring.score import ScoreWeights
 from caliber.theory import ks_distance, tv_distance
 from caliber.theory.harness import (
     HarnessConfig,
+    absolute_epsilon,
     frozen_scales,
     make_mri,
     positive_mask,
+    positive_mask_absolute,
     run_trials,
 )
 
@@ -59,6 +62,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--solver", default="noise", choices=["noise", "prior"])
     ap.add_argument("--trials", type=int, default=300)
+    ap.add_argument("--label", default="absolute", choices=["absolute", "ratio"],
+                    help="D-061 absolute label (default) or the superseded relative ratio")
     args = ap.parse_args(argv)
     rng = np.random.default_rng(0)
 
@@ -74,10 +79,19 @@ def main(argv=None):
     }
     scores = {a: sets[a].scores(w, scales).numpy() for a in accs}  # (trials, regions)
     ratios = {a: sets[a].err_ratio().numpy() for a in accs}
-    tau = float(np.quantile(ratios[2], 0.6))
-    labels = {a: positive_mask(sets[a], tau).numpy() for a in accs}
-    print(f"solver={args.solver}  alpha={ALPHA}  relative-criterion tau={tau:.3f} "
-          f"(0.6 quantile of the R=2 ratio, as a design split would set it)")
+    if args.label == "ratio":
+        tau = float(np.quantile(ratios[2], 0.6))
+        labels = {a: positive_mask(sets[a], tau).numpy() for a in accs}
+        text = f"relative ratio, tau={tau:.3f} (0.6 quantile of the R=2 ratio; superseded)"
+    else:
+        pooled = type(sets[2])(
+            torch.cat([sets[a].components for a in accs]),
+            [t for a in accs for t in sets[a].truth],
+        )
+        eps = absolute_epsilon(pooled, 0.75)
+        labels = {a: positive_mask_absolute(sets[a], eps).numpy() for a in accs}
+        text = f"absolute err_free > {eps:.4f} (0.75 quantile pooled over operators, D-061)"
+    print(f"solver={args.solver}  alpha={ALPHA}  label: {text}")
     print("positive rate by R: " + ", ".join(f"R{a}={labels[a].mean():.2f}" for a in accs))
 
     flat = {a: scores[a].ravel() for a in accs}

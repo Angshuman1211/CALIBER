@@ -188,3 +188,19 @@ def positive_mask(ts: TrialSet, tau: float) -> Tensor:
     """Relative hallucination label (T1.1/D21) on a trial set, ``(n_trials, n_regions)``."""
     assert ts.truth is not None
     return torch.stack([label_hallucinated(t, threshold=tau, relative=True) for t in ts.truth])
+
+
+def positive_mask_absolute(ts: TrialSet, eps: float) -> Tensor:
+    """D-061's absolute label, ``err_free > eps``, on a trial set, ``(n_trials, n_regions)``."""
+    assert ts.truth is not None
+    return torch.stack([t.err_free > eps for t in ts.truth])
+
+
+def absolute_epsilon(ts: TrialSet, quantile: float = 0.75) -> float:
+    """``eps`` as a quantile of ``err_free`` over a trial set, to be frozen (D-061).
+
+    The harness has no design split; pass the trials of the calibration operator (or a pooled
+    set) and reuse the value everywhere, as ``label_spec`` does with the design side of a bank.
+    """
+    assert ts.truth is not None
+    return float(torch.cat([t.err_free for t in ts.truth]).quantile(quantile))
