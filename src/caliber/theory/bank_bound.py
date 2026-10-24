@@ -72,6 +72,22 @@ class PairReport:
         return bool(self.gap <= self.ks_cond + 1e-9)
 
     @property
+    def gap_minus_ks(self) -> float:
+        """Positive means the measured gap exceeds the Kolmogorov bound (T3.3 sec. 2b)."""
+        return float(self.gap - self.ks_cond)
+
+    @property
+    def significant_violation(self) -> bool:
+        """The whole gap interval sits above the whole ``d_K^+`` interval.
+
+        A point violation inside the bootstrap spread is what the image-level penalty of
+        sec. 2b(c) predicts at a small number of patients; only a separated pair of intervals
+        would count against the chain.
+        """
+        return bool(np.isfinite(self.gap_lo) and np.isfinite(self.ks_cond_hi)
+                    and self.gap_lo > self.ks_cond_hi)
+
+    @property
     def holds_rate(self) -> bool | None:
         """``None`` when the rate bound is undefined (relative label, or a zero distance)."""
         if not np.isfinite(self.rate_bound):
@@ -80,7 +96,9 @@ class PairReport:
 
     def as_row(self) -> dict:
         row = asdict(self)
-        row.update(holds_ks=self.holds_ks, holds_rate=self.holds_rate)
+        row.update(holds_ks=self.holds_ks, holds_rate=self.holds_rate,
+                   gap_minus_ks=self.gap_minus_ks,
+                   significant_violation=self.significant_violation)
         return row
 
 
@@ -201,7 +219,8 @@ def pair_report(
         jj = np.concatenate([idx_l[c] for c in pick])
         if la[jj].any() and lb[jj].any():
             kss.append(ks_distance(sa[jj][la[jj]], sb[jj][lb[jj]]))
-    g_lo, g_hi = np.nanquantile(gaps, [0.05, 0.95])
+    finite = np.asarray(gaps)[np.isfinite(gaps)]
+    g_lo, g_hi = np.quantile(finite, [0.05, 0.95]) if finite.size else (float("nan"),) * 2
     k_lo, k_hi = np.quantile(kss, [0.05, 0.95]) if kss else (float("nan"),) * 2
 
     return PairReport(

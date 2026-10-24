@@ -120,13 +120,19 @@ def main(argv=None) -> int:
 
     show = ["src", "dst", "d_op", "signed_growth", "gap", "gap_lo", "gap_hi", "ks_cond",
             "ks_cond_lo", "ks_cond_hi", "ks_uncond", "p_flip", "algebra_bound", "rate_bound",
-            "pi_src", "holds_ks", "holds_rate"]
+            "pi_src", "holds_ks", "significant_violation", "holds_rate"]
     short = table[show].copy()
     short["src"] = short["src"].str.replace(r"^(mri|ct)\.", "", regex=True)
     short["dst"] = short["dst"].str.replace(r"^(mri|ct)\.", "", regex=True)
     print()
     print(short.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
 
+    n_viol = int(table["significant_violation"].sum())
+    n_pt = int((table["gap_minus_ks"] > 1e-9).sum())
+    print(
+        f"\n[t3.6] gap > d_K^+ at the point estimate: {n_pt} of {len(table)}; "
+        f"with separated bootstrap intervals: {n_viol}"
+    )
     under = table[table["gap"] > 0]
     print(f"\n[t3.6] under-coverage pairs (gap > 0): {len(under)} of {len(table)}")
     for name, col in (("d_K^+ (label-conditional)", "ks_cond"), ("d_K (unconditional)",
