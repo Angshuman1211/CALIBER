@@ -84,7 +84,9 @@ src/caliber/
   scorebank/    the cached, shared data format all three tracks read
   calibration/  group-conditional and weighted recalibration        Stage 4
                 (Track 1 owns this module)
-  evaluation/   coverage, efficiency, detection, gap-vs-distance    Stage 5
+  evaluation/   coverage, efficiency, detection, gap-vs-distance,   Stage 5
+                paired estimands, transfer penalties, curve
+                collapse, weight sensitivity
   data/         dataset access and preprocessing
 
 configs/        version-controlled experiment definitions
@@ -99,8 +101,8 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 
 | File | Owner | What |
 |---|---|---|
-| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D72`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-064` |
+| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D78`, open questions, cross-track contracts |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-065` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
 | `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-31`), unresolved first, plus an index of every decision |
@@ -111,6 +113,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `T1.5_cross_track_integration.md` | Track 1 | Shared interfaces, sign-off record, contracts, adjudication log |
 | `T1.6_analysis_and_course_correction.md` | Track 1 | Phase gate reviews — all three fronts against the central claim, one section per checkpoint |
 | `T1.7_manuscript_method_and_analysis.md` | Track 1 | The manuscript's method and analysis sections — what is claimed, what is not, and the gate on every number |
+| `T1.7_preprint_draft.md` | Track 1 | The preprint cut — the narrowed paper: the failure, the fix, two modalities. Excludes Tools 2 and 3 and all detection claims (D77) |
 | `T2.1_data_and_operator_pipeline.md` | Track 2 | Week 1 record — what was built, the numbers, honest limitations — plus dataset provenance, licensing and download (App. A) |
 | `T2.2_solver_integration.md` | Track 2 | Week 2 record — DPS, DDNM and FlowDPS behind one interface; the Stage-2 split measured on real output |
 | `T2.3_score_bank_and_baselines.md` | Track 2 | Week 3 record — the first fastMRI score bank, both baselines, and why neither can yet be read as a coverage result |
@@ -144,7 +147,9 @@ Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent 
 | **Score banks** | The full fastMRI knee validation set across the 3 × 3 MRI grid: 1,791 pairs, 458,496 regions, 6.4 h on the laptop's GPU. Mask-seed banks at `random1d` R4 and R8. **The first CT bank:** 100 TotalSegmentator subjects × 9 CT operators (sparse-view 180–30 views, limited-angle 150–90°), 900 pairs, ~16 h on the GPU. Development banks only: the prior is a face model (D-016) |
 | **Coverage failure (O3)** | Measured under D-061's absolute label (`err_free` above its design-split q75), robust across 13 patient splits. On fastMRI, naive transfer from `random1d` R2 falls below 90% coverage at `equispaced1d` R2 (13/13 splits), `random1d` R8 (11/13) and `equispaced1d` R8 (10/13). Group-conditional calibration holds 0.884–0.901 wherever positives exist. Development values (T2.7) |
 | **Second modality (O5)** | **The coverage failure reproduces on CT, graded by the shift.** Calibrated at 180 views, naive transfer's coverage falls as views thin (0.890 at 120 views to 0.693 at 30) and as the arc narrows (0.888 at 150° to 0.796 at 90°), below 90% on 13 of 13 splits at the severe end. Group-conditional calibration restores nominal at every CT operator (0.902–0.923), and D-053's signed distance orders CT's gaps at ρ = +0.976. On MRI the same distance orders them only weakly (ρ = +0.32 to +0.56), because MRI's worst failures sit at matched acceleration, so the two curves do not collapse on the scalar distance alone (T2.8). Under this prior the label cannot be validated as invention (D-061), a stated scope limit (T2.7) |
-| **Engineering** | 638 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
+| **Baseline comparison** | Moved to the axis the project can claim on. Detection AUROC was disqualified by D67 (the label is near-determined by the score), so the dispersion baseline is now compared on **coverage under operator shift** — whose threshold survives a change of operator — as a paired difference of transfer penalties (D73). Built and gated; needs one CPU run per grid |
+| **Hallucination criterion** | Four magnitude-based forms, all near-determined by the score. A fifth thresholds a **direction** instead — `cos θ` from the project's own identity, which is scale-free (D74). Preliminary: it removes the AUROC saturation (0.88 → 0.62) but does not yet clear the anatomy control at the milder operator |
+| **Engineering** | 715 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
 
 ---
 
@@ -162,13 +167,13 @@ Owns the central claim, the design of the method, and the decisions that set dir
 
 | Task | Deliverable | Status |
 |------|-------------|--------|
-| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Near complete** — Q6 answered on a real prior (D43); `s_residual` ruled out (D42); `w_free`'s selection rule pre-registered (D49), awaiting one run with a design split |
-| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | **Three tools + fallback [7]** — Tool 2 evaluated (D52): valid but no better than the conservative fallback, cause is tail domination not bandwidth. [7] (D66) fixes the location error; needs a grid with >2 candidate groups to evaluate |
+| **T1.1** Operator-aware score design | Definition and reference implementation of the hallucination score from the null-space / range decomposition | **Complete** — Q6 answered on a real prior (D43); `s_residual` ruled out (D42); `w_free`'s rule pre-registered (D49). The weights stay **equal by default** (D54), and D76's sweep converts that from a gap into a robustness claim by testing whether the result depends on them at all |
+| **T1.2** Shift-robust calibration | Group-conditional and operator-distance weighted calibration converting scores into per-region flags | **Three tools + fallback [7]** — Tool 2 evaluated (D52): valid but no better than the conservative fallback, cause is tail domination not bandwidth. [7] (D66) fixes the location error. D75 adds `--exclude-nearest`: these grids are dense enough that the nearest operator is already nearly the matched one, so Tool 2's defeat may describe the grid rather than the method |
 | **T1.3** Operator-distance formulation | Selection and definition of the operator-distance measure, applied consistently across both modalities | **Delivered** — D19, amended for direction (D47): the gap is not symmetric in the operator pair, so the plotted axis is signed. CT cross-check done: the signed measure orders the CT coverage gaps at ρ = +0.976 (T2.7) |
-| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | **Substantially delivered** — estimand (D45), operator grid (D50/D61), ablation matrix, stratified reporting (D62/D65). Seed noise floor measured by Track 2 (T2.5 §7) |
+| **T1.4** Experimental design | Full protocol, operator grids, ablation matrix, and statistical-validation methodology for all tracks | **Delivered** — estimand (D45), operator grid (D50/D61), ablation matrix, stratified reporting (D62/D65), curve-collapse test (D72), and the coverage-axis baseline comparison (D73). Seed noise floor measured by Track 2 (T2.5 §7) |
 | **T1.5** Cross-track integration | Specification of shared interfaces and score-bank formats; adjudication of results across the three fronts | **Week 1 sign-off delivered** (D19–D24); standing |
 | **T1.6** Analysis and course correction | Interpretation of outcomes, diagnosis of failures, scope decisions at each checkpoint | **Phase 1 and Phase 2 gates delivered** — coverage claims stand, detection claims do not (D67); DPS ablation promoted (D68) |
-| **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | **Method section complete** (it does not depend on the prior); analysis structured with every number gated. `T1.7_manuscript_method_and_analysis.md` |
+| **T1.7** Technical authoring | Method and analysis sections of the manuscripts and the final report | **Method section and the preprint cut complete** — `T1.7_manuscript_method_and_analysis.md` and `T1.7_preprint_draft.md` (D77). The preprint leads with the failure, excludes Tools 2 and 3 and all detection claims, and promotes D67's circularity finding from a limitation to a result. One blocker: medical weights |
 
 ### Track 2 — Systems, Data Engineering and Cross-Domain Validation
 
@@ -222,7 +227,8 @@ Blueprint §15.
 | Metric | What it measures |
 |---|---|
 | Empirical coverage vs nominal level | Whether the promised reliability actually holds |
-| Flag area at fixed reliability | Efficiency — a valid but over-conservative flag is useless |
+| Flag area at fixed reliability | Efficiency — a valid but over-conservative flag is useless. Implemented literally by `area_at_matched_coverage`: coverage is **fixed** and area compared, so a detector cannot win by flagging almost nothing (D39's rule with D51's validity gate built in) |
+| **Transfer penalty** | Coverage a detector loses when its threshold moves to another operator, as a paired difference. The axis on which the dispersion baseline is compared, since detection AUROC is disqualified by D67 (D73) |
 | Region-level FDR and power | Quality of hallucination detection where annotations exist |
 | **Coverage gap vs operator distance** | The headline relationship, reported in both modalities |
 | Effective sample size under weighting | Honest accounting of the statistical cost of reweighting |
