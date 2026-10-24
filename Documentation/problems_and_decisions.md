@@ -1163,6 +1163,23 @@ The label is held fixed and **asserted** to be, per weight: every label form is 
 
 ---
 
+### D78 — The solver ablation's analysis is written ahead of the run, and its premise has to be measured at image level [T1.6/T1.4, prepares D68]
+D68 promoted the DPS ablation from ablation to load-bearing: it is the only configuration in which the decomposition can earn its keep, because DDNM replaces the range component structurally and has already confined the posterior spread to the null space. Writing the analysis now means the run is one command rather than a session's work, and it means the verdict rules are **pre-registered** rather than chosen after seeing the numbers — which matters more here than usual, since this is the experiment the project wants a particular answer from.
+
+`scripts/solver_ablation.py`, 13 gates, with fixtures that plant the answer **both** ways: a bank where the low-share solver's score beats its baseline, and one where it ties. A verdict that cannot come back negative is not a verdict, and the negative branch is the outcome this project should expect.
+
+**Three sections in a fixed order, and the first can stop the other two.** The premise — the null-error share per solver — is checked before any detection number is computed, and if the two solvers do not differ by at least 0.05 the script says `PREMISE ABSENT` on stderr: D68's rationale would simply not hold on those banks, and reading sections 2 and 3 would be reading an experiment that was never set up.
+
+**The finding that came out of building it: the null-error share cannot be computed per region.** `P_N` is a **non-local** operator, so projecting and then restricting to a region is not the same as restricting and then projecting — energy crosses region boundaries and the orthogonal decomposition does not hold region by region. Measured on the M4Raw bank, `err_free² / err_total²` exceeds 1 in **97 of 384 regions**, reaching 1.035. This is not a bank defect and not a normalisation error; the identity residual on the same bank is exactly 0. It is simply the wrong place to take the ratio.
+
+So the script takes it as an **area-weighted energy ratio over each volume**, where it is the global MSE ratio and exact, and prints the per-region out-of-range count as a diagnostic rather than hiding it — a *large* excess there would indicate a genuine normalisation problem of the kind `identity_residual` exists to catch.
+
+**This has a consequence for D68 itself.** The 0.99-against-0.817–0.852 figures the ablation's rationale rests on came from Track 2. If they were computed as a mean of per-region ratios they carry a bias, and the gap is exactly the quantity that decides whether the ablation has a premise. Asked in cross-track D-065.
+
+**One more caveat the verdict carries rather than drops:** an excess measured against a magnitude label can be the identity rather than a detector (D67), so the script says so in its output and points at `label_comparison.py`. The ablation can establish that the decomposition beats its baseline; it cannot by itself establish that either of them detects invention.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
