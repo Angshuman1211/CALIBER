@@ -58,7 +58,7 @@ def points_for(
 
     rows = []
     for r in coverage.itertuples(index=False):
-        operator = str(getattr(r, "operator_id"))
+        operator = str(r.operator_id)
         matches = [v for (a, b), v in signed.items() if b == operator]
         if not matches:
             continue
@@ -67,7 +67,7 @@ def points_for(
                 "modality": modality,
                 "operator_id": operator,
                 "distance": matches[0],
-                "gap": nominal - float(getattr(r, "coverage")),
+                "gap": nominal - float(r.coverage),
             }
         )
     return pd.DataFrame(rows)
@@ -116,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[collapse] points    {len(points)} "
           f"({', '.join(f'{m}={n}' for m, n in points.modality.value_counts().items())})")
     result = curve_collapse_test(points, noise_floor=args.noise_floor)
-    print(f"\n[collapse] Sec. 21 R5 -- does one curve fit both modalities?")
+    print("\n[collapse] Sec. 21 R5 -- does one curve fit both modalities?")
     print(result.summary())
 
     if not result.collapses:
