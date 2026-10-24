@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -77,7 +78,16 @@ def main(argv: list[str] | None = None) -> int:
         ops = {k: OnDevice(v, args.device) for k, v in ops.items()}
     if args.calibration not in ops:
         raise SystemExit(f"{args.calibration} is not in this bank: {sorted(ops)}")
-    pairs = [(args.calibration, o) for o in sorted(ops) if o != args.calibration] + EXTRA
+    # EXTRA names CT operators explicitly, so it is filtered to what this bank actually
+    # holds. Without the filter, pointing this at an MRI bank -- which is what
+    # curve_collapse.py needs for its MRI distances, and the manifest makes possible since
+    # the operators are rebuilt generically -- writes the real rows and then dies on a
+    # KeyError for a CT id, and the `except ValueError` below does not catch it.
+    extra = [(a, b) for a, b in EXTRA if a in ops and b in ops]
+    pairs = [(args.calibration, o) for o in sorted(ops) if o != args.calibration] + extra
+    if len(extra) < len(EXTRA):
+        print(f"[distances] {len(EXTRA) - len(extra)} of the named extra pair(s) are not in "
+              "this bank and were skipped", file=sys.stderr)
 
     out = Path(args.out)
     done = set()

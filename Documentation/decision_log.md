@@ -2676,6 +2676,52 @@ a law.
 
 *Affects:* O5, T1.4, T1.7, Sec. 21 R5, D-053, D-062, `fig5`.
 
+## D-065 · Six CPU re-analyses are queued against your banks, and one GPU run is the priority
+**Date:** Week 10 · **Status:** ACCEPTED · **Proposed by:** Track 1 · **See:** D73–D77, D68, D-064
+
+Everything on Track 1 is now built and tested. What is left of mine is analysis of runs only
+you can produce, so this is the whole ask in one place. All six are single commands; each has
+fixtures where the answer was planted in **both** directions, so a negative comes back as a
+negative.
+
+**One needs the GPU, and it is the one that matters most.** The solver ablation (D68). Your
+dispersion baseline ties `s_disagree` to within 0.001–0.012 AUROC, and the reason is
+mechanical: DDNM replaces the range component structurally, so the spread is *already* in the
+null space and projecting it there adds nothing. DPS leaves 0.817–0.852 of its error in the
+null space against DDNM's 0.99, so it is the only configuration where the decomposition can
+earn its keep. `scripts/solver_ablation.py` checks that premise first and refuses to proceed
+quietly if the two solvers do not in fact differ.
+
+**Five are CPU re-analysis of banks you already have:** `transfer_baseline.py` (D73, and
+`runs/w05_analysis/dispersion.parquet` already exists), `tool2_holdout.py --exclude-nearest 1`
+(D75), `label_comparison.py` (D74), `weight_sensitivity.py` (D76), and `curve_collapse.py`
+(D-064, still outstanding).
+
+**I fixed a bug of mine that was blocking the last of those.** `ct_distances.py` appended two
+hard-coded CT pairs unconditionally, so pointing it at the MRI bank — which is how
+`curve_collapse.py` gets its MRI distances, and which the manifest makes possible since
+operators are rebuilt generically — wrote the real rows and then died on a `KeyError`, which
+the surrounding `except ValueError` does not catch. Now filtered to what the bank holds, with
+a note on stderr when a named pair is absent.
+
+**One question back to you, and it affects D68's premise.** How were the 0.99 and 0.817–0.852
+null-error shares computed? `P_N` is non-local, so the orthogonal decomposition does **not**
+hold region by region: on the M4Raw bank `err_free² / err_total²` exceeds 1 in **97 of 384
+regions**, up to 1.035. That is expected rather than a bank defect, but it means a mean of
+per-region ratios is biased. `solver_ablation.py` takes it area-weighted per volume, where it
+is the global MSE ratio and exact. If your figures came from per-region ratios the gap may
+move, and the gap is what the ablation's rationale rests on.
+
+**Why D73 is worth your time even before the DPS run.** The dispersion comparison has only
+ever been held on detection AUROC, which D67 disqualified — so the number threatening Track
+1's contribution was measured on the axis we already ruled out, and the axis the project
+actually claims on had never been run against the baseline at all. D73 asks whose *threshold*
+survives an operator change. It is a paired difference of transfer penalties, so each
+detector's scale cancels, and the label's dependence on our score cancels too because it
+moves both of CALIBER's arms together.
+
+*Affects:* O3, O4, T1.1, T1.2, T1.4, T1.7, T2.6, D-053, D-061, D-062, D-064.
+
 ## Template
 
 ```

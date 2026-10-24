@@ -1510,7 +1510,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 64 entries, so a problem in Part I can be
+What lives here instead is the index — 65 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1579,3 +1579,4 @@ traced to the decision that settled it without opening the log.
 | [D-062](decision_log.md) | Phase 2 gate: coverage claims stand, detection claims do not, DPS ablation promoted | Week 9 | Track 1's gate -- see D67-D69 |
 | [D-063](decision_log.md) | The holdout harness runs on CT now; interiority was blind to the angular arc | Week 9 | Track 1's fix -- see D71 |
 | [D-064](decision_log.md) | The curve-collapse test, and one command to run it | Week 9 | Track 1's test -- see D72 |
+| [D-065](decision_log.md) | Six CPU re-analyses are queued against your banks, and one GPU run is the priority | Week 10 | Track 1's ask -- see D73-D78 |
