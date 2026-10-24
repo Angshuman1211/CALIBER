@@ -52,6 +52,27 @@ calibration operator measures more and some measures less — and *endpoint* one
 "off-grid operators no group covers" has to mean *between* grid points for the weighting to
 have anything to work with, and the endpoint folds are reported to show what happens when it
 does not.
+
+## Why `nearest` keeps winning, and `--exclude-nearest` (D75)
+
+On every grid run so far, Tool 2 is valid and flags no less area than the `nearest` arm —
+reported as a negative result. But the comparison has a feature of the *grid* built into
+it: these grids are dense, so each held-out operator has a calibration operator close
+enough that borrowing its threshold wholesale is nearly right. Weighting cannot beat
+`nearest` when `nearest` is already almost `matched`, and that says more about the grid
+than about the method.
+
+`--exclude-nearest N` drops the N closest calibration operators from the pool as well as
+the held-out one, which is the deployment case Tool 2 was argued for: an operator with no
+near neighbour to borrow from (§9, D4). The `nearest` arm is then recomputed over the
+operators that remain, so both arms face the same handicap and the comparison stays fair.
+Interiority is recomputed too — removing a neighbour can leave a previously bracketed
+operator at the end of the retained axis, where the weighting can only extrapolate, and
+counting such a fold as interior would be the error this split exists to prevent.
+
+This is a re-analysis: it needs no new bank. It asks a different question of the same one,
+and reporting both is the honest form — Tool 2 buys nothing on a dense grid, and the
+question is whether it buys anything on a sparse one.
 """
 
 from __future__ import annotations
@@ -148,8 +169,16 @@ def main(argv: list[str] | None = None) -> int:
                          "construction (P-23)")
     ap.add_argument("--bandwidth", type=float, default=None,
                     help="kernel bandwidth; default is the median non-zero distance (D33)")
+    ap.add_argument("--exclude-nearest", type=int, default=0, metavar="N",
+                    help="D75: also drop the N calibration operators closest to the "
+                         "held-out one, forcing the deployment case Tool 2 was argued for "
+                         "-- no near neighbour to borrow a threshold from. The nearest arm "
+                         "is recomputed over what remains, so both arms face it")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
+    if args.exclude_nearest < 0:
+        print("[tool2] --exclude-nearest must be zero or more", file=sys.stderr)
+        return 1
 
     df = read_bank(args.bank)
     manifest = read_manifest(args.bank)
@@ -203,15 +232,22 @@ def main(argv: list[str] | None = None) -> int:
     # wrong on CT: narrowing the angular arc at a fixed view count changes what the operator
     # hides while leaving the measurement count untouched, so every arc change would have
     # been classified as an endpoint and the folds that matter most on CT thrown away.
-    interior = {}
-    for o in operators:
-        others = [x for x in operators if x != o]
-        growth = [signed(o, x) for x in others]
-        interior[o] = any(g > 0 for g in growth) and any(g < 0 for g in growth)
+    #
+    # Computed over the operators actually *retained* in the fold, not over the whole grid:
+    # dropping a near neighbour (--exclude-nearest) can leave a bracketed operator at the
+    # end of the retained axis, and calling that fold interior would credit the weighting
+    # with an interpolation it cannot perform.
+    def is_interior(held_out: str, retained: list[str]) -> bool:
+        growth = [signed(held_out, x) for x in retained]
+        return any(g > 0 for g in growth) and any(g < 0 for g in growth)
+
     print(f"[tool2] bank             {args.bank}")
     print(f"[tool2] reportable       {provenance.get('reportable')}")
     print(f"[tool2] operators        {len(operators)}")
     print(f"[tool2] distance         {args.distance}/{args.normalise} (D19)")
+    if args.exclude_nearest:
+        print(f"[tool2] exclude-nearest  {args.exclude_nearest} (D75: forcing the sparse-grid "
+              "case; the nearest arm is recomputed over what remains)")
     # valued once on the whole bank's design rows, so every fold is scored on one label
     try:
         label = label_from_args(df, args)
@@ -254,8 +290,29 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
 
+        # D75: drop the N nearest calibration operators as well, so the fold poses the
+        # sparse-grid deployment case. Dropped by *metric* distance, which is the quantity
+        # the weighting itself uses, so "nearest" means the same thing in both places.
+        ranked = sorted(others, key=lambda o: metric(held_out, o))
+        dropped = ranked[: args.exclude_nearest]
+        others = ranked[args.exclude_nearest:]
+        if len(others) < 2:
+            print(
+                f"[tool2] skipping {held_out}: excluding the {args.exclude_nearest} nearest "
+                f"leaves {len(others)} calibration operator(s), and weighting needs at "
+                "least two groups to weight",
+                file=sys.stderr,
+            )
+            continue
+        if dropped:
+            notes.append(
+                f"{held_out}: excluded nearest {len(dropped)} -- "
+                f"{', '.join(dropped)}"
+            )
+
         distance_of = {group_of(scored, o): metric(held_out, o) for o in others}
         nearest = min(others, key=lambda o: distance_of[group_of(scored, o)])
+        fold_interior = is_interior(held_out, others)
 
         # Calibration data is every operator *except* the held-out one, restricted to the
         # calibration side of the patient split; evaluation is the held-out operator on the
@@ -278,11 +335,14 @@ def main(argv: list[str] | None = None) -> int:
             test_side = scored[scored[split_col] == "test"]
         else:
             calib_side = test_side = scored
-        pool = calib_side[calib_side["operator_id"] != held_out].copy()
+        # Restricted to the retained operators, not merely "not the held-out one": with
+        # --exclude-nearest the dropped neighbours must leave the calibration pool too, or
+        # the weighting would still be borrowing from the operator the fold removed.
+        pool = calib_side[calib_side["operator_id"].isin(others)].copy()
         deploy = test_side[test_side["operator_id"] == held_out].copy()
         if pool.empty or deploy.empty:
             print(
-                f"[tool2] skipping {held_out}: needs calibration rows at the other "
+                f"[tool2] skipping {held_out}: needs calibration rows at the retained "
                 f"operators and test rows at this one (got {len(pool)} and {len(deploy)})",
                 file=sys.stderr,
             )
@@ -333,7 +393,8 @@ def main(argv: list[str] | None = None) -> int:
             rows.append(
                 {
                     "held_out": held_out,
-                    "interior": interior[held_out],
+                    "interior": fold_interior,
+                    "n_retained": len(others),
                     "arm": name,
                     **metrics,
                     # Valid if the interval reaches nominal. An arm whose coverage is
@@ -396,8 +457,11 @@ def main(argv: list[str] | None = None) -> int:
             a for a in ("mondrian", "nearest", "weighted", "group_weighted")
             if valid.get(a)
         ]
-        print(f"\n[tool2] Q4, on {n_folds} interior fold(s). Valid in every fold: "
-              f"{', '.join(deployable) if deployable else 'none'}")
+        grid = ("the full grid" if not args.exclude_nearest
+                else f"the grid with each fold's {args.exclude_nearest} nearest excluded "
+                     "(D75)")
+        print(f"\n[tool2] Q4, on {n_folds} interior fold(s) of {grid}. Valid in every "
+              f"fold: {', '.join(deployable) if deployable else 'none'}")
         if "weighted" not in deployable:
             print("        Tool 2 is NOT valid on every interior fold -- it has not earned "
                   "its place here.")
@@ -412,6 +476,13 @@ def main(argv: list[str] | None = None) -> int:
                     "weighting\n        buys nothing over a simpler rule, which the paper "
                     "should state rather than bury."
                 )
+                if not args.exclude_nearest and "nearest" in beaten:
+                    print(
+                        "        Before reporting that, run --exclude-nearest 1 (D75). On a "
+                        "dense grid the nearest\n        operator is already nearly the "
+                        "matched one, so this result may describe the grid\n        rather "
+                        "than the method."
+                    )
             else:
                 print(
                     f"        Tool 2 is valid and flags the least area of any deployable "
