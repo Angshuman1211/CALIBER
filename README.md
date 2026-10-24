@@ -119,7 +119,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `T2.6_ct_onboarding_and_first_ct_bank.md` | Track 2 | Week 7 record — the TotalSegmentator CT substrate, three CT solver bugs fixed, the first CT bank (900 pairs), and why its coverage awaited a CT label |
 | `T2.7_absolute_label_and_cross_modality_result.md` | Track 2 | Week 8 record — D-061's absolute label in every script, both banks re-measured, the CT coverage failure and its restoration, stratified detection, the CT operator distances |
 | `T2.8_ct_harness_and_cross_modality_figures.md` | Track 2 | Week 9 record — the full evaluation harness on CT in both directions, and the coverage-gap-against-distance curves of both modalities on one axis |
-| `T3.1`–`T3.5_*.md` | Track 3 | Formal review, distance candidates, L1 stability result, ill-posedness scaling, numerical verification |
+| `T3.1`–`T3.6_*.md` | Track 3 | Formal review, distance candidates, L1 stability result, ill-posedness scaling, numerical verification, bound versus measurement |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.
 
@@ -195,7 +195,7 @@ Owns the derivation of the coverage-gap bound and its verification against measu
 | **T3.3** Stability result (L1) | Derivation bounding the coverage gap by the operator distance in known quantities | **Fourth pass** — Step 1 stated on the Kolmogorov distance of the label-conditional law, with cluster-level proofs; Step 2 derived for the unconditional law and (under assumptions) the label-conditional one, √d_op rate; the label-conditional constants are unmeasured |
 | **T3.4** Ill-posedness scaling (L2) | Extension relating the bound to null-space dimension and spectral decay | **First pass, revised twice** — √null_frac law holds for white-noise fill on sparse-view CT and mask operators, fails for limited-angle CT and a structured prior (D-046 on a real prior); the plateau and the 0.57 ceiling are not bounds |
 | **T3.5** Numerical verification | Verification of derived results on small synthetic linear operators, requiring negligible compute | **Delivered** — repaired a TV/Kolmogorov error in T3.3, measured D, quantified the label-conditioning, clustering and solver-dependence mismatches, derived the label-conditional link; the bound is not yet useful on the toy harnesses |
-| **T3.6** Bound-versus-measurement study | Comparison of predicted and observed coverage gaps using the cached score banks | Not started |
+| **T3.6** Bound-versus-measurement study | Comparison of predicted and observed coverage gaps using the cached score banks | **Pipeline delivered, run on harness banks** — gap ≤ label-conditional Kolmogorov distance in 55 of 57 evaluable pairs (none with separated intervals); the unconditional bound fails in 10 of 57; the √d_op rate bound is valid and vacuous. Not yet run on a real bank (Track 2's are local) |
 | **T3.7** Analytical authoring | Derivations, statements of assumptions, and the theoretical sections of the manuscripts | Not started |
 
 Each task gets a branch (`T1.1`, `T2.1`, `T3.1`, …) and a record in `Documentation/`, merged to `main` by pull request.
