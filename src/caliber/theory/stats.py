@@ -128,3 +128,34 @@ def distribution_distances(a, b, bandwidth: float | None = None) -> DistanceRepo
         n_a=int(a.size),
         n_b=int(b.size),
     )
+
+
+def joint_cdf_gap(sa, la, sb, lb) -> float:
+    """``sup_t |G_A(t) - G_B(t)|`` for sub-CDFs ``G(t) = P(S <= t, label = 1)``.
+
+    ``(sa, la)`` and ``(sb, lb)`` are score and boolean-label arrays over the same ``n`` coupled
+    units. O(n log n): both sub-CDFs are evaluated on the union of scores by one sort each.
+    """
+    sa, sb = np.asarray(sa, float).ravel(), np.asarray(sb, float).ravel()
+    la, lb = np.asarray(la, bool).ravel(), np.asarray(lb, bool).ravel()
+    n = sa.size
+    if n == 0 or sb.size != n:
+        return float("nan")
+    grid = np.sort(np.concatenate([sa, sb]))
+    ia, ib = np.argsort(sa, kind="stable"), np.argsort(sb, kind="stable")
+    ca, cb = np.concatenate([[0], np.cumsum(la[ia])]), np.concatenate([[0], np.cumsum(lb[ib])])
+    ga = ca[np.searchsorted(sa[ia], grid, side="right")] / n
+    gb = cb[np.searchsorted(sb[ib], grid, side="right")] / n
+    return float(np.abs(ga - gb).max())
+
+
+def crossing_probability(sa, sb) -> float:
+    """``sup_t P(t lies between S_A and S_B)`` under the pairing (``lo <= t < hi``), O(n log n)."""
+    sa, sb = np.asarray(sa, float).ravel(), np.asarray(sb, float).ravel()
+    if sa.size == 0 or sb.size != sa.size:
+        return float("nan")
+    lo, hi = np.sort(np.minimum(sa, sb)), np.sort(np.maximum(sa, sb))
+    grid = np.concatenate([lo, hi])
+    f_lo = np.searchsorted(lo, grid, side="right") / lo.size
+    f_hi = np.searchsorted(hi, grid, side="right") / hi.size
+    return float((f_lo - f_hi).max())

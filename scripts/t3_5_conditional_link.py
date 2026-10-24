@@ -27,6 +27,8 @@ import numpy as np
 
 from caliber.operators.distance import null_space_projection_distance
 from caliber.scoring.score import ScoreWeights
+from caliber.theory import crossing_probability as crossing_prob
+from caliber.theory import joint_cdf_gap as sup_joint_gap
 from caliber.theory import ks_distance
 from caliber.theory.harness import (
     HarnessConfig,
@@ -35,23 +37,6 @@ from caliber.theory.harness import (
     positive_mask,
     run_trials,
 )
-
-
-def sup_joint_gap(sa, la, sb, lb) -> float:
-    """``sup_t |G_A(t) - G_B(t)|`` for sub-CDFs ``G(t) = P(S <= t, label = 1)``."""
-    grid = np.sort(np.concatenate([sa, sb]))
-    ga = ((sa[None, :] <= grid[:, None]) & la[None, :]).mean(axis=1)
-    gb = ((sb[None, :] <= grid[:, None]) & lb[None, :]).mean(axis=1)
-    return float(np.abs(ga - gb).max())
-
-
-def crossing_prob(sa, sb) -> float:
-    """``sup_t P(t lies between S_A and S_B)`` under the pairing."""
-    lo, hi = np.minimum(sa, sb), np.maximum(sa, sb)
-    grid = np.sort(np.concatenate([lo, hi]))
-    # t is "between" when lo <= t < hi
-    cross = ((lo[None, :] <= grid[:, None]) & (grid[:, None] < hi[None, :])).mean(axis=1)
-    return float(cross.max())
 
 
 def main(argv=None):
