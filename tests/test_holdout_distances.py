@@ -28,6 +28,7 @@ from caliber.operators.mri import MRIUndersamplingOperator
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import ct_distances  # noqa: E402
 import tool2_holdout  # noqa: E402
 
 SHAPE = (32, 32)
@@ -132,3 +133,93 @@ def test_the_signed_test_reproduces_the_mri_interiority_it_replaces():
         g = [growth(ops[held], ops[x]) for x in others]
         interior[held] = any(v > 0 for v in g) and any(v < 0 for v in g)
     assert interior == {2: False, 4: True, 8: False}
+
+
+# -- forcing the sparse-grid case (D75) ---------------------------------------
+
+
+def _mri_grid(rates=(2, 3, 4, 6, 8)) -> dict:
+    return {
+        r: MRIUndersamplingOperator(
+            (128, 128), family="random1d", acceleration=r, center_fraction=0.08, mask_seed=0
+        )
+        for r in rates
+    }
+
+
+def test_excluding_the_nearest_neighbour_can_turn_an_interior_fold_into_an_endpoint():
+    """**The trap `--exclude-nearest` has to avoid.**
+
+    Interiority is a property of the operators the fold actually retains. R4 is bracketed
+    by R3 and R6 on the full grid, but drop its two nearest and every survivor can sit on
+    one side -- the weighting is then extrapolating, and counting the fold as interior
+    would credit it with an interpolation it cannot perform. The harness must recompute
+    interiority after the exclusion, which is why `is_interior` takes the retained list.
+    """
+    ops = _mri_grid()
+    held = 4
+    others = sorted((x for x in ops if x != held), key=lambda x: abs(
+        growth(ops[held], ops[x])
+    ))
+
+    def interior(retained) -> bool:
+        g = [growth(ops[held], ops[x]) for x in retained]
+        return any(v > 0 for v in g) and any(v < 0 for v in g)
+
+    assert interior(others), "R4 is bracketed on the full grid"
+    one_sided = [x for x in others if growth(ops[held], ops[x]) > 0]
+    assert not interior(one_sided), (
+        "a retained set on one side of R4 is an endpoint fold, whatever the full grid says"
+    )
+
+
+def test_the_nearest_arm_is_recomputed_over_what_remains():
+    """Both arms must face the same handicap. If the nearest arm kept borrowing from an
+    operator the fold excluded, Tool 2 would be compared against a threshold that is not
+    available to it either -- a rigged comparison in Tool 2's favour."""
+    ops = _mri_grid()
+    held = 4
+    ranked = sorted((x for x in ops if x != held),
+                    key=lambda x: abs(growth(ops[held], ops[x])))
+    for n_excluded in (0, 1, 2):
+        retained = ranked[n_excluded:]
+        nearest = min(retained, key=lambda x: abs(growth(ops[held], ops[x])))
+        assert nearest not in ranked[:n_excluded], (
+            "the nearest arm picked an operator the fold excluded"
+        )
+        assert nearest == retained[0]
+
+
+def test_excluding_more_than_the_grid_holds_leaves_too_few_groups_to_weight():
+    """With fewer than two retained groups there is nothing to weight, and the fold has to
+    be skipped rather than silently degenerating into the nearest arm."""
+    ops = _mri_grid(rates=(2, 4, 8))
+    held = 4
+    others = [x for x in ops if x != held]
+    assert len(others[2:]) < 2, "excluding two of two leaves nothing to weight"
+
+
+def test_the_exclusion_flag_is_rejected_when_negative(capsys):
+    code = tool2_holdout.main(["nonexistent-bank", "--exclude-nearest", "-1"])
+    assert code == 1
+    assert "zero or more" in capsys.readouterr().err
+
+
+# -- the distance sweep is usable on a non-CT bank (curve_collapse needs MRI rows) ----
+
+
+def test_the_named_extra_pairs_are_filtered_to_what_the_bank_holds():
+    """`ct_distances.py` hard-codes two CT pairs to probe arc-against-views. Pointed at an
+    MRI bank -- which is what `curve_collapse.py` needs for its MRI distances, and which the
+    manifest makes possible since operators are rebuilt generically -- those ids are absent,
+    and the unfiltered list raises KeyError *after* writing the real rows. The script's
+    `except ValueError` does not catch it, so the run dies with a half-written CSV.
+    """
+    mri_ops = {"mri.random1d.R2.c0.08.s0", "mri.random1d.R8.c0.08.s0"}
+    kept = [(a, b) for a, b in ct_distances.EXTRA if a in mri_ops and b in mri_ops]
+    assert kept == [], "no CT pair should survive the filter on an MRI bank"
+
+    ct_ops = {"ct.sparse_view.v120.a180.dfull", "ct.limited_angle.v120.a90.dfull",
+              "ct.sparse_view.v60.a180.dfull"}
+    kept_ct = [(a, b) for a, b in ct_distances.EXTRA if a in ct_ops and b in ct_ops]
+    assert len(kept_ct) == len(ct_distances.EXTRA), "every CT pair must survive on a CT bank"
