@@ -101,7 +101,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 
 | File | Owner | What |
 |---|---|---|
-| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D78`, open questions, cross-track contracts |
+| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D79`, open questions, cross-track contracts |
 | `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-065` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
