@@ -16,6 +16,17 @@ appended to the CSV, so an interrupted run resumes where it stopped. ~10 min per
 at 256^2, most of it CG solves inside the Hutchinson probes and the chordal subspace estimate.
 
     python scripts/ct_distances.py runs/<ct_run_id> --out runs/<analysis>/ct_distances.csv
+
+``--all-pairs`` fills the rest of the matrix, which ``tool2_holdout.py`` needs: its
+leave-one-out folds ask for the distance between *every* two operators, and a pair missing
+from the cache is recomputed inline on the CPU, without memoisation, at minutes a time. One
+order per pair is enough. The metrics are symmetric and ``null_space_growth`` is exactly
+antisymmetric (swapping the operators swaps "newly hidden" and "newly revealed" on the same
+seeded probes), and the readers look a pair up in either order. ``--measures`` limits the
+sweep to what the reader uses.
+
+    python scripts/ct_distances.py runs/<ct_run_id> --all-pairs --device cuda \
+        --measures null_space_growth null_space_projection --out <the same csv>
 """
 
 from __future__ import annotations
@@ -67,6 +78,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("bank", help="a CT bank; its manifest supplies the operators")
     ap.add_argument("--calibration", default=CALIBRATION)
     ap.add_argument("--device", default=None, help="run the operators on this device, e.g. cuda")
+    ap.add_argument("--all-pairs", action="store_true",
+                    help="every unordered pair of the bank's operators, for tool2_holdout.py")
+    ap.add_argument("--measures", nargs="+", default=list(DISTANCES), choices=list(DISTANCES))
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
@@ -85,7 +99,10 @@ def main(argv: list[str] | None = None) -> int:
     # KeyError for a CT id, and the `except ValueError` below does not catch it.
     extra = [(a, b) for a, b in EXTRA if a in ops and b in ops]
     pairs = [(args.calibration, o) for o in sorted(ops) if o != args.calibration] + extra
-    if len(extra) < len(EXTRA):
+    if args.all_pairs:
+        names = sorted(ops)
+        pairs = [(a, b) for i, a in enumerate(names) for b in names[i + 1:]]
+    if len(extra) < len(EXTRA) and not args.all_pairs:
         print(f"[distances] {len(EXTRA) - len(extra)} of the named extra pair(s) are not in "
               "this bank and were skipped", file=sys.stderr)
 
@@ -100,8 +117,8 @@ def main(argv: list[str] | None = None) -> int:
         if new_file:
             writer.writeheader()
         for k, (a, b) in enumerate(pairs, 1):
-            for measure in DISTANCES:
-                if (a, b, measure) in done:
+            for measure in args.measures:
+                if (a, b, measure) in done or (args.all_pairs and (b, a, measure) in done):
                     continue
                 t0 = time.time()
                 note, value = "", float("nan")

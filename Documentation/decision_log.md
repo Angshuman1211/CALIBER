@@ -2761,6 +2761,38 @@ moves both of CALIBER's arms together.
 
 *Affects:* O3, O4, T1.1, T1.2, T1.4, T1.7, T2.6, D-053, D-061, D-062, D-064.
 
+## D-066 · The DPS arm of the ablation: ζ = 5, 24 steps, the random1d family, its own bank
+**Date:** Week 10 · **Status:** ACCEPTED · **Proposed by:** Track 2 · **See:** D-065, D68, D-004, D-031, D-033
+
+The DPS bank (`configs/experiments/w10_mri_dps_gpu.yaml`) matches the DDNM bank of record in
+everything except the solver: the same prior, 24 steps, 4 draws, 256², the same fastMRI volumes
+and the same patient split. It runs as its own experiment and is merged afterwards (D-004).
+
+*Guidance ζ = 5.0, the code default, not re-tuned.* D68's premise is the share Track 1 quoted,
+0.817–0.852, which is DPS at ζ = 5 (D-033, Week 3). ζ is not neutral: at 24 steps the share
+rises from 0.627 at ζ = 0.5 to 0.931 at ζ = 20 (D-031 re-measurement), so tuning DPS toward
+its optimum would close most of the gap the ablation needs. The result is a statement about
+DPS at ζ = 5.
+
+*24 steps,* DDNM's budget: an equal budget is the fair comparison, and it is where 0.817 was
+measured.
+
+*random1d at R2 / R4 / R8 only.* DPS costs ~30 s/pair on the RTX 3050 (~2.4× DDNM), so the
+nine-operator grid is ~15 h of GPU against ~5 h for these three. The ablation compares
+detection per operator, never across operators (D60, retracted), so it needs the calibration
+operator (R2) and a spread of accelerations, not every family.
+
+*Premise, measured before the run* on 6 pairs, area-weighted per volume: DPS 0.44–0.50 at R2,
+0.69–0.76 at R4, 0.85–0.90 at R8, against DDNM's 0.96–0.998 on the same pairs.
+
+*Alternative:* all nine operators, for an operator set identical to the DDNM bank's.
+*Reason:* ~10 more hours of GPU for operators the per-operator comparison does not need.
+*Cost:* the ablation says nothing about the cross-family operators. And at R2, the
+calibration operator, DPS sits at or below D-033's 0.5 admissibility line, so the widest
+premise gap is also where DPS's fit is least converged. T2.9 states this beside every R2
+number.
+*Affects:* D68, O4, T2.9.
+
 ## Template
 
 ```

@@ -33,18 +33,33 @@ from pathlib import Path
 import pandas as pd
 
 from caliber.evaluation.collapse import NOISE_FLOOR, curve_collapse_test
+from caliber.operators.distance import SIGNED_MEASURES
+
+#: The Week 8 coverage tables (T2.7, both directions) name the arms by their short labels.
+METHOD_ALIASES = {"naive_transferred": "naive", "group_conditional": "group"}
 
 
 def points_for(
     coverage_csv: str, distances_csv: str, modality: str, method: str, measure: str,
-    nominal: float,
+    nominal: float, direction: str | None = None,
 ) -> pd.DataFrame:
-    """One row per deployment operator: signed distance and the measured coverage gap."""
+    """One row per (calibration, deployment) pair: signed distance and the coverage gap.
+
+    A table with ``calibrated_at`` / ``deployed_at`` (both directions, D-056) is matched to
+    the distance of *its own* pair. Matching on the deployment operator alone takes whichever
+    calibration the CSV lists first, and the CT CSV holds three, so a row calibrated at 30
+    views would be plotted at its distance from 180. A pair stored the other way round is
+    negated for a signed measure: ``null_space_growth`` is exactly antisymmetric.
+    """
     coverage = pd.read_csv(coverage_csv)
     if "method" in coverage.columns:
-        coverage = coverage[coverage["method"].astype(str) == method]
+        wanted = {method, METHOD_ALIASES.get(method, method)}
+        coverage = coverage[coverage["method"].astype(str).isin(wanted)]
+    if direction and "direction" in coverage.columns:
+        coverage = coverage[coverage["direction"].astype(str) == direction]
     if coverage.empty:
-        raise ValueError(f"{coverage_csv} has no rows for method {method!r}")
+        raise ValueError(f"{coverage_csv} has no rows for method {method!r}"
+                         + (f" in direction {direction!r}" if direction else ""))
 
     dist = pd.read_csv(distances_csv)
     dist = dist[dist["measure"].astype(str) == measure]
@@ -56,17 +71,38 @@ def points_for(
         for r in dist.itertuples(index=False)
     }
 
+    sign = -1.0 if measure in SIGNED_MEASURES else 1.0
+    paired = "calibrated_at" in coverage.columns
     rows = []
     for r in coverage.itertuples(index=False):
-        operator = str(getattr(r, "operator_id"))
-        matches = [v for (a, b), v in signed.items() if b == operator]
-        if not matches:
-            continue
+        if paired:
+            calibration, operator = str(r.calibrated_at), str(r.deployed_at)
+            if (calibration, operator) in signed:
+                distance = signed[(calibration, operator)]
+            elif (operator, calibration) in signed:
+                distance = sign * signed[(operator, calibration)]
+            else:
+                continue
+        else:
+            operator = str(getattr(r, "operator_id"))
+            matches = {a: v for (a, b), v in signed.items() if b == operator}
+            if not matches:
+                continue
+            if len(matches) > 1:
+                raise ValueError(
+                    f"{operator} has {measure} distances from {len(matches)} calibration "
+                    f"operators in {distances_csv} ({', '.join(sorted(matches))}) and "
+                    f"{coverage_csv} does not say which one it was calibrated at; pass a "
+                    "table with a calibrated_at column"
+                )
+            calibration, distance = next(iter(matches.items()))
         rows.append(
             {
                 "modality": modality,
+                "direction": str(getattr(r, "direction", "")),
+                "calibration": calibration,
                 "operator_id": operator,
-                "distance": matches[0],
+                "distance": distance,
                 "gap": nominal - float(getattr(r, "coverage")),
             }
         )
@@ -82,6 +118,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--method", default="naive_transferred",
                     help="the arm whose gap is tested; the fix should show no trend at all")
     ap.add_argument("--measure", default="null_space_growth")
+    ap.add_argument("--direction", choices=["ascending", "descending"], default=None,
+                    help="one direction of a two-direction table; default both (D-056)")
     ap.add_argument("--nominal", type=float, default=0.90)
     ap.add_argument("--noise-floor", type=float, default=NOISE_FLOOR,
                     help="coverage discrepancy below which one curve counts as adequate (D69)")
@@ -92,9 +130,9 @@ def main(argv: list[str] | None = None) -> int:
         points = pd.concat(
             [
                 points_for(args.mri_coverage, args.mri_distances, "mri", args.method,
-                           args.measure, args.nominal),
+                           args.measure, args.nominal, args.direction),
                 points_for(args.ct_coverage, args.ct_distances, "ct", args.method,
-                           args.measure, args.nominal),
+                           args.measure, args.nominal, args.direction),
             ],
             ignore_index=True,
         )
@@ -113,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"[collapse] method    {args.method}")
     print(f"[collapse] measure   {args.measure} (signed, D-053)")
+    print(f"[collapse] direction {args.direction or 'both (D-056)'}")
     print(f"[collapse] points    {len(points)} "
           f"({', '.join(f'{m}={n}' for m, n in points.modality.value_counts().items())})")
     result = curve_collapse_test(points, noise_floor=args.noise_floor)

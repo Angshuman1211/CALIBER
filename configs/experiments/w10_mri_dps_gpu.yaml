@@ -1,0 +1,91 @@
+# Week 10 — the DPS arm of the solver ablation (D68), on the GPU.
+#
+#   D:/venvs/caliber-gpu/Scripts/python.exe -u -m caliber.runner \
+#       configs/experiments/w10_mri_dps_gpu.yaml
+#
+# then, with the DDNM bank it is compared against:
+#
+#   python scripts/solver_ablation.py runs/w05_mri_full_val_gpu-<hash>_by_patient \
+#       runs/w10_mri_dps_gpu-<hash> --calibration-operator mri.random1d.R2.c0.08.s0
+#
+# --- what is matched to the DDNM bank, and why ----------------------------------
+#
+# Everything except the solver: the same prior (ddpm-celebahq-256), 24 steps, 4 draws,
+# 256^2, the same fastMRI singlecoil_val volumes and the same patient split
+# (calib_fraction 0.5, design_fraction 0.10, split auto). The ablation compares the two
+# solvers region by region on the same items, so any other difference would be a second
+# variable.
+#
+# **Guidance ζ = 5.0, the code default (D-031), not re-tuned.** D68's premise is the
+# null-error share Track 1 quoted, 0.817-0.852, and those are DPS at ζ = 5 with 24 / 48
+# steps (D-033, Week 3). ζ is not neutral here: at 24 steps the share rises with it,
+# 0.627 at ζ = 0.5 to 0.931 at ζ = 20 (D-031 re-measurement), so a stronger ζ would close
+# most of the gap to DDNM's 0.99 that the ablation needs. The result is a statement about
+# DPS at ζ = 5, and the T2.9 record says so.
+#
+# **24 steps**, the DDNM bank's budget: an equal step budget is the fair comparison, and
+# it is where the 0.817 was measured. DPS diverges at 8 (D-033) and clears the gate from 24.
+#
+# --- the operators: the random1d family only -------------------------------------
+#
+# DPS needs a backward pass through the UNet at every step. Measured on the RTX 3050 over 6
+# pairs (T2.9): ~30 s/pair steady, 32.9 averaged with warm-up, 3.0 GB of GPU memory -- ~2.4x
+# DDNM's 12.4. That is ~5 hours for the 597 pairs here, and all nine operators would be ~15
+# hours on a laptop whose charger cannot keep up with a full GPU load.
+#
+# The same 6 pairs check D68's premise before the GPU is spent: DPS leaves 0.44-0.50 of its
+# error in the null space at R2, 0.69-0.76 at R4 and 0.85-0.90 at R8, against DDNM's
+# 0.96-0.998 on the identical pairs (area-weighted per volume, solver_ablation.py's
+# measure). The gap is there. At R2 DPS sits at or below D-033's 0.5 admissibility line,
+# which the T2.9 record states beside every R2 number. The ablation is per operator, never
+# across operators (D60, retracted), so it needs the calibration operator (R2, which sets
+# the score's standardisation) and a spread of accelerations, not every family. random1d at
+# R2 / R4 / R8 gives both, and R2 -> R8 is the pair the other Week 10 runs use.
+#
+# Changing any value after launch changes the config hash, and a run with a different hash
+# does NOT resume - it starts again from zero (D-042). Checkpoints every 10 pairs.
+
+include: base
+
+experiment:
+  name: w10_mri_dps_gpu
+  solver:
+    name: dps
+    checkpoint: checkpoints/ddpm-celebahq-256
+    n_steps: 24
+    device: cuda
+    max_draws_per_batch: 1
+  n_posterior: 4
+  operators:
+    - modality: mri
+      family: random1d
+      acceleration: [2, 4, 8]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [256, 256]
+  dataset:
+    name: fastmri
+    root: data/raw/fastmri/singlecoil_val
+    annotations_csv: data/annotations/fastmri_plus/knee.csv
+    split: auto
+    image_shape: [256, 256]
+    slices_per_volume: 1
+    calib_fraction: 0.5
+    design_fraction: 0.10
+
+run:
+  limit: null
+  cache_reconstructions: 6
+  checkpoint_every: 10
+  # The preflight (D-043) asks 6.4 GB of commit here, and that is about right even on the
+  # GPU: measured steady, the runner itself commits ~6.2 GB (3.0 GB on the card besides). On
+  # Windows GPU allocations need backing commit too, and with 4.9 or 1.9 GB available the
+  # first backward pass failed (CUDA out of memory, "unknown error") although the card had
+  # room. The check is skipped only because it compares against the commit available *after*
+  # the runner's own imports, so it refused (6.35 < 6.4) a start that then ran with 1.4 GB to
+  # spare. What makes the run fit is the launcher, which waits for 7 GB of free commit before
+  # every (re)start. Set in the file rather than as an override because it is part of the
+  # config hash, and a resume must see the same hash (D-042).
+  skip_memory_check: true
