@@ -640,13 +640,15 @@ reporting 3.2 GB of the 6 GB card still free, a CUDA "unknown error", and a seco
 out-of-memory error. Each time, the machine's free *commit* was low: 1.9–4.9 GB of 32–34 GB,
 with the browser, the editor and other sessions open, and once with two CPU analyses running
 beside it. Under Windows' driver model a GPU allocation also needs backing commit, so
-the card can be half empty and still refuse. The benchmark ran at 5.6 GB available. The
-runner's preflight estimate (6.4 GB) was fitted to a UNet on the CPU, so on the GPU it
-refuses runs that would fit. The DPS config therefore sets `skip_memory_check` in the
-file (it is part of the config hash, so a resume must see the same value), and the launcher
-waits for 7 GB of free commit before every start. A GPU-path term in the preflight model
-would be the proper fix; it needs a measurement of the runner's own commit on the GPU,
-which the benchmark did not capture.
+the card can be half empty and still refuse. Measured steady once it ran, the runner
+commits ~6.2 GB on the GPU path, close to the preflight's 6.4 GB estimate. **So the
+estimate, fitted on the CPU, is about right on the GPU too.** (An earlier reading in T2.9
+assumed it was not.) What goes wrong is *when* the check is made. It compares against the
+commit available after the runner's own imports, so it refused, at 6.35 GB, a start that
+then ran with 1.4 GB to spare. The DPS config sets `skip_memory_check` in the file (it is
+part of the config hash, so a resume must see the same value). What makes the run fit is
+the launcher, which waits for 7 GB of free commit before every start. With the browser,
+the ChatGPT app and Teams open, the machine never reaches that.
 
 ---
 

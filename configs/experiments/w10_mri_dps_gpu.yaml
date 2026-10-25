@@ -79,12 +79,13 @@ run:
   limit: null
   cache_reconstructions: 6
   checkpoint_every: 10
-  # The preflight's estimate (D-043) is fitted to a UNet running on the CPU, where the
-  # activations are system memory: it asks 6.4 GB here. On the GPU they live on the card
-  # (3.0 GB measured) and the benchmark ran with 5.6 GB available. Set in the file rather
-  # than as an override because it is part of the config hash, and a resume must see the
-  # same hash (D-042). The launcher waits for 7 GB of free commit before every (re)start
-  # instead: on Windows a GPU allocation needs backing commit too, and with 4.9-1.9 GB
-  # available at start the first backward pass failed (CUDA out of memory, "unknown error")
-  # although the card had room; it ran with 5.6.
+  # The preflight (D-043) asks 6.4 GB of commit here, and that is about right even on the
+  # GPU: measured steady, the runner itself commits ~6.2 GB (3.0 GB on the card besides). On
+  # Windows GPU allocations need backing commit too, and with 4.9 or 1.9 GB available the
+  # first backward pass failed (CUDA out of memory, "unknown error") although the card had
+  # room. The check is skipped only because it compares against the commit available *after*
+  # the runner's own imports, so it refused (6.35 < 6.4) a start that then ran with 1.4 GB to
+  # spare. What makes the run fit is the launcher, which waits for 7 GB of free commit before
+  # every (re)start. Set in the file rather than as an override because it is part of the
+  # config hash, and a resume must see the same hash (D-042).
   skip_memory_check: true
