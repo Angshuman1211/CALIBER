@@ -17,9 +17,11 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import select_guidance  # noqa: E402
 
 
-def _artefact(directory: Path, z: float, null_shares, dc_errors) -> None:
-    ops = [{"operator_id": f"op{i}", "null_error_share": s, "data_consistency_error": d}
-           for i, (s, d) in enumerate(zip(null_shares, dc_errors, strict=True))]
+def _artefact(directory: Path, z: float, null_shares, dc_errors, null_errors=None) -> None:
+    null_errors = null_errors or [0.3] * len(null_shares)
+    ops = [{"operator_id": f"op{i}", "null_error_share": s, "data_consistency_error": d,
+            "range_error": 0.2, "null_error": n}
+           for i, (s, d, n) in enumerate(zip(null_shares, dc_errors, null_errors, strict=True))]
     name = f"stage2-w11_dps_sweep_z{z:g}-diffusion.dps.brats_ncsnpp_ve.t24.json"
     (directory / name).write_text(json.dumps({
         "config": "configs/experiments/w11_m4raw_brats_dps_sweep.yaml",
@@ -52,3 +54,13 @@ def test_a_sweep_with_no_admissible_setting_builds_no_bank(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "STEP_SIZE=" not in captured.out
     assert "no DPS bank" in captured.err
+
+
+def test_a_diverged_setting_is_never_chosen_although_its_null_share_saturates(tmp_path, capsys):
+    """The real failure: zeta = 50 diverged, its null error ~800x the image, so its null-error
+    share read 1.000 and passed D-033 -- and the first version of this rule chose it."""
+    _artefact(tmp_path, 5, [0.6, 0.6, 0.6], [0.5, 0.5, 0.5])
+    _artefact(tmp_path, 50, [1.0, 1.0, 1.0], [0.3, 0.3, 0.3], null_errors=[801.0, 417.0, 294.0])
+    assert select_guidance.main([str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "STEP_SIZE=5" in out and "diverged" in out

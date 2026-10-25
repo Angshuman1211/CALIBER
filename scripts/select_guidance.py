@@ -24,6 +24,11 @@ from pathlib import Path
 
 #: D-033's admissibility line: more than half the reconstruction error in the null space.
 MIN_NULL_SHARE = 0.5
+#: Relative error norms (``range_error``, ``null_error``: error over the truth's norm) above
+#: this are worse than reconstructing zeros. A diverged sampler's null error is enormous,
+#: which drives its null-error *share* to 1.000 and would pass D-033 on its own -- the first
+#: BraTS sweep chose zeta = 50 exactly so, with a null error 800x the image (T2.10).
+MAX_RELATIVE_ERROR = 1.0
 
 
 def read_sweep(directory: str | Path, prefix: str) -> list[dict]:
@@ -40,6 +45,8 @@ def read_sweep(directory: str | Path, prefix: str) -> list[dict]:
             "null_share": sum(o["null_error_share"] for o in ops) / len(ops),
             "min_null_share": min(o["null_error_share"] for o in ops),
             "dc_error": sum(o["data_consistency_error"] for o in ops) / len(ops),
+            "max_error": max(max(o.get("range_error", 0.0), o.get("null_error", 0.0))
+                             for o in ops),
             "n_items": payload["n_items"],
             "config": name,
         })
@@ -47,8 +54,9 @@ def read_sweep(directory: str | Path, prefix: str) -> list[dict]:
 
 
 def choose(rows: list[dict]) -> dict | None:
-    """The admissible setting with the smallest mean data-consistency error."""
-    ok = [r for r in rows if r["min_null_share"] > MIN_NULL_SHARE]
+    """The admissible, non-diverged setting with the smallest mean data-consistency error."""
+    ok = [r for r in rows
+          if r["min_null_share"] > MIN_NULL_SHARE and r["max_error"] <= MAX_RELATIVE_ERROR]
     return min(ok, key=lambda r: r["dc_error"]) if ok else None
 
 
@@ -61,14 +69,16 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         print(f"[guidance] no sweep artefacts in {args.directory}", file=sys.stderr)
         return 1
-    print(f"{'step_size':>10}{'null share':>12}{'min null':>10}{'dc error':>10}")
+    print(f"{'step_size':>10}{'null share':>12}{'min null':>10}{'dc error':>10}{'max err':>10}")
     for r in rows:
+        flag = "  diverged" if r["max_error"] > MAX_RELATIVE_ERROR else ""
         print(f"{r['step_size']:>10g}{r['null_share']:>12.4f}{r['min_null_share']:>10.4f}"
-              f"{r['dc_error']:>10.4f}")
+              f"{r['dc_error']:>10.4f}{r['max_error']:>10.3g}{flag}")
     best = choose(rows)
     if best is None:
         print(f"[guidance] no swept value keeps every operator's null-error share above "
-              f"{MIN_NULL_SHARE} (D-033); no DPS bank should be built from this sweep",
+              f"{MIN_NULL_SHARE} (D-033) without diverging (relative error above "
+              f"{MAX_RELATIVE_ERROR:g}); no DPS bank should be built from this sweep",
               file=sys.stderr)
         return 1
     edge = best["step_size"] in (rows[0]["step_size"], rows[-1]["step_size"])

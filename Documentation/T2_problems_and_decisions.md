@@ -631,6 +631,24 @@ rather than producing plausible-looking but systematically mis-scaled reconstruc
 
 ### Resolved
 
+#### P-40 - The guidance rule chose a diverged DPS setting, because divergence saturates the gate
+
+**Fixed (Week 11, T2.10)** - **See:** D-031, D-033, D68
+
+`select_guidance.py` picks DPS's guidance strength from a design-split sweep. It keeps the
+settings that pass D-033 (null-error share > 0.5) and takes the one with the smallest
+data-consistency error. On the BraTS prior at 24 steps it chose **zeta = 50**. That is the
+setting at which DPS diverges: its null-space error reached 294-801 times the image, which
+drives the null-error *share* to 1.000 and passes the gate. The DPS bank launched on it was
+stopped within a minute, having written nothing. The rule now also excludes any setting
+whose relative range or null error exceeds 1, i.e. worse than reconstructing zeros. On that
+sweep it refuses every value, which is the honest answer: at 24 steps DPS on this prior
+either under-fits (zeta <= 5 fails D-033) or diverges (zeta >= 20). Pinned by
+`tests/test_select_guidance.py` with the real case. **Lesson:** a share is a ratio, and a
+ratio of two exploding quantities can look like the best value in the table.
+
+---
+
 #### P-39 - Reading a checkpoint to watch progress killed the run that was writing it
 
 **Fixed (Week 11, T2.10)** - **See:** D-040, D-042

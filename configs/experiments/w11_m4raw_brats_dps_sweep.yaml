@@ -26,6 +26,9 @@ experiment:
     n_steps: 24
     step_size: 5.0
     device: cuda
+    # One draw through the backward pass at a time: four at once, at 100 steps, took the
+    # machine's free commit to 0.4 GB. The result is identical either way (D-044).
+    max_draws_per_batch: 1
   n_posterior: 4
   operators:
     - modality: mri
