@@ -223,3 +223,45 @@ def test_the_named_extra_pairs_are_filtered_to_what_the_bank_holds():
               "ct.sparse_view.v60.a180.dfull"}
     kept_ct = [(a, b) for a, b in ct_distances.EXTRA if a in ct_ops and b in ct_ops]
     assert len(kept_ct) == len(ct_distances.EXTRA), "every CT pair must survive on a CT bank"
+
+
+# -- --all-pairs: one order per pair is enough (tool2 reads either order) ------------
+
+
+def test_the_signed_measure_is_exactly_antisymmetric_on_ct_operators():
+    """What lets `--all-pairs` compute one order only. Swapping the operators swaps "newly
+    hidden" and "newly revealed" on the same seeded probes, so the reverse is the negative
+    to rounding, not merely in expectation -- on CT, where the Hutchinson path is taken."""
+    a = CTProjectionOperator(SHAPE, n_views=60, angular_range_deg=180.0)
+    b = CTProjectionOperator(SHAPE, n_views=60, angular_range_deg=90.0)
+    assert growth(a, b) == pytest.approx(-growth(b, a), abs=1e-6)
+
+
+def test_all_pairs_fills_the_matrix_once_and_skips_a_pair_cached_in_reverse(tmp_path):
+    """Every unordered pair is computed exactly once; a pair already in the cache in the
+    other order is not recomputed, because that is the minutes-per-pair cost on CT."""
+    import json
+
+    ids = [f"mri.random1d.R{r}.c0.08.s0" for r in (2, 4, 8)]
+    bank = tmp_path / "bank"
+    bank.mkdir()
+    (bank / "manifest.json").write_text(json.dumps({"operators": [
+        {"operator_id": oid, "modality": "mri", "image_shape": list(SHAPE),
+         "params": {"family": "random1d", "acceleration": float(r), "center_fraction": 0.08,
+                    "mask_seed": 0, "noise_sigma": 0.0}}
+        for oid, r in zip(ids, (2, 4, 8))
+    ]}), encoding="utf-8")
+    out = tmp_path / "distances.csv"
+    pd.DataFrame([{"calibration": ids[2], "deployment": ids[0],
+                   "measure": "null_space_growth", "value": 0.5, "signed": True,
+                   "seconds": 0.0, "note": "seeded"}]).to_csv(out, index=False)
+
+    assert ct_distances.main([str(bank), "--calibration", ids[0], "--all-pairs",
+                              "--measures", "null_space_growth", "--out", str(out)]) == 0
+
+    rows = pd.read_csv(out)
+    pairs = {frozenset((r.calibration, r.deployment)) for r in rows.itertuples()}
+    assert pairs == {frozenset(p) for p in [(ids[0], ids[1]), (ids[0], ids[2]),
+                                            (ids[1], ids[2])]}
+    assert len(rows) == 3, "the pair cached in reverse must not be computed again"
+    assert set(rows["measure"]) == {"null_space_growth"}

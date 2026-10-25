@@ -23,17 +23,19 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
---|---|---|---|
-| `random1d R2` | 0.726 | **0.865** | -0.489 | +0.397 |
-| `random1d R8` | **0.920** | 0.651 | -0.771 | +0.463 |
-| `variable_density2d R2` | 0.829 | 0.878 | -0.668 | **+0.026** |
+#### P-37 - D73's transfer verdict counts over-coverage as good transfer
 
-At `variable_density2d R2`, the headline cell, the ratio among candidates is uncorrelated
-with the error and driven by how little each region hides. T2.5 reports every number
-against the label as ruled and states this beside them. The check that would settle it is
-the within-candidate, per-operator decomposition above. Measuring it on M4Raw would show
-whether 0.499 there is the same cancellation. `component_auroc.py` prints the per-operator
-label check on any bank.
+**Open - decides:** Track 1 (`evaluation/transfer.py` fixes the estimand) - **See:** D73, D51, D39, T2.9 §2
+
+`transfer_baseline.py` reported "CALIBER's threshold transfers better at 7 of 8" on CT from
+30 views. At 6 of those 8 operators, CALIBER's transferred threshold flags ≥ 99.7% of all
+regions. The penalty, coverage(in-group) − coverage(transferred), is signed, so a threshold
+that flags everything has coverage 1.000 and a *negative* penalty, which the verdict reads
+as the better transfer. The `interpretable` gate checks only the in-group arm. On MRI the
+same thing happens in both detectors' favour, once per direction. Two-sided, on |penalty|,
+`s_disagree` transfers as well or better than the CALIBER score at all 16 CT cells. Not
+patched, because the estimand is Track 1's. A two-sided penalty, or a flag-area gate on the
+transferred arm, would close it.
 
 ---
 
@@ -629,6 +631,56 @@ rather than producing plausible-looking but systematically mis-scaled reconstruc
 
 ### Resolved
 
+#### P-38 - On Windows the GPU run failed for want of *system* memory, with the card half empty
+
+**Worked around (Week 10, T2.9)** - **See:** P-24, D-043, D-042
+
+The DPS bank failed at the start of sampling three times: a CUDA out-of-memory error
+reporting 3.2 GB of the 6 GB card still free, a CUDA "unknown error", and a second
+out-of-memory error. Each time, the machine's free *commit* was low: 1.9–4.9 GB of 32–34 GB,
+with the browser, the editor and other sessions open, and once with two CPU analyses running
+beside it. Under Windows' driver model a GPU allocation also needs backing commit, so
+the card can be half empty and still refuse. The benchmark ran at 5.6 GB available. The
+runner's preflight estimate (6.4 GB) was fitted to a UNet on the CPU, so on the GPU it
+refuses runs that would fit. The DPS config therefore sets `skip_memory_check` in the
+file (it is part of the config hash, so a resume must see the same value), and the launcher
+waits for 7 GB of free commit before every start. A GPU-path term in the preflight model
+would be the proper fix; it needs a measurement of the runner's own commit on the GPU,
+which the benchmark did not capture.
+
+---
+
+#### P-36 - `curve_collapse.py` gave every row the distance of the first calibration listed
+
+**Fixed (Week 10, T2.9)** - **See:** D72, D-053, D-056
+
+`points_for` matched a coverage row to a distance by the deployment operator alone and
+took the first match. The CT distance CSV holds three calibration operators (180, 30 and
+120 views), so a row calibrated at 30 views and deployed at 90 would have been plotted at
+the distance from 180 views. It never ran that way, because the Week 8 tables use the arm
+names `naive` / `group` and the script refused them first. It now matches each row's own
+(calibrated_at, deployed_at) pair, negates a signed distance stored in the other order,
+accepts both arm names, and refuses a table that does not name its calibration when the CSV
+is ambiguous. Pinned by three tests in `tests/test_collapse.py`.
+
+---
+
+#### P-35 - Tool 2 on CT recomputed every missing operator distance inline, on the CPU
+
+**Fixed (Week 10, T2.9)** - **See:** D75, D71
+
+A leave-one-operator-out sweep needs the distance between every two operators.
+`tool2_holdout.py --distances-csv` reads a cache, but `ct_distances.csv` held only the
+calibration operators' pairs (17 of 36), and every missing pair fell back to
+`compute_distance` on the CPU at minutes a pair, without memoisation. After 33 minutes the
+run had written nothing. `ct_distances.py --all-pairs` now fills the matrix once on the GPU
+(19 pairs, 37 min), one order per pair, since the readers look either order up. The metric
+is symmetric and `null_space_growth` is exactly antisymmetric on the same seeded probes,
+which `tests/test_holdout_distances.py` now asserts on CT operators. Each Tool 2 run then
+takes about 30 seconds.
+
+---
+
 #### P-31 - The ruled label is still led by its denominator within operators
 
 **Resolved (Week 8) by D-061** - **See:** D-061, D-060, D-059, D-037, P-30, T2.7
@@ -647,7 +699,24 @@ Pooled over operators, among candidates, the numerator now leads (AUROC 0.797 ag
 Per operator it is not enough:
 
 | Candidates at | AUROC(`-free_content`) | AUROC(`err_free`) | rho(ratio, `free_content`) | rho(ratio, `err_free`) |
-|---|-#### P-34 - The three limited-angle CT operators shared one calibration group
+|---|---|---|---|---|
+| `random1d R2` | 0.726 | **0.865** | -0.489 | +0.397 |
+| `random1d R8` | **0.920** | 0.651 | -0.771 | +0.463 |
+| `variable_density2d R2` | 0.829 | 0.878 | -0.668 | **+0.026** |
+
+At `variable_density2d R2`, the headline cell, the ratio among candidates is uncorrelated
+with the error and driven by how little each region hides. T2.5 reports every number
+against the label as ruled and states this beside them. The check that would settle it is
+the within-candidate, per-operator decomposition above. Measuring it on M4Raw would show
+whether 0.499 there is the same cancellation. `component_auroc.py` prints the per-operator
+label check on any bank.
+
+*(Restored in T2.9: the T2.7 edit that moved this entry to Resolved cut the table after its
+header row, which also ran the next entry's heading into it.)*
+
+---
+
+#### P-34 - The three limited-angle CT operators shared one calibration group
 
 **Fixed (Week 7, T2.6)** - **See:** D-021, D-023
 
@@ -1510,7 +1579,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 65 entries, so a problem in Part I can be
+What lives here instead is the index — 66 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1580,3 +1649,4 @@ traced to the decision that settled it without opening the log.
 | [D-063](decision_log.md) | The holdout harness runs on CT now; interiority was blind to the angular arc | Week 9 | Track 1's fix -- see D71 |
 | [D-064](decision_log.md) | The curve-collapse test, and one command to run it | Week 9 | Track 1's test -- see D72 |
 | [D-065](decision_log.md) | Six CPU re-analyses are queued against your banks, and one GPU run is the priority | Week 10 | Track 1's ask -- see D73-D78 |
+| [D-066](decision_log.md) | The DPS arm of the ablation: zeta = 5, 24 steps, the random1d family, its own bank | Week 10 | ACCEPTED |
