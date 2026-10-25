@@ -530,7 +530,46 @@ hobby repos with single-digit downloads and no provenance. So D-016's deferral i
 matter of not having looked: Song et al. remains the reference option, with its licensing
 question unresolved.
 
-*Affects:* T2.2, T2.5, O7, Weeks 2, 10, 12.
+> ### CORRECTION, Week 10 (Track 1) — the licensing blocker does not exist
+>
+> **The claim above that Song et al.'s MRI model is fastMRI-derived is wrong**, and it has
+> been the stated reason this decision stayed deferred since Week 1. From the paper's own
+> Datasets paragraph (§4, arXiv 2111.08005):
+>
+> | prior | trained on | resolution | slices |
+> |---|---|---|---|
+> | CT | **LIDC** (lung) | 320×320 | 130,304 |
+> | CT | **LDCT** (head, chest, abdomen) | 512×512 | 47,006 |
+> | MRI | **BraTS 2021** (brain) | 240×240 | 297,270 |
+>
+> fastMRI appears nowhere in their training data. It is cited only for the *undersampling
+> mask pattern* — "follow Zbontar et al. (2018); Knoll et al. (2020) to undersample the
+> k-space with an equispaced Cartesian mask" — which is almost certainly where the
+> confusion came from. **So the NYU agreement does not reach these checkpoints**, and
+> nothing licensing-related gates adopting them.
+>
+> **The real caveat is different, and smaller.** The checkpoints have **no stated licence
+> at all**: no LICENSE file in `yang-song/score_inverse_problems`, Google Drive hosting
+> only. For a preprint with citation that is ordinary practice; for the open-source release
+> (O7) it is a genuine question and should be raised before packaging. The underlying
+> datasets are standard research-use (LIDC via TCIA, BraTS via registration) — the data
+> terms were never the problem, the weights' terms are simply unstated.
+>
+> **One substrate is a better match than the one we were aiming at.** The MRI prior is
+> **brain**. The fastMRI bank is **knee**, so BraTS is still cross-anatomy there. But
+> `banks/w02_solver_smoke/` is **M4Raw, which is brain MRI on real k-space, already
+> verified end to end**. BraTS → M4Raw is an anatomically matched medical prior, and it is
+> the cleanest genuine medical-prior result available to this project. For CT, LIDC is lung
+> against TotalSegmentator's whole body; LDCT's head/chest/abdomen coverage is closer.
+>
+> **Resolution does not line up and that is Track 2's integration item:** 240×240 (BraTS),
+> 320×320 (LIDC) and 512×512 (LDCT) against the project's reduced-resolution 2D grid. The
+> region definition (D20) is defined on the grid, so a change of working resolution moves
+> the region count and every per-region quantity with it.
+
+*Affects:* T2.2, T2.5, O7, Weeks 2, 10, 12. **Correction affects:** every gated number, T1.7's
+preprint (its one hard blocker), D67's criterion-validity argument, and the `reportable` flag
+on every bank built so far.
 
 ---
 

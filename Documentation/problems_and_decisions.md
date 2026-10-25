@@ -1180,6 +1180,22 @@ So the script takes it as an **area-weighted energy ratio over each volume**, wh
 
 ---
 
+### D79 — The medical prior was never licence-blocked; the preprint's one hard blocker is lifted [T1.6/T1.7, corrects D-016]
+D-016 has deferred the medical prior since **Week 1**, and the stated reason was that Song et al.'s MRI checkpoint is fastMRI-derived, so NYU's data agreement plausibly reached the weights. **That is false.** Their training sets are LIDC (lung CT, 320×320), LDCT (head/chest/abdomen CT, 512×512) and **BraTS 2021 (brain MRI, 240×240)**. fastMRI is cited only for the *undersampling mask pattern*, which is where the confusion almost certainly started. Correction written into D-016.
+
+**Why this is the most consequential entry in weeks.** D-016 gates every reportable number in the project, the `reportable` flag on every bank, D67's criterion-validity argument, and T1.7's preprint — where it is the *only* hard blocker. A nine-week deferral rested on a misreading of one citation.
+
+**And the better substrate was already in the repository.** The MRI prior is brain; the fastMRI bank is knee, so BraTS is cross-anatomy there. But `banks/w02_solver_smoke/` is **M4Raw — brain MRI on real k-space, verified end to end**. BraTS → M4Raw is an anatomically matched medical prior, which is a stronger claim than anything the project has had, and it needs no new substrate.
+
+**What it does not fix, and this matters for how the result is framed.**
+- **Resolution.** 240×240 / 320×320 / 512×512 against the project's reduced-resolution 2D grid. The region definition (D20) lives on that grid, so changing working resolution moves the region count and every per-region quantity with it — including the design-split quantiles that set the label. Every gate is re-valued, not carried over.
+- **The criterion is still circular** (D67). A medical prior should *raise* `cos θ` — its invented content should be less orthogonal to real anatomy than a face model's — which would weaken the `err ≈ hypot(s, c)` collapse. That is a prediction, and D74's `label_comparison.py` is the test. **It is written before the run, deliberately**, because this is a prediction the project wants to come true.
+- **The licence question moved rather than vanished.** The weights carry **no stated licence**: no LICENSE file, Google Drive hosting. Fine for a cited preprint; a real question for the O7 release, and it should be raised before packaging rather than at it.
+
+**Downloaded to `checkpoints/song_inverse_problems/`** (gitignored by `checkpoints/`). Treat the files as untrusted input: a checkpoint is a pickle, so `torch.load` on it executes arbitrary code. Load with `weights_only=True` where the format allows.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
