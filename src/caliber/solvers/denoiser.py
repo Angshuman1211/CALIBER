@@ -26,6 +26,7 @@ rather than buried in a config.
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -65,6 +66,20 @@ class NoiseSchedule:
         self.alphas = 1.0 - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
         self.n_steps = int(self.betas.shape[0])
+
+    @classmethod
+    def from_alphas_cumprod(cls, alphas_cumprod: Tensor) -> "NoiseSchedule":
+        """A schedule given ``alpha_bar`` directly, stored as given rather than re-multiplied.
+
+        A VE-SDE prior defines its noise levels as sigmas, and ``alpha_bar = 1/(1+sigma^2)``
+        follows exactly; recovering it through a cumulative product of betas would add
+        rounding at the far end of the range, where ``alpha_bar`` is ~6e-5.
+        """
+        ab = alphas_cumprod.to(torch.float64)
+        prev = torch.cat([torch.ones(1, dtype=torch.float64), ab[:-1]])
+        sched = cls(betas=(1.0 - ab / prev).float())
+        sched.alphas_cumprod = ab.float()
+        return sched
 
     def alpha_bar(self, t: int) -> Tensor:
         """``alpha_bar_t``, with ``alpha_bar_{-1} = 1`` so the final step is well defined."""
@@ -207,6 +222,98 @@ class DiffusersUNetDenoiser(Denoiser):
         return eps.mean(dim=1).to(device=x.device, dtype=x.dtype)
 
 
+def ve_schedule(sigma_min: float, sigma_max: float, n_steps: int = N_TRAIN_STEPS) -> NoiseSchedule:
+    """The VP schedule equivalent to a VE-SDE's geometric noise levels.
+
+    A VE sample ``x0 + sigma z`` and a VP sample ``sqrt(a) x0 + sqrt(1-a) z`` are the same
+    point up to the scale ``sqrt(a)`` when ``a = 1 / (1 + sigma^2)``. Index 0 is ``sigma_min``
+    and the last index ``sigma_max``, so the samplers' descending timesteps walk the VE
+    prior's own log-uniform grid, the one it was trained and sampled on. Reusing the DDPM
+    linear schedule instead would ask the BraTS model for sigma = 157 at the first step,
+    beyond the 128 it was trained to.
+    """
+    sigmas = torch.exp(torch.linspace(math.log(sigma_min), math.log(sigma_max), n_steps,
+                                      dtype=torch.float64))
+    return NoiseSchedule.from_alphas_cumprod(1.0 / (1.0 + sigmas**2))
+
+
+class SongVEScoreDenoiser(Denoiser):
+    """Adapter for Song et al.'s VE-SDE NCSN++ medical priors (D-016 corrected by D79, T2.10).
+
+    The checkpoints (ICLR 2022; BraTS 2021 brain MRI, LIDC and LDCT CT) are score models:
+    the network returns ``s(x, sigma) = grad log p_sigma(x)`` for ``x = x0 + sigma z`` with
+    ``x0`` in [0, 1]. The samplers here speak DDPM's VP form, ``x_t = sqrt(a) x0 +
+    sqrt(1-a) eps``. The two are one change of variables apart: ``sigma = sqrt((1-a)/a)``,
+    ``x_VE = x_t / sqrt(a)``, and Tweedie's formula gives ``eps = -sigma * s(x_VE, sigma)``.
+    That is exact, not an approximation, so DDNM, DPS and the flow sampler run unchanged.
+    The schedule is the prior's own (:func:`ve_schedule`) and travels with the denoiser.
+
+    ``checkpoint`` is the directory holding the converted ``ncsnpp_*.pt``
+    (``scripts/convert_song_checkpoint.py``), or that file itself. It is loaded with
+    ``weights_only=True``: a state dict and a config of plain types, nothing executable.
+
+    **What these priors are and are not trained on.** BraTS images are skull-stripped and
+    min-max normalised to [0, 1] per volume, over T1, T1ce, T2 and FLAIR. So the data
+    should be normalised per slice to [0, 1] (``normalisation: max``), and anatomy the
+    prior never saw -- skull, scalp, a knee -- is outside its training distribution.
+    """
+
+    def __init__(self, checkpoint: str | Path, device: str = "cpu"):
+        path = Path(checkpoint)
+        if path.is_dir():
+            found = sorted(path.glob("ncsnpp_*.pt"))
+            if not found:
+                raise FileNotFoundError(
+                    f"{path} holds no converted ncsnpp_*.pt; run "
+                    "scripts/convert_song_checkpoint.py on its Flax checkpoint first"
+                )
+            path = found[0]
+        self.path = path
+        self.checkpoint = str(checkpoint)
+        self.checkpoint_id = Path(self.checkpoint).name
+        self.device = device
+        payload = torch.load(path, map_location="cpu", weights_only=True)
+        from .ncsnpp import NCSNppConfig
+
+        self.config = NCSNppConfig.from_dict(payload["config"])
+        self._state = payload["state_dict"]
+        self.source = payload.get("source", {})
+        self.default_schedule = ve_schedule(self.config.sigma_min, self.config.sigma_max)
+        self._model = None
+
+    @property
+    def model(self):
+        """Built lazily, so constructing a solver stays cheap in ``--dry-run``."""
+        if self._model is None:
+            from .ncsnpp import NCSNpp
+
+            model = NCSNpp(self.config)
+            model.load_state_dict(self._state)
+            self._model = model.to(self.device).eval()
+        return self._model
+
+    def predict_noise(self, x: Tensor, t: int) -> Tensor:
+        if tuple(x.shape[-2:]) != (self.config.image_size,) * 2:
+            raise ValueError(
+                f"{self.checkpoint_id} was trained at {self.config.image_size}^2 and its "
+                f"architecture fixes that; got {tuple(x.shape[-2:])}. Set data.image_shape "
+                f"to [{self.config.image_size}, {self.config.image_size}]"
+            )
+        ab = self.default_schedule.alpha_bar(t).to(self.device)
+        sigma = ((1.0 - ab) / ab).sqrt()
+        x_ve = (x.to(self.device) / ab.sqrt()).unsqueeze(1)
+        score = self.model(x_ve, sigma.expand(x_ve.shape[0]).to(x_ve.dtype))
+        return (-sigma * score[:, 0]).to(device=x.device, dtype=x.dtype)
+
+
+def build_denoiser(checkpoint: str | Path, device: str = "cpu") -> Denoiser:
+    """The adapter a checkpoint needs: Song et al.'s converted NCSN++, or a diffusers UNet."""
+    path = Path(checkpoint)
+    if path.suffix == ".pt" or (path.is_dir() and any(path.glob("ncsnpp_*.pt"))):
+        return SongVEScoreDenoiser(path, device=device)
+    return DiffusersUNetDenoiser(checkpoint, device=device)
+
+
 # -- what the prior was trained on, and whether that fits the modality ---------
 #
 # D-018 made reportability a property of the bank rather than of whoever ran it,
@@ -229,6 +336,12 @@ PRIOR_DOMAINS: dict[str, str] = {
     # Medical priors land here when D-016's outstanding half is closed. Adding a
     # key is the *whole* change needed to make a bank reportable, which is the
     # point: it is one deliberate edit, reviewable in a diff.
+    #
+    # Song et al.'s BraTS prior (D79) is a brain-MRI prior, recorded as such rather than as
+    # "mri": under ADMISSIBLE_DOMAINS below, "mri" would stamp it reportable on fastMRI
+    # *knees* too, which is cross-anatomy. Whether an anatomy-matched prior makes M4Raw
+    # reportable (D-015 has it unreportable as a substrate) is Track 1's ruling (T2.10).
+    "brats_ncsnpp_ve": "mri_brain",
 }
 
 # Which prior domains are admissible for which modality. Deliberately strict:
@@ -242,6 +355,12 @@ ADMISSIBLE_DOMAINS: dict[str, frozenset[str]] = {
     # stand-in, so there it is admissible.
     "natural_image": frozenset({"natural_image"}),
 }
+
+#: Domains registered above that no modality admits *yet*, on purpose, because the ruling
+#: that would admit them is outstanding. Named so that "not admitted" is a recorded state
+#: rather than a typo: ``mri_brain`` waits on Track 1's ruling on anatomy-matched priors
+#: (D79; T2.10). Moving a domain out of here and into ADMISSIBLE_DOMAINS is the change.
+AWAITING_RULING: frozenset[str] = frozenset({"mri_brain"})
 
 UNKNOWN_DOMAIN = "unknown"
 

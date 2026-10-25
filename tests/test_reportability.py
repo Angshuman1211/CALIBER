@@ -19,6 +19,7 @@ import pytest
 from caliber.solvers import build_solver
 from caliber.solvers.denoiser import (
     ADMISSIBLE_DOMAINS,
+    AWAITING_RULING,
     PRIOR_DOMAINS,
     UNKNOWN_DOMAIN,
     prior_domain,
@@ -78,10 +79,18 @@ def test_medical_modalities_admit_only_their_own_domain():
 
 
 def test_every_registered_domain_is_one_the_admissibility_table_understands():
-    """A prior domain nothing can ever admit is a typo, not a policy."""
+    """A prior domain nothing can ever admit is a typo, not a policy -- unless it is
+    recorded as waiting on a ruling, which is a policy (``mri_brain``, T2.10)."""
     admissible = set().union(*ADMISSIBLE_DOMAINS.values())
-    unreachable = set(PRIOR_DOMAINS.values()) - admissible
+    unreachable = set(PRIOR_DOMAINS.values()) - admissible - AWAITING_RULING
     assert not unreachable, f"registered domains no modality admits: {unreachable}"
+
+
+def test_a_domain_waiting_on_a_ruling_is_admitted_nowhere_until_it_is_ruled():
+    """The two lists must not overlap: a domain is either admitted or still waiting."""
+    admissible = set().union(*ADMISSIBLE_DOMAINS.values())
+    assert not AWAITING_RULING & admissible
+    assert AWAITING_RULING <= set(PRIOR_DOMAINS.values()), "waiting on a domain never registered"
 
 
 # -- it reaches the solver, and therefore the manifest ------------------------

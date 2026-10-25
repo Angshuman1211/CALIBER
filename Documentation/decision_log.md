@@ -2793,6 +2793,39 @@ premise gap is also where DPS's fit is least converged. T2.9 states this beside 
 number.
 *Affects:* D68, O4, T2.9.
 
+## D-067 · The medical prior runs as a converted NCSN++ behind an exact VE-to-VP adapter, and waits on a ruling to be reportable
+**Date:** Week 11 · **Status:** ACCEPTED (implementation) — admissibility OPEN, Track 1's · **Proposed by:** Track 2 · **See:** D79, D-016, D-015, D-018, P-18
+
+D79 lifted the licensing objection to Song et al.'s medical score models. This decides how one
+enters the pipeline. Song, Shen, Xing & Ermon (ICLR 2022) published JAX/Flax checkpoints
+(BraTS 2021 brain MRI 240², LIDC 320², LDCT 512²). The project's solvers speak DDPM's VP form.
+
+*How.* NCSN++ is ported to PyTorch (`solvers/ncsnpp.py`), adapted from `score_sde_pytorch`
+(Apache-2.0) to only the configuration the three checkpoints share, without its compiled CUDA
+kernel. `scripts/convert_song_checkpoint.py` reads the Flax `msgpack` with numpy alone, so
+nothing in the file executes. It maps the EMA weights by per-class call order and refuses if
+any layer is left over or unfilled. **Verified against Song et al.'s own Flax model** on the
+BraTS checkpoint: agreement to ~1e-5 of the score's magnitude at sigma = 0.05, 1 and 50,
+correlation 1.00000000. `SongVEScoreDenoiser` turns the score into a noise prediction by the
+exact change of variables, sigma = sqrt((1-a)/a), x_VE = x_t/sqrt(a), eps = -sigma s(x_VE, sigma).
+It brings the prior's own log-uniform sigma schedule (0.01-128), so DDNM, DPS and the flow
+sampler run unchanged.
+
+*The domain is recorded as `mri_brain`, admitted nowhere yet* (`AWAITING_RULING`).
+Recorded as `mri`, the existing table would admit it for every MRI bank, including fastMRI
+**knees**, which is cross-anatomy. Two rulings are Track 1's: whether an anatomy-matched
+prior is admissible, and whether M4Raw, which D-015 made an unreportable substrate, can carry
+a reportable coverage claim when the prior matches it.
+
+*Alternative:* run the checkpoints in JAX. *Reason:* JAX cannot use this machine's GPU natively
+(Windows), and a second framework on the sampling path doubles what can drift. JAX is used once,
+off the path, to verify the port.
+*Cost:* the working grid is fixed by the network: 240² for BraTS, so 15 × 15 regions rather
+than 16 × 16, and every design-split quantile is re-valued, not carried over. BraTS is
+skull-stripped and M4Raw is not. And the weights carry no stated licence (D79), which the O7
+release has to settle.
+*Affects:* D79, D-016, D-018, P-18, T2.10, every reportable flag, O7.
+
 ## Template
 
 ```

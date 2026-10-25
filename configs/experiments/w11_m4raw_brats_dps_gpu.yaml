@@ -1,0 +1,57 @@
+# Week 11 — the DPS arm of the solver ablation (D68) on the medical prior.
+#
+#   D:/venvs/caliber-gpu/Scripts/python.exe -u -m caliber.runner \
+#       configs/experiments/w11_m4raw_brats_dps_gpu.yaml
+#   python scripts/solver_ablation.py runs/w11_m4raw_brats_gpu-<hash>_by_patient \
+#       runs/w11_m4raw_brats_dps_gpu-<hash> --calibration-operator mri.random1d.R2.c0.08.s0
+#
+# T2.9 answered D68 negative on the face prior, but on a bank where every magnitude label is
+# the score's own identity (Spearman 0.99) and cos theta ~ 0, so the direction label had
+# almost nothing to rank on. The BraTS prior moves cos theta to ~0.67 (T2.10 §5). This is the
+# same ablation where that objection no longer applies.
+#
+# Matched to the DDNM bank (w11_m4raw_brats_gpu) in everything but the solver: prior, 240^2,
+# max normalisation, 24 steps, 4 draws, the same M4Raw volumes and patient split. The
+# operators are the random1d family, as in T2.9 (D-066).
+#
+# **Guidance strength:** measured on design patients first (w11_m4raw_brats_dps_sweep.yaml,
+# D-031's rule: one value, fixed across operators, re-measured per prior). The value below
+# is the sweep's choice; T2.10 records the sweep.
+
+include: base
+
+experiment:
+  name: w11_m4raw_brats_dps_gpu
+  solver:
+    name: dps
+    checkpoint: checkpoints/song_inverse_problems/brats_ncsnpp_ve
+    n_steps: 24
+    step_size: 5.0          # PROVISIONAL until the design-split sweep is read
+    device: cuda
+  n_posterior: 4
+  operators:
+    - modality: mri
+      family: random1d
+      acceleration: [2, 4, 8]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [240, 240]
+  dataset:
+    name: m4raw
+    root: data/raw/m4raw
+    split: auto
+    image_shape: [240, 240]
+    slices_per_volume: 1
+    normalisation: max
+    calib_fraction: 0.5
+    design_fraction: 0.10
+
+run:
+  limit: null
+  cache_reconstructions: 6
+  checkpoint_every: 10
+  # As w11_m4raw_brats_gpu: the preflight is fitted to the 113M-parameter UNet, not this
+  # 2.7M-parameter NCSN++. In the file because it is part of the config hash (D-042).
+  skip_memory_check: true

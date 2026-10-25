@@ -1,0 +1,51 @@
+# Week 11 — DPS's guidance strength on the BraTS prior, measured before any DPS bank (D-031).
+#
+#   for z in 1 5 20 50; do
+#     D:/venvs/caliber-gpu/Scripts/python.exe scripts/stage2_decomposition.py \
+#         configs/experiments/w11_m4raw_brats_dps_sweep.yaml \
+#         --set experiment.solver.step_size=$z --out runs/w11_analysis/dps_sweep
+#   done
+#
+# D-031: one guidance strength, fixed across every operator in a curve, and *re-measured
+# when the prior changes*. The value was 5.0 for the face prior, and its optimum there was
+# never bracketed. The BraTS prior is a different network on a different noise
+# parameterisation, so nothing carries over. The criterion is D-031's: data-consistency
+# error, read beside the null-error share D-033 gates on.
+#
+# **Design patients only** (keep_splits), so the choice never sees a test patient. Eight
+# volumes -- the first design patient's FLAIR, T1 and T2 scans -- x the three operators the
+# DPS bank uses.
+
+include: base
+
+experiment:
+  name: w11_m4raw_brats_dps_sweep
+  solver:
+    name: dps
+    checkpoint: checkpoints/song_inverse_problems/brats_ncsnpp_ve
+    n_steps: 24
+    step_size: 5.0
+    device: cuda
+  n_posterior: 4
+  operators:
+    - modality: mri
+      family: random1d
+      acceleration: [2, 4, 8]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [240, 240]
+  dataset:
+    name: m4raw
+    root: data/raw/m4raw
+    split: auto
+    image_shape: [240, 240]
+    slices_per_volume: 1
+    normalisation: max
+    calib_fraction: 0.5
+    design_fraction: 0.10
+    keep_splits: [design]
+
+run:
+  limit: 8
