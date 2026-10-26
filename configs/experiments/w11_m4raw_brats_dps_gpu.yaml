@@ -25,8 +25,8 @@ experiment:
   solver:
     name: dps
     checkpoint: checkpoints/song_inverse_problems/brats_ncsnpp_ve
-    n_steps: 24
-    step_size: 5.0          # PROVISIONAL: the 24-step sweep found no admissible value (T2.10)
+    n_steps: 100            # DPS needs ~4x DDNM's budget on this prior (T2.10 §7)
+    step_size: 5           # chosen on design patients at 100 steps by scripts/select_guidance.py (T2.10)
     device: cuda
     max_draws_per_batch: 1  # DPS's backward pass, one draw at a time (D-044: same result)
   n_posterior: 4
