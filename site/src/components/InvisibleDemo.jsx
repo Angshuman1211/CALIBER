@@ -122,6 +122,7 @@ export default function InvisibleDemo() {
   const [strength, setStrength] = useState(0.55)
   const [pixels, setPixels] = useState(() => phantomPixels())
   const [source, setSource] = useState('built-in phantom')
+  const [active, setActive] = useState('built-in')
   const [stats, setStats] = useState(null)
   const [busy, setBusy] = useState(false)
 
@@ -131,6 +132,7 @@ export default function InvisibleDemo() {
     img.onload = () => {
       setPixels(toPixels(img))
       setSource(`${s.label} · ${s.kind}`)
+      setActive(s.file)
       setBusy(false)
     }
     img.onerror = () => setBusy(false)
@@ -169,6 +171,7 @@ export default function InvisibleDemo() {
     img.onload = () => {
       setPixels(toPixels(img))
       setSource(file.name)
+      setActive('upload')
       setBusy(false)
       URL.revokeObjectURL(url)
     }
@@ -188,7 +191,11 @@ export default function InvisibleDemo() {
           </div>
           <div className="samples">
             {SAMPLES.map((s) => (
-              <button key={s.file} className="sample" onClick={() => loadSample(s)}>
+              <button
+                key={s.file}
+                className={`sample${active === s.file ? ' on' : ''}`}
+                onClick={() => loadSample(s)}
+              >
                 <img
                   src={`${import.meta.env.BASE_URL}samples/${s.file}`}
                   alt={s.label}
@@ -197,7 +204,14 @@ export default function InvisibleDemo() {
                 <span>{s.label}</span>
               </button>
             ))}
-            <button className="sample" onClick={() => { setPixels(phantomPixels()); setSource('built-in phantom') }}>
+            <button
+              className={`sample${active === 'built-in' ? ' on' : ''}`}
+              onClick={() => {
+                setPixels(phantomPixels())
+                setSource('built-in phantom')
+                setActive('built-in')
+              }}
+            >
               <span className="generated">generated</span>
               <span>Built-in</span>
             </button>
@@ -276,11 +290,11 @@ export default function InvisibleDemo() {
             between the ground truth and the reconstruction
           </div>
           <div
-            className="mono"
+            className="bignum"
             style={{
-              fontSize: 28,
               color: stats.err < 1e-10 ? 'var(--bad)' : 'var(--text)',
               marginTop: 4,
+              transition: 'color 0.4s var(--ease)',
             }}
           >
             {stats.err < 1e-10 ? stats.err.toExponential(1) : stats.err.toFixed(6)}

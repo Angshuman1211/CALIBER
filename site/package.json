@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Presentation site for CALIBER \u2014 operator-shift-robust conformal hallucination flagging",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
