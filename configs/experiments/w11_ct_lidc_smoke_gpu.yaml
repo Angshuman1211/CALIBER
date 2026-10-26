@@ -1,0 +1,58 @@
+# Week 11 — the CT side of D79: Song et al.'s LIDC lung-CT score model on TotalSegmentator,
+# smoke size.
+#
+#   D:/venvs/caliber-gpu/Scripts/python.exe -u -m caliber.runner \
+#       configs/experiments/w11_ct_lidc_smoke_gpu.yaml
+#
+# The question is the one §5 of T2.10 asked of MRI: does a medical prior move cos theta off
+# zero, so that the magnitude label stops being the score's own identity? On MRI the BraTS
+# prior took it from ~0.07 to ~0.67. This asks it of CT, on 2 subjects x the CT bank of
+# record's 9 operators, against w07_ct_onboarding (face prior, same substrate, 256^2).
+#
+# Differences from the CT bank of record, each forced:
+# * **320^2**, the LIDC network's fixed size: 20 x 20 regions of 16 px, at TotalSegmentator's
+#   native 1.5 mm, so a 480 mm field. LIDC's own pixel size is not stated in the repository.
+# * **Normalisation.** LIDC volumes were min-max scaled to [0, 1] per volume. This pipeline maps
+#   a fixed HU window, [-1000, 1000], to [0, 1] (D-013). Air sits at 0 in both; bone and contrast
+#   need not match.
+# * **Anatomy.** LIDC is chest CT; TotalSegmentator slices here are chosen among organ-bearing
+#   slices across the body, so some are chest and many are abdomen.
+# Not reportable: the LIDC domain is not registered (unknown fails closed), and the substrate
+# questions above are unanswered.
+
+include: base
+
+experiment:
+  name: w11_ct_lidc_smoke_gpu
+  solver:
+    name: ddnm
+    checkpoint: checkpoints/song_inverse_problems/ct2d_320_ncsnpp_ve
+    n_steps: 24
+    device: cuda
+    consistency_device: cuda
+  n_posterior: 4
+  operators:
+    - modality: ct
+      n_views: [180, 120, 90, 60, 45, 30]
+      angular_range_deg: 180.0
+    - modality: ct
+      n_views: 120
+      angular_range_deg: [150.0, 120.0, 90.0]
+
+data:
+  image_shape: [320, 320]
+  dataset:
+    name: totalsegmentator
+    root: data/raw/totalsegmentator
+    split: auto
+    image_shape: [320, 320]
+    slices_per_volume: 1
+    calib_fraction: 0.5
+    design_fraction: 0.10
+
+run:
+  limit: 2
+  cache_reconstructions: 2
+  checkpoint_every: 10
+  scoring_device: cuda
+  skip_memory_check: true   # fitted to the 113M-parameter UNet, not this 4.1M NCSN++

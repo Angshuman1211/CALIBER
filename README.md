@@ -102,7 +102,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | File | Owner | What |
 |---|---|---|
 | `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D79`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-065` |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-068` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
 | `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-31`), unresolved first, plus an index of every decision |
@@ -123,6 +123,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `T2.7_absolute_label_and_cross_modality_result.md` | Track 2 | Week 8 record — D-061's absolute label in every script, both banks re-measured, the CT coverage failure and its restoration, stratified detection, the CT operator distances |
 | `T2.8_ct_harness_and_cross_modality_figures.md` | Track 2 | Week 9 record — the full evaluation harness on CT in both directions, and the coverage-gap-against-distance curves of both modalities on one axis |
 | `T2.9_track1_week10_runs.md` | Track 2 | Week 10 record — Track 1's six queued runs: the baseline on the coverage axis, Tool 2 on a sparse CT grid, the direction label on CT, weight sensitivity, the curve-collapse test, and the DPS solver ablation |
+| `T2.10_medical_prior.md` | Track 2 | Week 11 record — Song et al.'s BraTS and LIDC medical score models ported to PyTorch and verified against their own Flax models, the first score bank on a medical prior (M4Raw), and D79's prediction tested in both modalities |
 | `T3.1`–`T3.5_*.md` | Track 3 | Formal review, distance candidates, L1 stability result, ill-posedness scaling, numerical verification |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.
@@ -151,7 +152,8 @@ Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent 
 | **Baseline comparison** | Moved to the axis the project can claim on. Detection AUROC was disqualified by D67 (the label is near-determined by the score), so the baseline is compared on **coverage under operator shift**: whose threshold survives a change of operator, as a paired difference of transfer penalties (D73). **On CT the baseline transfers better.** Counting coverage lost in either direction, `s_disagree`'s threshold transfers as well or better than the CALIBER score at all 16 CT cells. The score loses up to 0.21 coverage going to sparse views and over-flags coming back. On MRI, against the literature's full-image posterior dispersion, neither threshold transfers: each detector over-flags in the direction where its own scale grows. Counted both ways, the dispersion is better at 9 cells to CALIBER's 4. The comparison as implemented counts over-coverage as good transfer, which on both modalities favours whichever detector over-flags (T2.9 §2, P-37) |
 | **Hallucination criterion** | Four magnitude-based forms, all near-determined by the score. A fifth thresholds a **direction** instead: `cos θ` from the project's own identity, which is scale-free (D74). **On CT, against it the score ranks at chance** (AUC 0.50–0.58) and beats the anatomy control at 0 of 9 operators, against 9 of 9 under the magnitude label (T2.9 §4) |
 | **Solver ablation (D68)** | A DPS bank (597 pairs) beside the DDNM one. DPS leaves 0.69 of its error in the null space against DDNM's 0.99, so it is where the decomposition has room. Under the magnitude label the score beats `s_disagree` by ≥ 0.05 AUC at all three DPS operators. **Under the direction label it does not beat it at any** (−0.034 to −0.002), so the positive is the label's identity, not detection. At R2, DPS fails D-033's admissibility gate on 196 of 199 volumes (T2.9 §1) |
-| **Engineering** | 786 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
+| **Medical prior (D79)** | Song et al.'s BraTS (brain MRI) and LIDC (lung CT) score models now run in the pipeline, each matching the authors' own Flax model to ~1e-5. On 2,160 M4Raw brain pairs with the BraTS prior, **the coverage failure is far stronger than on the face prior**: calibrated on a 1-D mask and deployed on 2-D variable-density masks, naive transfer covers 0.000-0.159, below nominal in 13 of 13 patient splits, while group-conditional calibration restores 0.80-0.91. The medical prior also breaks the identity that tied every magnitude label to the score (cos θ +0.07 → +0.60 on MRI, +0.07 → +0.98 on a CT smoke bank), but the score still beats the anatomy control at only 1 of 8 operators. Not yet reportable: two rulings are Track 1's (T2.10 §10) |
+| **Engineering** | 816 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
 
 ---
 

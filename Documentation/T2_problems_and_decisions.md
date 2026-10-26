@@ -631,6 +631,42 @@ rather than producing plausible-looking but systematically mis-scaled reconstruc
 
 ### Resolved
 
+#### P-40 - The guidance rule chose a diverged DPS setting, because divergence saturates the gate
+
+**Fixed (Week 11, T2.10)** - **See:** D-031, D-033, D68
+
+`select_guidance.py` picks DPS's guidance strength from a design-split sweep. It keeps the
+settings that pass D-033 (null-error share > 0.5) and takes the one with the smallest
+data-consistency error. On the BraTS prior at 24 steps it chose **zeta = 50**. That is the
+setting at which DPS diverges: its null-space error reached 294-801 times the image, which
+drives the null-error *share* to 1.000 and passes the gate. The DPS bank launched on it was
+stopped within a minute, having written nothing. The rule now also excludes any setting
+whose relative range or null error exceeds 1, i.e. worse than reconstructing zeros. On that
+sweep it refuses every value, which is the honest answer: at 24 steps DPS on this prior
+either under-fits (zeta <= 5 fails D-033) or diverges (zeta >= 20). Pinned by
+`tests/test_select_guidance.py` with the real case. **Lesson:** a share is a ratio, and a
+ratio of two exploding quantities can look like the best value in the table.
+
+---
+
+#### P-39 - Reading a checkpoint to watch progress killed the run that was writing it
+
+**Fixed (Week 11, T2.10)** - **See:** D-040, D-042
+
+The M4Raw bank on the BraTS prior died at its 160th pair with `PermissionError: [WinError 5]
+Access is denied` on `os.replace(scores.partial.parquet.tmp, scores.partial.parquet)`.
+The checkpoint write is atomic (temp file, then rename), and on Windows the rename fails
+while any other process has the target open. The other process was a progress check that
+read the partial parquet to count saved pairs, at the instant the runner swapped it. Nothing
+was lost (D-042: the restart resumed at 160/2,160), but a two-hour run can die this way at
+any checkpoint. `_atomic_write_bytes` now retries the rename for up to ~5 s on
+`PermissionError` before letting it stand; a reader's lock lasts only as long as its read.
+Pinned by two tests in `tests/test_checkpointing.py`: a transient lock is waited out, and a
+lock that never clears still raises. Progress is now read from the run's log, not from the
+checkpoint.
+
+---
+
 #### P-38 - On Windows the GPU run failed for want of *system* memory, with the card half empty
 
 **Worked around (Week 10, T2.9)** - **See:** P-24, D-043, D-042
@@ -1581,7 +1617,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 66 entries, so a problem in Part I can be
+What lives here instead is the index — 68 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1652,3 +1688,5 @@ traced to the decision that settled it without opening the log.
 | [D-064](decision_log.md) | The curve-collapse test, and one command to run it | Week 9 | Track 1's test -- see D72 |
 | [D-065](decision_log.md) | Six CPU re-analyses are queued against your banks, and one GPU run is the priority | Week 10 | Track 1's ask -- see D73-D78 |
 | [D-066](decision_log.md) | The DPS arm of the ablation: zeta = 5, 24 steps, the random1d family, its own bank | Week 10 | ACCEPTED |
+| [D-067](decision_log.md) | The medical prior runs as a converted NCSN++ behind an exact VE-to-VP adapter, and waits on a ruling to be reportable | Week 11 | ACCEPTED (implementation) — admissibility OPEN, Track 1's |
+| [D-068](decision_log.md) | On the medical prior, DPS runs at 100 steps and zeta = 5, not at DDNM's budget | Week 11 | ACCEPTED |

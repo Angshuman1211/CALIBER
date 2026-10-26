@@ -90,7 +90,9 @@ def main(argv: list[str] | None = None) -> int:
            for row in manifest["operators"]}
     if args.device:
         ops = {k: OnDevice(v, args.device) for k, v in ops.items()}
-    if args.calibration not in ops:
+    # --all-pairs uses no calibration operator, so the default (a CT id) must not stop it on
+    # an MRI bank -- which is what it did the first time it was pointed at one (T2.10).
+    if not args.all_pairs and args.calibration not in ops:
         raise SystemExit(f"{args.calibration} is not in this bank: {sorted(ops)}")
     # EXTRA names CT operators explicitly, so it is filtered to what this bank actually
     # holds. Without the filter, pointing this at an MRI bank -- which is what

@@ -265,3 +265,23 @@ def test_all_pairs_fills_the_matrix_once_and_skips_a_pair_cached_in_reverse(tmp_
                                             (ids[1], ids[2])]}
     assert len(rows) == 3, "the pair cached in reverse must not be computed again"
     assert set(rows["measure"]) == {"null_space_growth"}
+
+
+def test_all_pairs_does_not_need_the_default_calibration_operator(tmp_path):
+    """The default --calibration is a CT id. --all-pairs uses none, so on an MRI bank it must
+    not stop on that id -- the first run on the M4Raw bank did exactly that (T2.10)."""
+    import json
+
+    ids = [f"mri.random1d.R{r}.c0.08.s0" for r in (2, 8)]
+    bank = tmp_path / "bank"
+    bank.mkdir()
+    (bank / "manifest.json").write_text(json.dumps({"operators": [
+        {"operator_id": oid, "modality": "mri", "image_shape": list(SHAPE),
+         "params": {"family": "random1d", "acceleration": float(r), "center_fraction": 0.08,
+                    "mask_seed": 0, "noise_sigma": 0.0}}
+        for oid, r in zip(ids, (2, 8))
+    ]}), encoding="utf-8")
+    out = tmp_path / "distances.csv"
+    assert ct_distances.main([str(bank), "--all-pairs", "--measures", "null_space_growth",
+                              "--out", str(out)]) == 0
+    assert len(pd.read_csv(out)) == 1

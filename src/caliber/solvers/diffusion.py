@@ -37,7 +37,7 @@ from torch import Tensor
 
 from ..operators.base import ForwardOperator
 from .base import PosteriorSampler, SolverInfo
-from .denoiser import Denoiser, DiffusersUNetDenoiser, NoiseSchedule
+from .denoiser import Denoiser, NoiseSchedule, build_denoiser
 
 
 def _as_real(x: Tensor) -> Tensor:
@@ -103,13 +103,16 @@ class _DiffusionSampler(PosteriorSampler):
         # 0 = all draws in one forward batch. Lower it to fit memory (P-24); the result
         # is unchanged either way, because each draw carries its own seed (D-044).
         self.max_draws_per_batch = int(max_draws_per_batch)
-        self.schedule = schedule or NoiseSchedule()
         if denoiser is not None:
             self._denoiser: Denoiser | None = denoiser
         elif checkpoint is not None:
-            self._denoiser = DiffusersUNetDenoiser(checkpoint, device=device)
+            self._denoiser = build_denoiser(checkpoint, device=device)
         else:
             self._denoiser = None
+        # A prior that defines its own noise levels (a VE-SDE score model, D79) brings
+        # its schedule; otherwise the DDPM training schedule, as before.
+        self.schedule = (schedule or getattr(self._denoiser, "default_schedule", None)
+                         or NoiseSchedule())
 
     @property
     def denoiser(self) -> Denoiser:

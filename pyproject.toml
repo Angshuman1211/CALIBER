@@ -24,6 +24,9 @@ dev = ["pytest>=8.0", "ruff>=0.5"]
 # Only the pretrained diffusion back-ends need these. The samplers themselves are
 # tested against an analytic denoiser, so the core test suite does not require them.
 solvers = ["diffusers>=0.27"]
+# Only scripts/convert_song_checkpoint.py needs this: it reads Song et al.'s Flax checkpoints
+# once and writes a torch state dict, which is all the runtime loads.
+convert = ["msgpack>=1.0"]
 figures = ["matplotlib>=3.8"]
 
 [project.scripts]
