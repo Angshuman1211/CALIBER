@@ -29,7 +29,11 @@ applications:
       phases:
         preBuild:
           commands:
-            - nvm use 22
+            # `nvm install` rather than `nvm use`: the build image ships several Node
+            # versions through nvm, but not necessarily 22, and `nvm use 22` on an image
+            # that lacks it fails outright. `nvm install` fetches it if missing and
+            # selects it either way, so this works on any image generation.
+            - nvm install 22
             - node --version
             - npm ci
         build:
