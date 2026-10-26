@@ -18,6 +18,9 @@ import pytest
 
 from caliber.solvers import build_solver
 from caliber.solvers.denoiser import (
+    UNKNOWN_ANATOMY,
+    prior_anatomy,
+    prior_modality,
     ADMISSIBLE_DOMAINS,
     AWAITING_RULING,
     PRIOR_DOMAINS,
@@ -72,10 +75,20 @@ def test_an_unknown_modality_admits_nothing():
     assert not prior_is_admissible(CELEBA, "ultrasound")
 
 
-def test_medical_modalities_admit_only_their_own_domain():
-    """No cross-admission: a CT prior is not an MRI prior."""
-    assert ADMISSIBLE_DOMAINS["mri"] == frozenset({"mri"})
-    assert ADMISSIBLE_DOMAINS["ct"] == frozenset({"ct"})
+def test_medical_modalities_admit_only_their_own_modality():
+    """No cross-admission: a CT prior is not an MRI prior.
+
+    D80 widened these sets to carry anatomy (``mri_brain``, ``ct_neck_to_pelvis``), so the
+    invariant is no longer a literal set -- it is that every admitted domain belongs to
+    the admitting modality. Pinning the literal set would have to be edited every time a
+    prior is added, which is how a guard stops guarding.
+    """
+    for modality in ("mri", "ct"):
+        for domain in ADMISSIBLE_DOMAINS[modality]:
+            assert domain == modality or domain.startswith(f"{modality}_"), (
+                f"{modality!r} admits {domain!r}, which is another modality's prior"
+            )
+    assert not ADMISSIBLE_DOMAINS["mri"] & ADMISSIBLE_DOMAINS["ct"]
 
 
 def test_every_registered_domain_is_one_the_admissibility_table_understands():
@@ -128,3 +141,75 @@ def test_fastmri_plus_a_face_prior_is_not_reportable():
     solver = build_solver({"name": "ddnm", "checkpoint": CELEBA, "n_steps": 4})
     assert solver.family != "reference"  # sampler gate passes
     assert not prior_is_admissible(solver.info().checkpoint, "mri")  # prior gate fails
+
+
+# -- the medical priors, and the anatomy gap they open (D79) -------------------
+
+MRI_PRIOR = "checkpoints/segguided_diffusion/ddim-breast_mri-256"
+CT_PRIOR = "checkpoints/segguided_diffusion/ddim-ct_organ_large-256"
+
+
+def test_the_medical_priors_are_registered_for_their_own_modality():
+    """D-016's bar: a medical prior rather than a natural-image one. Registering the key
+    is the whole change that makes a bank reportable, so it has to be the right key."""
+    assert prior_domain(MRI_PRIOR) == "mri_breast"
+    assert prior_domain(CT_PRIOR) == "ct_neck_to_pelvis"
+    assert prior_modality(MRI_PRIOR) == "mri"
+    assert prior_modality(CT_PRIOR) == "ct"
+    assert prior_is_admissible(MRI_PRIOR, "mri")
+    assert prior_is_admissible(CT_PRIOR, "ct")
+
+
+def test_a_medical_prior_is_still_not_admissible_across_modalities():
+    """The CT prior is not an MRI prior, whatever else it is."""
+    assert not prior_is_admissible(CT_PRIOR, "mri")
+    assert not prior_is_admissible(MRI_PRIOR, "ct")
+    assert not prior_is_admissible(MRI_PRIOR, "natural_image")
+
+
+def test_anatomy_is_recorded_separately_from_the_domain():
+    """**P-18 one level finer.** SegGuidedDiff's MRI prior is *breast* MRI, and this
+    project's MRI banks are knee (fastMRI) and brain (M4Raw). Modality-level
+    admissibility cannot see that, so the anatomy is carried alongside rather than folded
+    in -- otherwise a breast prior on knee data is silently clean, which is precisely how
+    the first fastMRI bank came out stamped reportable."""
+    assert prior_anatomy(MRI_PRIOR) == "breast"
+    assert prior_anatomy(CT_PRIOR) == "neck_to_pelvis"
+    assert prior_anatomy("checkpoints/brats_ncsnpp_ve") == "brain"
+    assert prior_anatomy(CELEBA) == "face"
+    assert prior_anatomy(None) == UNKNOWN_ANATOMY
+    assert prior_anatomy("checkpoints/who-knows") == UNKNOWN_ANATOMY
+
+
+def test_anatomy_does_not_gate_admissibility_and_that_is_deliberate():
+    """A breast-MRI prior on knee MRI is a publishable configuration with a stated
+    limitation; a face prior on knee MRI is not a medical prior at all. Collapsing the two
+    would either block the first wrongly or excuse the second."""
+    assert prior_is_admissible(MRI_PRIOR, "mri"), "cross-anatomy stays reportable"
+    assert not prior_is_admissible(CELEBA, "mri"), "cross-domain does not"
+
+
+def test_every_medical_prior_declares_an_anatomy_in_its_domain(): 
+    """D80 puts anatomy in the domain string, so a medical prior whose domain is a bare
+    modality has an unstated limitation -- which is the whole thing the split prevents."""
+    bare = sorted(k for k, v in PRIOR_DOMAINS.items() if v in {"mri", "ct"})
+    assert not bare, f"medical priors with no anatomy in their domain: {bare}"
+
+
+def test_cross_anatomy_stays_admissible_because_the_coverage_claim_survives_it():
+    """**D80, answering T2.10.** Anatomy mismatch gates *claims*, not banks. Blocking the
+    bank would also block the coverage result, which is the one the project can make; the
+    detection result is already gone for the same underlying reason (D67)."""
+    assert prior_is_admissible(MRI_PRIOR, "mri"), "breast prior stays admissible for MRI"
+    assert prior_is_admissible("checkpoints/brats_ncsnpp_ve", "mri")
+    assert not prior_is_admissible(CELEBA, "mri"), "a face prior is not a medical prior"
+
+
+def test_nothing_is_parked_awaiting_a_ruling_that_has_been_made():
+    """`AWAITING_RULING` held `mri_brain` pending D80. Leaving it there after the ruling
+    would silently keep the BraTS banks unreportable."""
+    from caliber.solvers.denoiser import AWAITING_RULING
+
+    admissible = set().union(*ADMISSIBLE_DOMAINS.values())
+    assert not (AWAITING_RULING & admissible), "a domain cannot be both parked and admitted"
+    assert "mri_brain" not in AWAITING_RULING, "D80 ruled on it"

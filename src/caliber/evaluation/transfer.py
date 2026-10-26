@@ -29,12 +29,18 @@ transferring*, per detector:
     penalty(d) = coverage(d, calibrated at the deployment operator)
                - coverage(d, calibrated at a different operator)
 
+and the detectors are compared on **|penalty|** (D81), not on the signed value. The signed
+form counts over-coverage as transferring well, so a detector whose transferred threshold
+flags nearly everything beats one whose threshold is merely right. Both directions are
+transfer failures -- one of validity, one of efficiency -- and a transfer comparison has to
+charge for both.
+
 Both arms use detector ``d``'s own threshold, fitted by the same split-conformal rule at
 the same ``alpha`` on the same calibration patients, and both are scored against the same
 label on the same test patients. The score's units cancel in the difference. Each detector
 is measured against itself, and only then are the two self-comparisons compared:
 
-    delta = penalty(baseline) - penalty(CALIBER)
+    delta = |penalty(baseline)| - |penalty(CALIBER)|
 
 ``delta > 0`` means the baseline loses more coverage under shift than CALIBER does -- which
 is the decomposition earning its keep on the axis that matters, whatever the AUROCs say.
@@ -142,6 +148,32 @@ class DetectorTransfer:
         return bool(self.flag_area_group >= TRIVIAL_FLAG_AREA)
 
     @property
+    def abs_penalty(self) -> float:
+        """Coverage lost in **either** direction. The quantity to compare on (D81).
+
+        The signed penalty treats over-coverage as transferring well, and a detector whose
+        transferred threshold flags nearly everything then scores *better* than one whose
+        threshold is merely right: coverage 1.000 gives a negative penalty. Track 2
+        measured the consequence -- on CT, CALIBER's transferred arm flags >= 99.7% of all
+        regions at 6 of 8 operators and the signed verdict reads that as a win.
+
+        A transferred threshold that over-flags has failed, in efficiency rather than in
+        validity, and a *transfer* comparison should count both failures.
+        """
+        return float(abs(self.penalty))
+
+    @property
+    def transferred_over_flags(self) -> bool:
+        """Does the transferred arm reach its coverage by flagging almost everything?
+
+        The gap that let the above through: :attr:`trivial` guards only the in-group arm,
+        so the transferred arm's flag area never entered the verdict. It is D51's rule --
+        an area means nothing until validity is reached -- applied to the arm D51 was not
+        looking at.
+        """
+        return bool(self.flag_area_naive >= TRIVIAL_FLAG_AREA)
+
+    @property
     def interpretable(self) -> bool:
         return self.reaches_nominal and not self.trivial
 
@@ -217,6 +249,19 @@ class TransferComparison:
         return self.baseline.interpretable and self.caliber.interpretable
 
     @property
+    def over_flagging(self) -> tuple[str, ...]:
+        """Detectors whose *transferred* arm flags almost everything (D81).
+
+        Reported rather than silently excluded: a transferred threshold that over-flags is
+        a real transfer failure and ``|penalty|`` already charges for it. This names it so
+        a reader can see *how* the detector failed, since under- and over-coverage have
+        the same magnitude here and very different meanings.
+        """
+        return tuple(
+            d.detector for d in (self.baseline, self.caliber) if d.transferred_over_flags
+        )
+
+    @property
     def floor_for_equivalence(self) -> float:
         """The smallest floor at which this interval would support 'alike'.
 
@@ -231,7 +276,7 @@ class TransferComparison:
     @property
     def verdict(self) -> str:
         """``caliber_transfers_better``, ``baseline_transfers_better``, ``equivalent``,
-        ``not_interpretable``, or ``undetermined``.
+        ``winner_over_flags``, ``not_interpretable``, or ``undetermined``.
 
         A directional verdict needs both gates: a magnitude above the floor (D72 -- a
         difference below it is precision, not a finding) *and* an interval excluding zero.
@@ -246,6 +291,16 @@ class TransferComparison:
         if self.equivalent:
             return "equivalent"
         if self.exceeds_floor and self.excludes_zero:
+            # |penalty| charges over-coverage, but it cannot charge it *enough*: a
+            # transferred threshold that over-flags moves coverage from ~0.90 to at most
+            # 1.000, so it is charged ~0.10 however badly it flags, while under-covering
+            # can cost the full 0.90. So a detector that wins by flagging everything can
+            # still come out ahead on |penalty| alone. It is not a transfer result, and
+            # the comparison it needs is on flag area at matched coverage, which is a
+            # different estimand -- `area_at_matched_coverage`.
+            winner = self.caliber if self.delta > 0 else self.baseline
+            if winner.transferred_over_flags:
+                return "winner_over_flags"
             return "caliber_transfers_better" if self.delta > 0 else "baseline_transfers_better"
         return "undetermined"
 
@@ -255,6 +310,11 @@ class TransferComparison:
             "calibrated_at": self.caliber.calibration_operator,
             "penalty_baseline": self.baseline.penalty,
             "penalty_caliber": self.caliber.penalty,
+            "abs_penalty_baseline": self.baseline.abs_penalty,
+            "abs_penalty_caliber": self.caliber.abs_penalty,
+            "area_naive_baseline": self.baseline.flag_area_naive,
+            "area_naive_caliber": self.caliber.flag_area_naive,
+            "over_flagging": ",".join(self.over_flagging),
             "delta": self.delta,
             "lo": self.lo,
             "hi": self.hi,
@@ -614,28 +674,34 @@ def detector_transfer(
     shared = dict(
         operator_col=operator_col, label_col=label_col, cluster_col=cluster_col, alpha=alpha,
     )
+    # The comparison is on |penalty| (D81), and the absolute value is taken **inside** the
+    # bootstrap, per replicate, before differencing. Taking it outside -- on the two point
+    # estimates alone -- would give an interval for the signed difference wearing the
+    # absolute one's label, which is the same class of error as the defect it fixes.
     calib_idx, test_idx = _resamples(calib, test_keys, cluster_col, n_boot, seed)
     paired = (
-        _arms(calib, here, baseline_col, calibration_operator, deployment_operator,
-              calib_idx=calib_idx, test_idx=test_idx, test_keys=test_keys, **shared).penalty_reps
-        - _arms(calib, here, caliber_col, calibration_operator, deployment_operator,
-                calib_idx=calib_idx, test_idx=test_idx, test_keys=test_keys,
-                **shared).penalty_reps
+        np.abs(_arms(calib, here, baseline_col, calibration_operator, deployment_operator,
+                     calib_idx=calib_idx, test_idx=test_idx, test_keys=test_keys,
+                     **shared).penalty_reps)
+        - np.abs(_arms(calib, here, caliber_col, calibration_operator, deployment_operator,
+                       calib_idx=calib_idx, test_idx=test_idx, test_keys=test_keys,
+                       **shared).penalty_reps)
     )
     idx_b = _resamples(calib, test_keys, cluster_col, n_boot, seed + 1)
     idx_c = _resamples(calib, test_keys, cluster_col, n_boot, seed + 2)
     unpaired = (
-        _arms(calib, here, baseline_col, calibration_operator, deployment_operator,
-              calib_idx=idx_b[0], test_idx=idx_b[1], test_keys=test_keys, **shared).penalty_reps
-        - _arms(calib, here, caliber_col, calibration_operator, deployment_operator,
-                calib_idx=idx_c[0], test_idx=idx_c[1], test_keys=test_keys,
-                **shared).penalty_reps
+        np.abs(_arms(calib, here, baseline_col, calibration_operator, deployment_operator,
+                     calib_idx=idx_b[0], test_idx=idx_b[1], test_keys=test_keys,
+                     **shared).penalty_reps)
+        - np.abs(_arms(calib, here, caliber_col, calibration_operator, deployment_operator,
+                       calib_idx=idx_c[0], test_idx=idx_c[1], test_keys=test_keys,
+                       **shared).penalty_reps)
     )
     lo, hi = np.quantile(paired, [interval_alpha / 2, 1 - interval_alpha / 2])
     return TransferComparison(
         baseline=base,
         caliber=cal,
-        delta=float(base.penalty - cal.penalty),
+        delta=float(base.abs_penalty - cal.abs_penalty),
         lo=float(lo),
         hi=float(hi),
         se_paired=float(np.nanstd(paired, ddof=1)),
@@ -769,7 +835,9 @@ def transfer_verdict(results: list[TransferComparison]) -> dict[str, object]:
     wins = counts.get("caliber_transfers_better", 0)
     losses = counts.get("baseline_transfers_better", 0)
     alike = counts.get("equivalent", 0)
-    undetermined = counts.get("undetermined", 0)
+    # `winner_over_flags` is a refusal, not a result, so it joins the undetermined count
+    # rather than either side's. Counting it as a win is exactly the defect D81 fixes.
+    undetermined = counts.get("undetermined", 0) + counts.get("winner_over_flags", 0)
     needed = [r.floor_for_equivalence for r in usable if np.isfinite(r.floor_for_equivalence)]
     floor_needed = float(max(needed)) if needed else float("nan")
 

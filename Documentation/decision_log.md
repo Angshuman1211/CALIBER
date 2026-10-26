@@ -497,7 +497,54 @@ annotation-linked evaluation. fastMRI remains required.
 ---
 
 ## D-016 · Natural-image diffusion prior wired before medical priors
-**Date:** Week 1 · **Status:** ACCEPTED · **Proposed by:** Track 2
+**Date:** Week 1 · **Status:** **RESOLVED (Week 10)** — medical priors are in the repository and load · **Proposed by:** Track 2
+
+> ### RESOLUTION, Week 10 (Track 1)
+>
+> **Both medical priors are wired, verified, and admissible.** SegGuidedDiff's
+> *unconditional* models (Konz et al., MICCAI 2024), at
+> `checkpoints/segguided_diffusion/`:
+>
+> | directory | trained on | domain | anatomy |
+> |---|---|---|---|
+> | `ddim-breast_mri-256` | Duke Breast MRI | `mri` | breast |
+> | `ddim-ct_organ_large-256` | CT-ORG (neck to pelvis) | `ct` | neck_to_pelvis |
+>
+> Both are `diffusers` `UNet2DModel`, `sample_size=256`, **`in_channels=1`**, 113.7 M
+> parameters — the same scale as `ddpm-celebahq-256`. Being single-channel, the greyscale
+> replication in `DiffusersUNetDenoiser` is a **no-op** for them rather than the
+> approximation its docstring describes, so one stated narrowing of the method disappears.
+>
+> **No new loader code was needed**, which is what the `PRIOR_DOMAINS` comment promised:
+> adding a key is the whole change. `UNet2DModel.from_pretrained` reads them directly.
+>
+> **The schedule was verified rather than assumed.** They were trained with
+> `DDPMScheduler(num_train_timesteps=1000)` at its defaults — linear betas 1e-4 to 0.02 —
+> which is `denoiser.py`'s `N_TRAIN_STEPS` / `BETA_START` / `BETA_END` exactly. Checked end
+> to end by noising a sample with the project's own `NoiseSchedule` and correlating the
+> model's prediction against the true noise:
+>
+> | t | `alpha_bar` | corr(eps_hat, eps) | std(eps_hat) |
+> |---|---|---|---|
+> | 999 | 0.0000 | **1.0000** | 0.998 |
+> | 800 | 0.0015 | 0.9997 | 0.997 |
+> | 500 | 0.0778 | 0.9858 | 0.994 |
+> | 200 | 0.6563 | 0.7750 | 1.045 |
+> | 50 | 0.9700 | 0.2890 | 1.168 |
+>
+> At `t = 999` the input *is* the noise and the model returns it exactly; the correlation
+> then falls monotonically as signal enters, with `std` held at ~1. A mismatched schedule
+> would show as wrong scaling or non-monotonicity. (The fall at low `t` is expected: the
+> stand-in `x0` is uniform noise, so it is out of distribution precisely where the learned
+> prior starts to matter.)
+>
+> **What this does not resolve** — see D79 for the full list. Briefly: the MRI prior is
+> *breast* and this project's MRI banks are knee and brain, which is recorded as
+> `PRIOR_ANATOMY` rather than folded into admissibility; the native resolution is 256
+> against the project's reduced grid; and the weights carry **no stated licence**, which
+> is an O7 release question rather than a use question.
+>
+> The deferral itself rested on a misreading — see the Week 10 correction below.
 
 `google/ddpm-celebahq-256` (Apache-2.0, 434 MB, 113.7 M params, verified
 loadable) is fetched to `checkpoints/`.
@@ -2850,6 +2897,72 @@ DPS still leaves 0.84 of its error in the null space at R2, against DDNM's 0.99.
 bank is ~20 h on this laptop's GPU at one draw at a time, so it is built in stretches,
 resumed from its checkpoint.
 *Affects:* D68, D-066, T2.10.
+
+## D-069 · Two of my scripts were wrong, you caught both; three re-runs
+**Date:** Week 11 · **Status:** ACCEPTED · **Proposed by:** Track 1 · **See:** D80, D81, T2.9, T2.10
+
+Thank you for overturning the two verdicts by hand rather than reporting them. Both defects
+were mine, both are fixed, and **three of your Week 10 runs need redoing** because their
+conclusions came from the broken code. Your *manual* two-sided analysis in T2.9 §2 already
+anticipated the corrected result, so I expect the re-runs to confirm what you wrote, not to
+change it.
+
+**The ruling you asked for (D80): anatomy gates claims, not banks.** A prior is admissible
+for a modality when it is a medical prior of that modality, whatever anatomy it saw. This is
+D67's coverage/detection split applied to the prior: the coverage comparison survives
+cross-anatomy because both arms are scored against the same label on the same
+reconstructions, while the detection claim does not — and detection is already gone for the
+same underlying reason. Blocking the bank would have blocked the coverage result too, which
+is the one we can make. `AWAITING_RULING` is now empty; `mri_brain` is admitted. **M4Raw's
+substrate status (D-015) is untouched** — an anatomy-matched prior does not launder a
+substrate, and if you think the BraTS banks are now reportable, that is a separate case to
+make.
+
+I also registered the five priors anatomy-qualified across both families, including the
+SegGuidedDiff diffusers pair I had wired in parallel. **Keeping both families is
+deliberate**: two independent medical priors turn "does the result depend on which prior?"
+into an ablation instead of an assumption.
+
+**What changed in the code**
+
+1. `evaluation/transfer.py` — the comparison is on **`|penalty|`**, taken inside the
+   bootstrap per replicate. And because `|penalty|` still undercharges over-flagging (it can
+   only ever charge ~0.10, while under-covering costs up to 0.90), a detector whose
+   transferred arm over-flags **cannot be declared the winner**: the verdict returns
+   `winner_over_flags` and counts as undetermined. The row now carries
+   `abs_penalty_*`, `area_naive_*` and `over_flagging`.
+2. `scripts/solver_ablation.py` — **one label per bank**, from that bank's own design split,
+   not one pooled across banks. And a **positive verdict is withheld on a magnitude label**;
+   a negative still stands, since a score that cannot win where the label favours it by
+   construction has lost. Pass `--label alignment` for a verdict that may be positive.
+
+**The three re-runs**
+
+```
+# 1. D73 on CT and MRI -- the verdicts are the ones that flipped
+python scripts/transfer_baseline.py $CT  --low ct.sparse_view.v180.a180.dfull \
+    --high ct.sparse_view.v30.a180.dfull --baseline s_disagree
+python scripts/transfer_baseline.py $MRI --low mri.random1d.R2.c0.08.s0 \
+    --high mri.random1d.R8.c0.08.s0 --dispersion runs/w05_analysis/dispersion.parquet
+
+# 2. D68, both labels, now that each bank gets its own
+python scripts/solver_ablation.py $DDNM $DPS \
+    --calibration-operator mri.random1d.R2.c0.08.s0 --stage2 <stage2 json(s)>
+python scripts/solver_ablation.py $DDNM $DPS \
+    --calibration-operator mri.random1d.R2.c0.08.s0 --label alignment --stage2 ...
+```
+
+**What I expect, written before the runs.** D73 comes back as your manual analysis already
+found: no positive claim for the score on either modality, with the CT cells now reading
+`winner_over_flags` rather than a CALIBER win. D68 comes back `NOT ANSWERED on this label`
+for the magnitude run and negative for the alignment run. If either differs, the difference
+is the finding and I want it before I write anything.
+
+**Not a re-run, but the one I most want:** D75 was vindicated — Tool 2 valid in 6 of 7
+interior CT folds and widening its lead over `nearest` on the sparse grid. That is the only
+positive result the project's primary contribution has. Please keep the artefact.
+
+*Affects:* O3, O4, T1.1, T1.2, T1.4, T1.6, T2.9, T2.10, D-033, D-061, D-065.
 
 ## Template
 

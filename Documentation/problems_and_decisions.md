@@ -1192,7 +1192,46 @@ D-016 has deferred the medical prior since **Week 1**, and the stated reason was
 - **The criterion is still circular** (D67). A medical prior should *raise* `cos θ` — its invented content should be less orthogonal to real anatomy than a face model's — which would weaken the `err ≈ hypot(s, c)` collapse. That is a prediction, and D74's `label_comparison.py` is the test. **It is written before the run, deliberately**, because this is a prediction the project wants to come true.
 - **The licence question moved rather than vanished.** The weights carry **no stated licence**: no LICENSE file, Google Drive hosting. Fine for a cited preprint; a real question for the O7 release, and it should be raised before packaging rather than at it.
 
-**Downloaded to `checkpoints/song_inverse_problems/`** (gitignored by `checkpoints/`). Treat the files as untrusted input: a checkpoint is a pickle, so `torch.load` on it executes arbitrary code. Load with `weights_only=True` where the format allows.
+**Song et al.'s checkpoints turned out to be the wrong artefact, and the better one was elsewhere.** Their files are **JAX/Flax** msgpack (`step`/`optimizer`/`target`), not PyTorch, and NCSN++ **VE** score models against this project's **VP/DDPM** epsilon samplers — two conversions deep, either of which silently mis-scales. That download was abandoned mid-transfer once the format was clear.
+
+**What is wired instead: SegGuidedDiff's unconditional models** (Konz et al., MICCAI 2024) — `ddim-breast_mri-256` (Duke Breast MRI) and `ddim-ct_organ_large-256` (CT-ORG, neck to pelvis). `diffusers` `UNet2DModel`, `in_channels=1`, 113.7 M parameters, trained on `DDPMScheduler` defaults so the schedule is this project's exactly. **Zero new loader code**; the schedule was verified end to end rather than assumed (table in D-016's resolution). Track 2's Week 2 search that found "no open substitute" was two years stale.
+
+**Two things improve beyond simply having a medical prior.** The models are single-channel, so `DiffusersUNetDenoiser`'s greyscale-to-RGB replication becomes a no-op and one stated narrowing of the method disappears. And **CT-ORG is neck-to-pelvis organ CT against TotalSegmentator's whole body** — a genuinely close anatomical match, where LIDC would have been lung-only. CT is also where the project's results are strongest (ρ = +0.976, 13/13-split failures), so the best-matched prior sits on the strongest result.
+
+Treat downloaded weights as untrusted input: a checkpoint can be a pickle, so `torch.load` executes arbitrary code. These are `.safetensors`, which is the format that exists to avoid that.
+
+---
+
+### D80 — Anatomy gates claims, not banks [T1.6, answering T2.10's question]
+Track 2 registered Song's BraTS prior as `mri_brain` rather than `mri`, parked it in `AWAITING_RULING`, and asked Track 1 whether an anatomy-matched prior makes a bank reportable. Their framing is right and is adopted: **domains carry anatomy**, for every medical prior, because a bare `mri` would stamp a brain prior reportable on fastMRI *knees*.
+
+**The ruling: a prior is admissible for a modality when it is a medical prior of that modality, whatever anatomy it saw. Anatomy mismatch gates which claims the bank can carry, not whether the bank is reportable.**
+
+This is **D67's coverage/detection split applied to the prior instead of to the label**:
+- **Coverage claims survive cross-anatomy.** Both arms are scored against the same label on the same reconstructions. A prior that suits the anatomy badly changes what gets labelled; it does not change whether a transferred threshold loses coverage relative to an in-group one. That comparison is the project's central claim and it holds.
+- **Detection claims do not.** The criterion's validity rests on `cos θ`, and anatomy mismatch is precisely the mechanism that drives `cos θ` toward zero — the face-prior pathology reappearing in the one quantity the label depends on. T2.9 §4 measures it: at chance on CT, 0 of 9 operators beating the anatomy control.
+
+**Why not block the bank.** Blocking would have blocked the *coverage* result too, and that is the one the project can actually make. The detection result is already gone for the same underlying reason, so refusing the bank buys no protection and costs the headline claim. `AWAITING_RULING` is now empty and kept only so the next prior from an unanticipated anatomy parks there rather than being admitted by whoever adds it.
+
+**Not changed:** D-015's separate question of whether M4Raw is reportable as a *substrate*. That is a property of the dataset, not of the prior. An anatomy-matched prior does not launder a substrate.
+
+**Five priors are now registered anatomy-qualified** across two independent families — Song VE/NCSN++ (`mri_brain`, `ct_chest`, `ct_head_chest_abdomen`) and SegGuidedDiff diffusers (`mri_breast`, `ct_neck_to_pelvis`). Keeping both is deliberate: it makes "does the result depend on which medical prior?" an ablation rather than an assumption.
+
+### D81 — Two defects in my Week 10 scripts, both found by Track 2, both fixed [T1.4]
+Track 2 ran the six queued analyses and overturned two of my results by hand. Both defects are mine and both are in the same family as entries I had already written warnings about.
+
+**1. D73's penalty is signed, so over-coverage counted as transferring well.** `penalty = coverage(in-group) − coverage(transferred)`. A transferred threshold that **over-flags** has coverage ≈ 1.000, hence a *negative* penalty, hence reads as better than a threshold that is merely right. My `interpretable` gate checked `reaches_nominal` and `trivial` on the **in-group** arm only; the transferred arm's flag area never entered the verdict. Track 2 measured the cost: on CT, CALIBER's transferred arm flags ≥ 99.7% of all regions at 6 of 8 operators, and my script called that "CALIBER transfers better at 7 of 8". **This is D51's rule — an area means nothing until validity is reached — reproduced on the arm D51 was not looking at, in a module whose docstring cites D51.**
+
+Fixed in three parts, because the obvious fix is insufficient:
+- The comparison is now on **`|penalty|`**, taken **inside** the bootstrap per replicate before differencing. Taking it outside would give an interval for the signed difference wearing the absolute one's label.
+- `|penalty|` alone does **not** suffice, and a test caught it: over-coverage can only move coverage from ~0.90 to at most 1.000, so it is charged ~0.10 however badly it flags, while under-covering can cost the full 0.90. A detector can still win by flagging everything.
+- So a detector whose transferred arm over-flags **cannot be declared the winner**: the verdict returns `winner_over_flags`, which counts as undetermined rather than as either side's win, and points at `area_at_matched_coverage` — the estimand that compares at fixed coverage, where over-flagging is charged properly.
+
+**2. `solver_ablation.py` valued one label on the pooled design rows of both banks.** Pooled ε = 0.856 against 0.906 (DDNM) and 0.726 (DPS), so each arm was scored at a positive rate that was not its own. A label gate is a magnitude, and **D-020 is this project's own finding that magnitudes transfer across neither modalities nor substrates** — two solvers are two substrates for this purpose. Now one label per bank, from that bank's own design split, with the two printed side by side and a note when they differ.
+
+**And the verdict it printed was unsound.** It said "D68 ANSWERED, POSITIVE" off the magnitude label, with the D67 caveat relegated to a closing line. By D38's identity that label is approximately a function of `s_free`; the score contains `s_free` and `s_disagree` does not, so the excess *is* the identity. A positive is now withheld unless the label is D74's direction label. **A negative still stands on any label** — if the score cannot win where the label favours it by construction, that is decisive — and the asymmetry is deliberate.
+
+**I also withdraw the question I put to Track 2 in D-065** about how the D-033 null-error shares were computed. They are computed at image level per item, exactly as I later established by reading `operators/decomposition.py` myself. The question should never have been asked; the answer was in the repository. Their definition is also better than the one I wrote: its denominator is `‖P_N δ‖² + ‖P_R δ‖²` rather than `‖δ‖²`, so it stays meaningful when the projector is only approximately orthogonal — the CT case, D-012.
 
 ---
 

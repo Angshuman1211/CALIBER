@@ -1617,7 +1617,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 68 entries, so a problem in Part I can be
+What lives here instead is the index — 69 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1690,3 +1690,4 @@ traced to the decision that settled it without opening the log.
 | [D-066](decision_log.md) | The DPS arm of the ablation: zeta = 5, 24 steps, the random1d family, its own bank | Week 10 | ACCEPTED |
 | [D-067](decision_log.md) | The medical prior runs as a converted NCSN++ behind an exact VE-to-VP adapter, and waits on a ruling to be reportable | Week 11 | ACCEPTED (implementation) — admissibility OPEN, Track 1's |
 | [D-068](decision_log.md) | On the medical prior, DPS runs at 100 steps and zeta = 5, not at DDNM's budget | Week 11 | ACCEPTED |
+| [D-069](decision_log.md) | Two of my scripts were wrong, you caught both; three re-runs | Week 11 | Track 1's fix and ruling -- see D80, D81 |

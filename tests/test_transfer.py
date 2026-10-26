@@ -436,3 +436,66 @@ def test_the_script_refuses_a_dispersion_file_that_does_not_match_the_bank(tmp_p
     err = capsys.readouterr().err
     assert code == 1
     assert "no bank row matches" in err or "neither direction" in err
+
+
+# -- over-coverage is a transfer failure too (D81, found by Track 2) ----------------
+
+
+def test_a_transferred_threshold_that_over_flags_does_not_count_as_transferring_well():
+    """**The defect this fixes, as a test.**
+
+    The signed penalty treats over-coverage as good transfer: a transferred threshold that
+    flags nearly everything has coverage 1.000, hence a *negative* penalty, hence reads as
+    better than a threshold that is merely right. `interpretable` guarded only the in-group
+    arm, so the transferred arm's flag area never entered.
+
+    Track 2 measured the consequence on the real CT bank: CALIBER's transferred arm flags
+    >= 99.7% of all regions at 6 of 8 operators, and the signed verdict called that a win
+    at 7 of 8. Here the baseline drifts *down* (under-covers, a genuine failure) and CALIBER
+    drifts *up* (over-flags), by the same magnitude. Neither should beat the other.
+    """
+    df = _bank(baseline_drift=1.5, seed=11)
+    # CALIBER's scores rise at the deployment operator, so its transferred threshold is
+    # far too low and it flags nearly everything there.
+    deploy = df["operator_id"] == "op.high"
+    df.loc[deploy, "score"] = df.loc[deploy, "score"] + 6.0
+    calib, test = _sides(df)
+    c = detector_transfer(calib, test, "s_dispersion", "score", CALIB_OP, "op.high")
+
+    assert c.caliber.transferred_over_flags, "the fixture must make CALIBER over-flag"
+    assert c.caliber.penalty < 0, "over-coverage gives the signed penalty the wrong sign"
+    assert "CALIBER score" in " ".join(c.over_flagging) or c.over_flagging
+    # On |penalty| both detectors have failed, so neither wins outright.
+    assert c.verdict != "caliber_transfers_better", (
+        f"over-flagging read as a win: delta={c.delta:+.4f}, "
+        f"caliber penalty={c.caliber.penalty:+.4f}"
+    )
+
+
+def test_the_comparison_is_on_absolute_penalty_not_signed():
+    df = _bank(baseline_drift=1.5, seed=12)
+    deploy = df["operator_id"] == "op.high"
+    df.loc[deploy, "score"] = df.loc[deploy, "score"] + 6.0
+    calib, test = _sides(df)
+    c = detector_transfer(calib, test, "s_dispersion", "score", CALIB_OP, "op.high")
+    assert c.delta == pytest.approx(c.baseline.abs_penalty - c.caliber.abs_penalty)
+    assert c.caliber.abs_penalty == pytest.approx(abs(c.caliber.penalty))
+
+
+def test_a_detector_that_holds_its_threshold_still_beats_one_that_drifts_either_way():
+    """The fix must not cost the module its power: with one detector steady and the other
+    drifting *down*, the steady one should still win."""
+    calib, test = _sides(_bank(baseline_drift=1.5, seed=13))
+    c = detector_transfer(calib, test, "s_dispersion", "score", CALIB_OP, "op.high")
+    assert c.verdict == "caliber_transfers_better"
+    assert not c.caliber.transferred_over_flags
+
+
+def test_the_over_flagging_detectors_are_named_in_the_row():
+    df = _bank(baseline_drift=1.5, seed=14)
+    deploy = df["operator_id"] == "op.high"
+    df.loc[deploy, "score"] = df.loc[deploy, "score"] + 6.0
+    calib, test = _sides(df)
+    row = detector_transfer(calib, test, "s_dispersion", "score", CALIB_OP, "op.high").as_row()
+    assert "over_flagging" in row and row["over_flagging"]
+    assert "area_naive_caliber" in row and row["area_naive_caliber"] > 0.9

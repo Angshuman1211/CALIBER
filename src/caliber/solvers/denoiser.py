@@ -337,19 +337,99 @@ PRIOR_DOMAINS: dict[str, str] = {
     # key is the *whole* change needed to make a bank reportable, which is the
     # point: it is one deliberate edit, reviewable in a diff.
     #
-    # Song et al.'s BraTS prior (D79) is a brain-MRI prior, recorded as such rather than as
-    # "mri": under ADMISSIBLE_DOMAINS below, "mri" would stamp it reportable on fastMRI
-    # *knees* too, which is cross-anatomy. Whether an anatomy-matched prior makes M4Raw
-    # reportable (D-015 has it unreportable as a substrate) is Track 1's ruling (T2.10).
+    # **Domains carry anatomy, not just modality (D80).** Track 2's reasoning on the BraTS
+    # prior is adopted for every medical prior here: a bare "mri" would stamp a brain prior
+    # reportable on fastMRI *knees*, and D67 is why that is not a cosmetic limitation --
+    # the criterion's validity rests on `cos theta`, and anatomy mismatch is the mechanism
+    # that drives `cos theta` to zero. A cross-anatomy medical prior reproduces the
+    # face-prior pathology in the one quantity the label depends on.
+    #
+    # Two families, deliberately kept both: having two independent medical priors makes
+    # "does the result depend on which prior?" an ablation rather than an assumption.
+    #
+    # Song et al. VE/NCSN++ (ICLR 2022), via scripts/convert_song_checkpoint.py:
     "brats_ncsnpp_ve": "mri_brain",
+    "ct2d_320_ncsnpp_ve": "ct_chest",
+    "ldct_512_ncsnpp_ve": "ct_head_chest_abdomen",
+    # SegGuidedDiff **unconditional** models (Konz et al., MICCAI 2024): `diffusers`
+    # `UNet2DModel`, `in_channels=1`, trained on `DDPMScheduler` defaults -- so the DDPM
+    # schedule above is theirs exactly, and the greyscale replication in
+    # `DiffusersUNetDenoiser` is a no-op for them rather than an approximation.
+    "ddim-breast_mri-256": "mri_breast",
+    "ddim-ct_organ_large-256": "ct_neck_to_pelvis",
 }
 
-# Which prior domains are admissible for which modality. Deliberately strict:
-# a domain is admissible for a modality only if the prior was trained on that
-# modality's images.
+#: A prior with no anatomy at all, as distinct from one whose anatomy is unrecorded.
+NON_ANATOMICAL = "non_anatomical"
+
+UNKNOWN_ANATOMY = "unknown"
+
+#: The modalities whose domains are written ``<modality>_<anatomy>``. Everything else
+#: (``natural_image``) is one token and has no anatomy.
+MEDICAL_MODALITIES = ("mri", "ct")
+
+
+def prior_modality(checkpoint: str | Path | None) -> str:
+    """The modality half of the domain: ``mri_brain`` -> ``mri``.
+
+    Derived from :data:`PRIOR_DOMAINS` rather than stored separately. A second map would
+    be a second source of truth and two chances to drift, which is the failure
+    `evaluation/bank.py` was written to avoid for the score.
+    """
+    domain = prior_domain(checkpoint)
+    for modality in MEDICAL_MODALITIES:
+        if domain == modality or domain.startswith(f"{modality}_"):
+            return modality
+    return domain
+
+
+def prior_anatomy(checkpoint: str | Path | None) -> str:
+    """The anatomy half: ``mri_brain`` -> ``brain``; ``natural_image`` -> non-anatomical.
+
+    Reported beside the domain so a cross-anatomy run carries its limitation in the
+    manifest instead of in someone's memory.
+    """
+    if checkpoint is None:
+        return UNKNOWN_ANATOMY
+    domain = prior_domain(checkpoint)
+    if domain == UNKNOWN_DOMAIN:
+        return UNKNOWN_ANATOMY
+    for modality in MEDICAL_MODALITIES:
+        if domain.startswith(f"{modality}_"):
+            return domain[len(modality) + 1:]
+    # A face is a body part, and naming it is what makes the celebahq mismatch legible
+    # rather than merely out-of-domain.
+    if Path(str(checkpoint)).name == "ddpm-celebahq-256":
+        return "face"
+    return NON_ANATOMICAL
+
+# Which prior domains are admissible for which modality.
+#
+# **D80, Track 1's ruling, answering T2.10's question.** A prior is admissible for a
+# modality when it is a *medical* prior **of that modality**, whatever anatomy it saw.
+# Anatomy mismatch does not block a bank; it gates which *claims* that bank can carry.
+#
+# This is D67's coverage/detection split applied to the prior instead of to the label:
+#
+# - **Coverage claims survive cross-anatomy.** Both arms are scored against the same
+#   label on the same reconstructions; a prior that suits the anatomy badly changes what
+#   gets labelled, not whether a transferred threshold loses coverage relative to an
+#   in-group one. That comparison is the project's central claim and it holds.
+# - **Detection claims do not.** The criterion's validity rests on `cos theta`, and
+#   anatomy mismatch is precisely the mechanism that drives `cos theta` to zero -- the
+#   face-prior pathology reappearing in the one quantity the label depends on. A
+#   cross-anatomy detection number is not reportable, and T2.9 measures it at chance.
+#
+# So `prior_anatomy` is recorded in the manifest and read in the analysis, rather than
+# being folded in here. Blocking the bank outright would also have blocked the *coverage*
+# result, which is the one the project can actually make.
+#
+# **Not changed by this ruling:** D-015's separate question of whether M4Raw is reportable
+# as a *substrate*. That is a property of the dataset, not of the prior, and it is still
+# whatever D-015 says it is. An anatomy-matched prior does not launder a substrate.
 ADMISSIBLE_DOMAINS: dict[str, frozenset[str]] = {
-    "mri": frozenset({"mri"}),
-    "ct": frozenset({"ct"}),
+    "mri": frozenset({"mri", "mri_brain", "mri_breast"}),
+    "ct": frozenset({"ct", "ct_chest", "ct_head_chest_abdomen", "ct_neck_to_pelvis"}),
     # The Week 10 natural-image restoration appendix (Sec. 11.1) is the one
     # place a natural-image prior is the appropriate prior rather than a
     # stand-in, so there it is admissible.
@@ -358,9 +438,10 @@ ADMISSIBLE_DOMAINS: dict[str, frozenset[str]] = {
 
 #: Domains registered above that no modality admits *yet*, on purpose, because the ruling
 #: that would admit them is outstanding. Named so that "not admitted" is a recorded state
-#: rather than a typo: ``mri_brain`` waits on Track 1's ruling on anatomy-matched priors
-#: (D79; T2.10). Moving a domain out of here and into ADMISSIBLE_DOMAINS is the change.
-AWAITING_RULING: frozenset[str] = frozenset({"mri_brain"})
+#: rather than a typo. **Empty since D80**, which ruled on the one entry it held
+#: (``mri_brain``); kept because the next prior from an unanticipated anatomy should park
+#: here rather than be admitted by whoever adds it.
+AWAITING_RULING: frozenset[str] = frozenset()
 
 UNKNOWN_DOMAIN = "unknown"
 

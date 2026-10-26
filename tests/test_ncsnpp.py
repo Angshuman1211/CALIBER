@@ -223,11 +223,20 @@ def test_the_factory_picks_the_adapter_by_what_the_checkpoint_directory_holds(tm
     assert isinstance(build_denoiser(plain), DiffusersUNetDenoiser)  # loaded lazily
 
 
-def test_the_brain_prior_is_recorded_as_brain_and_admitted_nowhere_yet():
-    """Recorded as "mri" it would stamp knee banks reportable; whether the anatomy-matched
-    case is admissible is Track 1's ruling (T2.10)."""
-    assert prior_domain("checkpoints/song_inverse_problems/brats_ncsnpp_ve") == "mri_brain"
-    assert not prior_is_admissible("checkpoints/song_inverse_problems/brats_ncsnpp_ve", "mri")
+def test_the_brain_prior_is_recorded_as_brain_and_admitted_for_mri():
+    """Recorded as ``mri_brain`` rather than ``mri`` so the anatomy is never lost.
+
+    **Track 1 has now ruled (D80), and the second assertion is flipped from what this test
+    first asserted.** Anatomy mismatch gates *claims*, not banks: the coverage comparison
+    survives it, because both arms are scored against the same label on the same
+    reconstructions, while the detection claim does not -- and detection is already gone
+    for the same underlying reason (D67). Refusing the bank outright would have blocked
+    the coverage result too, which is the one the project can actually make.
+    """
+    brats = "checkpoints/song_inverse_problems/brats_ncsnpp_ve"
+    assert prior_domain(brats) == "mri_brain"
+    assert prior_is_admissible(brats, "mri")
+    assert not prior_is_admissible(brats, "ct"), "still not a CT prior"
 
 
 # -- the real checkpoint, where it is present -------------------------------------------
