@@ -46,6 +46,28 @@ Neither was visible by looking at the images. The suite includes a **control** �
 unprojected blob, which must be detectable at ~1e-2 — so the main assertion cannot pass
 vacuously.
 
+## Design and motion
+
+Dark and light, both driven by tokens on `:root` with a `data-theme` override, so the toggle
+and the OS setting agree. Inter and IBM Plex Mono from Google Fonts; everything else is
+hand-written CSS — no framework.
+
+**Every animation carries information rather than decorating.** The hero is the real
+`randomMask1d` from the demo, looping from R=2 to R=12: lit rows are measured phase-encode
+lines, dark rows are the null space, and the caption counts them, so the thing the project is
+about is the first thing on the page. The coverage bars grow *from the axis* with
+`transform-origin` pinned there, so the eye tracks distance from the 0.90 rule — the quantity
+being claimed. The headline 69.3% counts up from 90%, which is the fall it describes.
+
+Reveal-on-scroll uses one `IntersectionObserver` hook that fires once and disconnects;
+content that re-animates on every pass is distracting rather than polished. Route changes
+remount `main` via `key`, which replays the entry animation and resets demo state — a stale
+canvas from the previous page is worse than a reset.
+
+**`prefers-reduced-motion` is honoured throughout**, and not by hiding content: the reveal
+hook starts in the shown state and the count-up jumps to its final value, so nothing is ever
+stuck behind an animation that will not play.
+
 ## Where the numbers come from
 
 **`src/data.js` is the only place a number appears.** Each block names the document it came
@@ -82,6 +104,17 @@ out of step.
 asset URLs are relative and the build works from a subdirectory — a GitHub Pages project
 site, or a university server path — with no further configuration.
 
+- **AWS Amplify Hosting:** `amplify.yml` at the **repository root** already has it. Connect
+  the repo, and in the console enable **"Connect a monorepo"** with app root `site` — without
+  that setting `appRoot` is ignored, Amplify builds the repo root, finds no `package.json`
+  and fails. Two details in that spec are load-bearing:
+  - `nvm use 22`. Vite 8 declares `engines: node ^20.19.0 || >=22.12.0`, and Amplify's
+    default image has shipped older Node. The failure is an opaque resolution error, not a
+    clear version message.
+  - **No SPA rewrite rule is needed.** Hash routing means every requested URL is
+    `/index.html` and the fragment never reaches the server, so the usual "404 → /index.html
+    200" rule is unnecessary. It becomes mandatory only if routing is switched to history
+    mode.
 - **GitHub Pages / Netlify / Vercel:** build command `npm run build`, publish directory
   `dist`, project root `site`.
 - **Anywhere else:** copy `dist/` to the web root. There is no server-side component.

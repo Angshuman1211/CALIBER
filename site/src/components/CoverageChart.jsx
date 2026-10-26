@@ -1,4 +1,5 @@
 import { NOMINAL } from '../data'
+import { useReveal } from '../lib/motion'
 
 /**
  * Coverage against the nominal line, one row per deployment operator.
@@ -9,6 +10,8 @@ import { NOMINAL } from '../data'
  * a y-axis starting anywhere but a fixed window would flatter or exaggerate it.
  */
 export default function CoverageChart({ rows }) {
+  const [wrapRef, shown] = useReveal()
+
   const W = 760
   const rowH = 30
   const padL = 96
@@ -20,7 +23,7 @@ export default function CoverageChart({ rows }) {
   const sx = (v) => padL + ((v - x0) / (x1 - x0)) * (W - padL - padR)
 
   return (
-    <div className="tablewrap">
+    <div className="tablewrap chartwrap" ref={wrapRef}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
         style={{ width: '100%', minWidth: 520, height: 'auto', display: 'block' }}
@@ -52,17 +55,35 @@ export default function CoverageChart({ rows }) {
               <text x={padL - 10} y={y + 13} textAnchor="end" fontSize="12" fill="var(--muted)">
                 {r.op}
               </text>
+              {/* Bars grow from the axis rather than appearing, so the eye follows the
+                  distance from the nominal rule — which is the quantity being claimed.
+                  Transform-origin is the axis, not the bar, or they would grow from
+                  their own left edge and land in the wrong place. */}
               <rect
                 x={sx(x0)} y={y + 3} width={Math.max(sx(r.group) - sx(x0), 1)} height={7}
                 fill="var(--accent)" opacity="0.85" rx="2"
+                style={{
+                  transform: shown ? 'scaleX(1)' : 'scaleX(0)',
+                  transformOrigin: `${sx(x0)}px 0px`,
+                  transition: `transform 0.75s var(--ease) ${0.05 + i * 0.05}s`,
+                }}
               />
               <rect
                 x={sx(x0)} y={y + 13} width={Math.max(sx(r.naive) - sx(x0), 1)} height={7}
                 fill={below ? 'var(--bad)' : 'var(--warn)'} rx="2"
+                style={{
+                  transform: shown ? 'scaleX(1)' : 'scaleX(0)',
+                  transformOrigin: `${sx(x0)}px 0px`,
+                  transition: `transform 0.75s var(--ease) ${0.12 + i * 0.05}s`,
+                }}
               />
               <text
                 x={sx(Math.max(r.naive, r.group)) + 7} y={y + 15}
                 fontSize="11" fill={below ? 'var(--bad)' : 'var(--muted)'} fontFamily="var(--mono)"
+                style={{
+                  opacity: shown ? 1 : 0,
+                  transition: `opacity 0.4s ease ${0.5 + i * 0.05}s`,
+                }}
               >
                 {r.naive.toFixed(3)}
               </text>

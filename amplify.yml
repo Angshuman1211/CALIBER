@@ -1,0 +1,46 @@
+# AWS Amplify Hosting build spec.
+#
+# This file must sit at the **repository root**, not next to the app, even though the app
+# lives in `site/`. Amplify reads it from the root and `appRoot` tells it where to go.
+#
+# Two things here are not boilerplate and will break the build if dropped:
+#
+# 1. `nvm use 22`. Vite 8 and @vitejs/plugin-react 6 declare
+#    `engines: node ^20.19.0 || >=22.12.0`. Amplify's default build image has historically
+#    shipped an older Node, and the failure is an opaque syntax or resolution error rather
+#    than a clear "wrong Node" message. Pinning it in the build phase costs one line and
+#    removes the whole class of problem. (Setting the `_LIVE_UPDATES` image override or a
+#    `VERSION_NODE` environment variable works too; this is the version that is visible in
+#    the repository rather than in console settings nobody remembers to check.)
+#
+# 2. `appRoot: site`. The Amplify app's monorepo setting must also be enabled in the
+#    console — "Connect a monorepo" — or `appRoot` is ignored and it builds the repo root,
+#    finds no package.json, and fails.
+#
+# **No SPA rewrite rule is needed.** The site uses hash routing (`#/results`), so every URL
+# the browser requests is `/index.html` and the fragment never reaches the server. The usual
+# Amplify "redirect 404 to /index.html with 200" rule is unnecessary here. If routing is ever
+# switched to history mode, that rule becomes mandatory.
+
+version: 1
+applications:
+  - appRoot: site
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - nvm use 22
+            - node --version
+            - npm ci
+        build:
+          commands:
+            - npm test
+            - npm run build
+      artifacts:
+        # Relative to appRoot, so `dist` and not `site/dist`.
+        baseDirectory: dist
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
