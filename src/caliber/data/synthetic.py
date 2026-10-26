@@ -22,6 +22,7 @@ import torch
 from torch import Tensor
 
 from .base import Item, SliceDataset
+from .splits import split_for
 
 
 def _ellipse(shape: tuple[int, int], cy: float, cx: float, ry: float, rx: float, angle: float):
@@ -49,15 +50,37 @@ class PhantomDataset(SliceDataset):
         split: str = "calib",
         seed: int = 0,
         lesion: bool = True,
+        calib_fraction: float = 0.5,
+        design_fraction: float = 0.0,
     ):
         self.n_items = int(n_items)
         self.image_shape = tuple(image_shape)
         self.split = split
         self.seed = int(seed)
         self.lesion = lesion
+        self.calib_fraction = float(calib_fraction)
+        self.design_fraction = float(design_fraction)
+        # ``split="auto"`` is D-022's path, as in the fastMRI and TotalSegmentator
+        # loaders: the side is decided per item from a hash of its id, so it is stable
+        # across runs and independent of iteration order. Without this the string was
+        # written into the bank verbatim -- a bank whose `split` column reads "auto" has
+        # one side, every threshold is fitted on the rows it is scored on, and the
+        # coverage lands near nominal by construction (P-23). A demo that shows the
+        # phenomenon has to be able to hold patients out, so the phantom needs it too.
+        self.auto_split = split == "auto"
 
     def __len__(self) -> int:
         return self.n_items
+
+    def _split_of(self, sample_id: str) -> str:
+        """This item's side. One phantom is one "patient", so the id is the split key."""
+        if not self.auto_split:
+            return self.split
+        return split_for(
+            sample_id,
+            calib_fraction=self.calib_fraction,
+            design_fraction=self.design_fraction,
+        )
 
     def __getitem__(self, index: int) -> Item:
         if not 0 <= index < self.n_items:
@@ -91,10 +114,11 @@ class PhantomDataset(SliceDataset):
             img[mask] = rnd(0.75, 1.0)
             annotation = mask
 
+        sample_id = f"phantom{index:04d}"
         return Item(
             dataset=self.name,
-            split=self.split,
-            sample_id=f"phantom{index:04d}",
+            split=self._split_of(sample_id),
+            sample_id=sample_id,
             slice_idx=0,
             image=img,
             annotation=annotation,
