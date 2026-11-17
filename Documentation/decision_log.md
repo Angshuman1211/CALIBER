@@ -2964,6 +2964,86 @@ positive result the project's primary contribution has. Please keep the artefact
 
 *Affects:* O3, O4, T1.1, T1.2, T1.4, T1.6, T2.9, T2.10, D-033, D-061, D-065.
 
+## D-070 · The Phase 4 plan: what we run, what we stop, and who owns each piece
+**Date:** Week 12 · **Status:** ACCEPTED · **Proposed by:** Track 1 · **See:** D82, D80, D81, T2.10, `PHASE4_WORK_PLAN.md`
+
+Track 1's strategy review for Phase 4, after a prior-art check and a re-reading of the Week 10
+and Week 11 results. It changes three things materially. The full task division is in
+`Documentation/PHASE4_WORK_PLAN.md`; this entry records the decisions behind it.
+
+**1. The prior-art risk is retired.** Shor & Bronstein (arXiv 2610.26558) was the one unchecked
+paper that could have pre-empted the novelty claim. It does not. Their method is a source-trained
+**ridge regressor** on inference dynamics, not a conformal procedure; split conformal appears only
+in Appendix H and CQR only as a comparator. Their single coverage figure (0.94 at nominal 90%)
+has **no shift in it** — calibration and test are both fresh draws from one setting. They never
+vary the acquisition operator: the text says "fixed nominal acceleration" and **states no
+acceleration factor anywhere**. Their "repeated-mask" study "changes only the sampling realization
+of the same physical volume", with no calibration/test split; their "domain shift" is a *dataset*
+change (fastMRI brain to M4Raw FLAIR). **Coverage under shift is not reported at all.**
+
+Two things follow beyond survival. They list as future work: *"Future work should test additional
+anatomies, field strengths, accelerations, sampling patterns"* — the adjacent paper names our
+contribution as its own open problem, which is better positioning than an absence. And they use
+**M4Raw as an evaluation target**, which bears on D82.
+
+**Write the narrow claim, not a broad one.** They *do* use split conformal. The defensible
+sentence is: *no prior work reports conformal coverage when the acquisition operator differs
+between calibration and deployment.*
+
+**2. The headline contribution is re-framed from a correlation to a decision rule.** rho = +0.976
+on CT is weak evidence on its own: within a family, any monotone function of view count orders
+the gaps. The contribution becomes a **pre-deployment safety rule** — predict "safe to transfer"
+iff signed `null_space_growth` <= 0, scored against measured validity, reported as a confusion
+matrix with the **false-safe rate as the primary endpoint**, over all ordered pairs (K(K-1) = 72
+for 9 CT operators, not 8). The distance earns its keep **across families**, so cross-family and
+leave-one-operator-out prediction are the tests that matter, against a constant predictor and a
+views/arc-fraction predictor as baselines.
+
+**3. Tool 2's comparator was wrong, and that is our error.** T2.9 reported Tool 2 beating
+`nearest` (0.929 against 0.800 on the sparse grid). But `nearest` is **invalid in 3 of 7 interior
+folds**, and D51's own rule is that an area comparison means nothing among arms that are not valid
+in that cell. Beating an invalid baseline on coverage is weak. Tool 2 is re-scored against
+comparators that are always valid: the **max-quantile** rule over calibration operators, **pooled**
+calibration, and **group-conditional as an oracle** that uses labels at the target. The defensible
+headline, if it holds: *Tool 2 attains validity at an unseen operator with X% less flag area than
+the trivially-safe rule.*
+
+**4. The score-as-detector negative is final, and the reason is structural.** Applying `P_N` to
+posterior-sample dispersion is a trivial transform, so the fair baseline already has access to the
+decomposition; on error-magnitude axes the identity favours the score and on direction axes it
+loses. CRC and efficiency re-tests are generalisations, not rescues — a magnitude-based CRC loss
+brings the circularity straight back. Where the decomposition does have value is as an attribution
+diagnostic and as the source of the operator distance. Frame it that way.
+
+**5. The circularity material gets a decisive null control and stays one section.** Grade a
+**scale-only detector** — `||P_N x_hat||` alone, no posterior information — under the same
+magnitude label. If it reaches AUROC close to the "real" detector, the protocol is uninformative.
+That control transfers to other papers' protocols without needing their models. Defer any
+standalone evaluation-critique paper: Jaeger et al. (ICLR 2023) shows those succeed when backed by
+a broad empirical study, which is more than this project can do now.
+
+**Stopped, with reasons.** Score-versus-dispersion re-tests (answered, D68/D73) · curve-collapse
+analyses (the test's own null control also passes, so it has no power here) · new weighting schemes
+· detection AUROCs · an energy-weighted MRI operator distance (a candidate for ordering the
+matched-acceleration failures: it would be chosen after seeing which MRI gaps need explaining,
+which is forking-path risk, and five of this project's eight statistics traps were ours).
+
+**One sequencing constraint, measured rather than estimated.** The LIDC CT bank at 320 squared runs about
+**21 hours** on the card (83 s/pair on the smoke bank, 900 pairs), not the 16 estimated, and the
+DPS medical-prior bank is already queued for about 20 hours on the same GPU. They cannot both
+finish inside the one working window before the examination block (27 Nov – 3 Dec). **The DPS
+bank is deferred**: D68 is already answered negative, and
+the stop list says re-tests of it are not wanted.
+
+**6. The venue is MICCAI 2027, with an arXiv preprint as soon as the CT result lands.** MIDL 2027
+is not targeted: its full paper is due 4 December and abstract registration 30 November, against
+end-semester examinations on 27, 28 and 30 November and 3 December. Four examinations in the eight
+days before a deadline is not a schedule. Nothing is foreclosed — MIDL notifies 12 February, before
+the likely MICCAI deadline — and MICCAI's ~14 weeks is what makes T3.6 achievable at more than its
+minimum, with less forking-path pressure than a two-week deadline creates.
+
+*Affects:* O3, O4, O5, O7, T1.2, T1.4, T1.6, T1.7, T2.10, T3.4, T3.6, T3.7, D-015, D-061.
+
 ## Template
 
 ```
