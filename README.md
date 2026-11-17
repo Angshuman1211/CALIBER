@@ -101,8 +101,10 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 
 | File | Owner | What |
 |---|---|---|
-| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D81`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-069` |
+| `PHASE4_WORK_PLAN.md` | cross-track | **The current plan**: what each track runs, what is stopped, the pre-registration, and the venue fork (D-070) |
+| `PROJECT_STATUS.md` | cross-track | The whole project in one document: status, results, problems, gaps |
+| `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D82`, open questions, cross-track contracts |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-070` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
 | `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-31`), unresolved first, plus an index of every decision |
