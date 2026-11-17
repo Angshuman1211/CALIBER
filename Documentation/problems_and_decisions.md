@@ -1235,6 +1235,34 @@ Fixed in three parts, because the obvious fix is insufficient:
 
 ---
 
+### D82 — M4Raw is reportable for coverage claims and not for detection [T1.6, scopes D-015, follows D80]
+D-015 made M4Raw a development substrate. Its stated reason, in `fastmri.py`, is worth quoting exactly because the scope of the ruling follows from it:
+
+> `reportable = False`. M4Raw is 0.3 T brain against fastMRI's 3 T knee and carries **no pathology annotations**, so it cannot close the annotation-linked evaluation (Sec. 14).
+
+**The consequence clause is annotation-linked.** Field strength is named as a way the substrate differs; the stated *harm* is that Sec. 14's annotation-linked evaluation cannot be closed. Coverage under operator shift consumes **no annotations**: the reported label is `err_free > eps` valued on the design split, and `require_annotation` is an optional secondary reading that the coverage claim does not use. So the gate's own rationale does not reach the coverage claim.
+
+**Ruling: M4Raw carries coverage claims and not detection claims.** This is D80's structure applied to the substrate instead of the prior — *the defect gates which claims the bank can carry, not whether the bank exists*. The two rulings are now one principle with two instances, rather than a rule and an exception.
+
+**Why this is worth ruling rather than routing around.** The MRI medical-prior result — naive transfer at 0.000–0.159 against group-conditional's 0.80–0.91, below nominal on every one of 13 patient splits in both directions — is the strongest demonstration of the central claim anywhere in the project. Dropping it would also drop Front II and objective O5 to a limitations paragraph, and the blueprint promises two modalities. Routing around the gate for CT (D-070) was the right unblock; it was never a reason to abandon MRI.
+
+**Implementation: not a boolean flip.** Setting `reportable = True` would let a *detection* number from M4Raw be stamped reportable, which is exactly what this ruling forbids — and this project has made that error before (P-18: the first fastMRI bank stamped `reportable: true` under a face prior, because the gate could not see the thing that mattered). Following D-018's own logic, that reportability is a property of the bank so it travels in the manifest, the flag becomes scoped:
+
+```python
+reportable = False                            # the unqualified claim
+reportable_claims = frozenset({"coverage"})   # D82: what this substrate carries
+```
+
+The harness then stamps "reportable for coverage" and refuses a detection number from that bank by construction rather than by memory. The same field expresses D80's cross-anatomy case — CT + LIDC is chest-prior on whole-body anatomy, so coverage-reportable and detection-not — so one mechanism serves both rulings.
+
+**Two limits that travel with the claim, and must appear in the write-up.**
+- **0.3 T is a generalisation limit, not a validity one.** The comparison is internally valid at 0.3 T: both arms, same label, same reconstructions. What field strength limits is whether the *magnitude* transfers to 3 T, which is untested.
+- **"13 of 13 splits" is not 13 independent confirmations.** Thirty patients resampled 13 ways is a robustness check against split choice — which is what it was designed for — not 13 replications. Phrase it as "on every one of 13 patient splits" and never in a way that implies independence. The same caveat applies to the CT 13/13.
+
+**External precedent, found while clearing the prior art (D-070):** Shor & Bronstein (arXiv 2610.26558, Oct 2026) use **M4Raw as the evaluation target** for a reconstruction-risk method, with fastMRI brain as source. A 2026 paper treating M4Raw as a legitimate evaluation substrate is not a licence, but it is evidence that the substrate objection is about scope rather than admissibility.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
