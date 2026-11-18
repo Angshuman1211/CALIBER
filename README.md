@@ -104,10 +104,10 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `PHASE4_WORK_PLAN.md` | cross-track | **The current plan**: what each track runs, what is stopped, the pre-registration, and the venue fork (D-070) |
 | `PROJECT_STATUS.md` | cross-track | The whole project in one document: status, results, problems, gaps |
 | `problems_and_decisions.md` | Track 1 | Track 1's decision log — entries `D1`…`D82`, open questions, cross-track contracts |
-| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-070` |
+| `decision_log.md` | cross-track | Cross-track decisions and adjudication — entries `D-001`…`D-072` |
 | `week1_kickoff.md` | cross-track | Interface sign-off packet and its decision record |
 | `score_bank_spec.md` · `operator_registry_spec.md` | Track 2 | The two shared interfaces |
-| `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-31`), unresolved first, plus an index of every decision |
+| `T2_problems_and_decisions.md` | Track 2 | Track 2's problem log (`P-01`…`P-42`), unresolved first, plus an index of every decision |
 | `T1.1_score_design.md` | Track 1 | Operator-aware score design |
 | `T1.2_shift_robust_calibration.md` | Track 1 | The three calibration tools, what they control, and what they refuse |
 | `T1.3_operator_distance_formulation.md` | Track 1 | The locked operator-distance measure and why |
@@ -126,6 +126,7 @@ One directory, all three tracks. Per-task records are prefixed with the blueprin
 | `T2.8_ct_harness_and_cross_modality_figures.md` | Track 2 | Week 9 record — the full evaluation harness on CT in both directions, and the coverage-gap-against-distance curves of both modalities on one axis |
 | `T2.9_track1_week10_runs.md` | Track 2 | Week 10 record — Track 1's six queued runs: the baseline on the coverage axis, Tool 2 on a sparse CT grid, the direction label on CT, weight sensitivity, the curve-collapse test, and the DPS solver ablation |
 | `T2.10_medical_prior.md` | Track 2 | Week 11 record — Song et al.'s BraTS and LIDC medical score models ported to PyTorch and verified against their own Flax models, the first score bank on a medical prior (M4Raw), and D79's prediction tested in both modalities |
+| `T2.11_lidc_ct_bank_and_claims.md` | Track 2 | Week 12 record — Phase 4's T2-A, T2-B and T2-D: the LIDC-prior CT bank with its pre-registered splits, HU mapping and control (running); reportability scoped to claims in the manifest (D82); and the literature's STD-vs-error protocol re-run on three banks beside a scale-only control |
 | `T3.1`–`T3.5_*.md` | Track 3 | Formal review, distance candidates, L1 stability result, ill-posedness scaling, numerical verification |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012` (cross-track) are unrelated decisions. Always say which log.
@@ -155,7 +156,9 @@ Blueprint v3.0 (§18) splits the work into **three** concurrent, interdependent 
 | **Hallucination criterion** | Four magnitude-based forms, all near-determined by the score. A fifth thresholds a **direction** instead: `cos θ` from the project's own identity, which is scale-free (D74). **On CT, against it the score ranks at chance** (AUC 0.50–0.58) and beats the anatomy control at 0 of 9 operators, against 9 of 9 under the magnitude label (T2.9 §4) |
 | **Solver ablation (D68)** | A DPS bank (597 pairs) beside the DDNM one. DPS leaves 0.69 of its error in the null space against DDNM's 0.99, so it is where the decomposition has room. Under the magnitude label the score beats `s_disagree` by ≥ 0.05 AUC at all three DPS operators. **Under the direction label it does not beat it at any** (−0.034 to −0.002), so the positive is the label's identity, not detection. At R2, DPS fails D-033's admissibility gate on 196 of 199 volumes (T2.9 §1) |
 | **Medical prior (D79)** | Song et al.'s BraTS (brain MRI) and LIDC (lung CT) score models now run in the pipeline, each matching the authors' own Flax model to ~1e-5. On 2,160 M4Raw brain pairs with the BraTS prior, **the coverage failure is far stronger than on the face prior**: calibrated on a 1-D mask and deployed on 2-D variable-density masks, naive transfer covers 0.000-0.159, below nominal in 13 of 13 patient splits, while group-conditional calibration restores 0.80-0.91. The medical prior also breaks the identity that tied every magnitude label to the score (cos θ +0.07 → +0.60 on MRI, +0.07 → +0.98 on a CT smoke bank), but the score still beats the anatomy control at only 1 of 8 operators. Not yet reportable: two rulings are Track 1's (T2.10 §10). **A second, independent medical prior family is also wired** (D79): SegGuidedDiff's unconditional `ddim-breast_mri-256` and `ddim-ct_organ_large-256` -- `diffusers` `UNet2DModel`, single-channel, DDPM schedule verified against the project's own, no new loader code. Two families make "does the result depend on which prior?" an ablation rather than an assumption |
-| **Engineering** | 836 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
+| **Evaluation protocol (T2-D)** | The literature validates an uncertainty map by correlating posterior STD with \|error\| and drawing an ROC for high-error regions. Re-run on three banks beside a detector with **no posterior information** (`s_free` = ‖P_N x̂‖). On both face-prior banks the control scores *above* the posterior spread at 9 of 9 operators (fastMRI: AUROC 0.978 against the full-image spread's 0.932). On the M4Raw medical-prior bank the spread is ahead at 7 of 9, and the control still reaches 0.895 against 0.937. The protocol mostly measures scale (T2.11 §3). A statement about the protocol, not a detection result |
+| **Reportability** | A bank's manifest records the **claims** it carries, not one boolean (D82, D80, D-072): M4Raw and the LIDC CT bank carry coverage and not detection, and a detection number from either is refused by `caliber.reportability.require_claim` |
+| **Engineering** | 879 tests, config-driven runs, fixed seeds, self-describing score banks, CPU-only analysis path |
 
 ---
 

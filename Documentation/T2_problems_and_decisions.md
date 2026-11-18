@@ -23,6 +23,24 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
+#### P-41 - With the CT bank running, the laptop has 1-2 GB of memory left to commit
+
+**Open - mitigated, not removed** - **See:** P-38, P-24, P-39, T2.11 §1d
+
+The LIDC bank holds 3 GB of commit for 21 hours. With the user's own applications open,
+the machine had 4 GB free when the bank started and 1.0-2.2 GB once it was on the GPU.
+P-38 is the same limit met from the other side: there the GPU run failed for want of
+system memory. This time the run holds, and everything beside it has to fit in what is left.
+Importing the GPU build of torch in a second process costs more than that, so nothing else
+uses the GPU interpreter while the bank runs. Analyses and the week's own tests run on
+the CPU interpreter (`OPENBLAS_NUM_THREADS=1`). The full suite runs only with the bank
+paused at a checkpoint: in Week 11 a concurrent suite killed a bank at pair 216. The queue's
+restart floor is lowered from 4 GB to 2.5 GB, because at 4 GB a crashed bank would have
+waited for memory that was never coming. **What would close it:** a second machine for
+analysis, or a larger pagefile. Neither is a code change.
+
+---
+
 #### P-37 - D73's transfer verdict counts over-coverage as good transfer
 
 **Open - decides:** Track 1 (`evaluation/transfer.py` fixes the estimand) - **See:** D73, D51, D39, T2.9 §2
@@ -630,6 +648,25 @@ rather than producing plausible-looking but systematically mis-scaled reconstruc
 ---
 
 ### Resolved
+
+#### P-42 - The old stamp would have marked the LIDC CT bank reportable for detection
+
+**Fixed (Week 12, T2.11)** - **See:** D82, D80, D-072, P-18
+
+Found while implementing D82, not by a wrong number. The manifest's `reportable` was the
+conjunction of three checks: a real substrate, a generative sampler, a prior admissible
+for the modality. D80 had already made `ct_chest` admissible for CT while ruling that a
+prior of another anatomy carries coverage and not detection. The boolean had no way to
+hold the second half. So the LIDC bank, a chest prior on whole-body slices, would have
+been written `reportable: true`, and `select_weights.py` or `q6_attribution.py` run on it
+would have printed a detection reading with no warning. D82 names the case; nothing
+enforced it. The manifest now carries `reportable_claims`, and `reportable` is true only
+when a bank carries every claim (D-072). The bank that was already running resumed from its
+checkpoint on the new code, `scripts/restamp_bank.py` re-stamps finished banks, and
+`tests/test_reportable_claims.py` pins this bank among the others. **Lesson:** P-18 again, one level finer. A gate that answers
+"may this bank be reported?" with one bit will be asked a question with two answers.
+
+---
 
 #### P-40 - The guidance rule chose a diverged DPS setting, because divergence saturates the gate
 
@@ -1617,7 +1654,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 70 entries, so a problem in Part I can be
+What lives here instead is the index — 72 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1692,3 +1729,5 @@ traced to the decision that settled it without opening the log.
 | [D-068](decision_log.md) | On the medical prior, DPS runs at 100 steps and zeta = 5, not at DDNM's budget | Week 11 | ACCEPTED |
 | [D-069](decision_log.md) | Two of my scripts were wrong, you caught both; three re-runs | Week 11 | Track 1's fix and ruling -- see D80, D81 |
 | [D-070](decision_log.md) | The Phase 4 plan: what we run, what we stop, and who owns each piece | Week 12 | Track 1's plan -- see D82, PHASE4_WORK_PLAN.md |
+| [D-071](decision_log.md) | The LIDC bank's intensities follow the prior's training rule: min-max per volume | Week 12 | ACCEPTED |
+| [D-072](decision_log.md) | A bank's manifest records the claims it carries; `reportable` means all of them | Week 12 | ACCEPTED (implementation of D80, D82) |
