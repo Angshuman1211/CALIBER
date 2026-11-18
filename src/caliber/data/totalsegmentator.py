@@ -24,6 +24,16 @@ loader makes with its centre crop.
 has the same value in every item. A per-image p99 would make the intensity scale a
 function of what else is in the slice.
 
+**Unless the prior was trained otherwise** (``intensity="volume_minmax"``, Week 12).
+Song et al.'s LIDC model saw each volume scaled from its own minimum to its own maximum
+(``ct2d_320.py``: ``img - min``, then ``/ max``, per volume, before slicing). D-070's
+pre-registration fixes the bank's HU mapping to that rule before the run, so the choice
+cannot follow a coverage number. It is applied literally: no clip, no percentile. The
+cost is the one the fixed window was chosen to avoid -- the scale now depends on the
+volume's extremes (bone, metal, the scanner's padding value), so soft tissue sits at
+0.25-0.50 across the 100 subjects on disk rather than at one value. Padding is filled
+with the volume's own air value, so the crop does not draw an edge that is not there.
+
 **Annotations are organs, as an overlay.** ``ann_coverage`` comes from the union of
 ``structures`` -- solid and hollow organs by default; bones, muscles and vessels are
 left out because they cover so much of the body that coverage would be near 1
@@ -61,6 +71,10 @@ DEFAULT_STRUCTURES: tuple[str, ...] = (
     "adrenal_gland_left", "adrenal_gland_right", "urinary_bladder", "prostate",
 )
 HU_WINDOW = (-1000.0, 1000.0)
+#: How HU become [0, 1]: the fixed window (D-013), or the LIDC prior's training rule.
+INTENSITY_MODES = ("hu_window", "volume_minmax")
+#: Air, in HU. What padding stands for under ``volume_minmax``.
+AIR_HU = -1000.0
 #: Below this many HU a voxel is air, for the body-centre fallback.
 BODY_HU = -500.0
 #: Masks must sit on the CT grid; TotalSegmentator's agree to ~2e-4 mm (rounding).
@@ -106,6 +120,9 @@ class TotalSegmentatorDataset(SliceDataset):
 
     name = "totalsegmentator"
     modality = "ct"
+    # Organ-bearing slices from head to pelvis. No single-region prior matches it, so a
+    # chest prior here is cross-anatomy: coverage claims, not detection (D80, D82).
+    anatomy = "whole_body"
 
     def __init__(
         self,
@@ -115,6 +132,7 @@ class TotalSegmentatorDataset(SliceDataset):
         slices_per_volume: int = 1,
         structures: Sequence[str] = DEFAULT_STRUCTURES,
         hu_window: tuple[float, float] = HU_WINDOW,
+        intensity: str = "hu_window",
         limit_volumes: int | None = None,
         calib_fraction: float = 0.5,
         design_fraction: float = 0.0,
@@ -136,6 +154,9 @@ class TotalSegmentatorDataset(SliceDataset):
         self.hu_window = (float(hu_window[0]), float(hu_window[1]))
         if self.hu_window[1] <= self.hu_window[0]:
             raise ValueError(f"hu_window must be (low, high) with low < high, got {hu_window}")
+        if intensity not in INTENSITY_MODES:
+            raise ValueError(f"unknown intensity {intensity!r}; choose from {INTENSITY_MODES}")
+        self.intensity = intensity
         if self.slices_per_volume < 1:
             raise ValueError("slices_per_volume must be at least 1")
         if not self.root.is_dir():
@@ -212,11 +233,21 @@ class TotalSegmentatorDataset(SliceDataset):
         chosen, rule = self._slice_plan(subject, volume, union)
         z = chosen[k]
 
-        low, high = self.hu_window
-        hu = np.clip(to_display(volume[:, :, z]), low, high)
-        image = torch.from_numpy((hu - low) / (high - low))
-        raw_shape = tuple(image.shape)
-        image = center_crop(image, self.image_shape).to(torch.float32)
+        if self.intensity == "volume_minmax":
+            # The prior's training rule, over the whole volume and not the slice. The
+            # crop pads with zeros, so shift air to zero for it and shift back after.
+            low, high = float(volume.min()), float(volume.max())
+            span = (high - low) or 1.0
+            air = float(np.clip((AIR_HU - low) / span, 0.0, 1.0))
+            image = torch.from_numpy((to_display(volume[:, :, z]) - low) / span)
+            raw_shape = tuple(image.shape)
+            image = (center_crop(image - air, self.image_shape) + air).to(torch.float32)
+        else:
+            low, high = self.hu_window
+            hu = np.clip(to_display(volume[:, :, z]), low, high)
+            image = torch.from_numpy((hu - low) / (high - low))
+            raw_shape = tuple(image.shape)
+            image = center_crop(image, self.image_shape).to(torch.float32)
 
         # Same transform as the image, then the same crop, so the two grids agree by
         # construction rather than by coincidence (the fastMRI loader's rule).
@@ -232,7 +263,8 @@ class TotalSegmentatorDataset(SliceDataset):
             image=image,
             annotation=annotation,
             meta={"source": str(self.root / subject / "ct.nii.gz"), "patient_id": subject,
-                  "slice_rule": rule, "raw_shape": raw_shape},
+                  "slice_rule": rule, "raw_shape": raw_shape,
+                  "intensity": self.intensity},
         )
 
     def _filter_by_split(self, keep_splits: str | Sequence[str]) -> list[str]:

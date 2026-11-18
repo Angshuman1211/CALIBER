@@ -1,0 +1,69 @@
+# Week 12 — T2-A of the Phase 4 plan (D-070): the CT bank on a medical prior.
+#
+#   D:/venvs/caliber-gpu/Scripts/python.exe -u -m caliber.runner \
+#       configs/experiments/w12_ct_lidc_gpu.yaml
+#
+# Song et al.'s LIDC lung-CT score model on the CT bank of record's substrate and grid:
+# all 100 extracted TotalSegmentator subjects x the same 9 CT operators as w07_ct_onboarding,
+# so 900 pairs and 360,000 regions (20 x 20 of 16 px). `ct_chest` is admitted for CT (D80)
+# and the substrate carries no development mark, so this is the first bank the project can
+# stamp. Track 1's T1-A..C and Track 3's T3-A all read it.
+#
+# Fixed before the run, as D-070's pre-registration asks, so that none of it can follow a
+# coverage number:
+# * **Splits by subject**, the registry's own: `split: auto` with w07's fractions, so
+#   8 design / 41 calib / 51 test subjects, the same people on the same sides as the bank
+#   of record.
+# * **Intensity: `volume_minmax`**, the prior's training normalisation. Song et al. scaled
+#   each LIDC volume from its minimum to its maximum before slicing (`ct2d_320.py`). The
+#   fixed HU window of D-013 stays the default everywhere else. Checked once on the 8 design
+#   subjects, ground truth only: the prior denoises better in its own range (median gain
+#   43.5 against 33.3 at sigma = 0.1). That is a check that the mapping works, not what
+#   chose it.
+# * **The control that decides whether the bank is read at all**: calibrated and tested on
+#   the same operator, group-conditional coverage has to come back at about 0.90.
+#
+# Forced by the prior, as in the smoke run (w11_ct_lidc_smoke_gpu): 320^2, the network's
+# fixed size, at TotalSegmentator's native 1.5 mm (a 480 mm field). The prior is chest CT
+# and the slices are organ-bearing slices from the whole body, so this is cross-anatomy:
+# cos theta is re-measured on this bank (T2-C) before any score result is read from it.
+#
+# 83 s/pair on the smoke run, so about 21 h on the RTX 3050. Checkpointed every 10 pairs.
+
+include: base
+
+experiment:
+  name: w12_ct_lidc_gpu
+  solver:
+    name: ddnm
+    checkpoint: checkpoints/song_inverse_problems/ct2d_320_ncsnpp_ve
+    n_steps: 24
+    device: cuda
+    consistency_device: cuda
+  n_posterior: 4
+  operators:
+    - modality: ct
+      n_views: [180, 120, 90, 60, 45, 30]
+      angular_range_deg: 180.0
+    - modality: ct
+      n_views: 120
+      angular_range_deg: [150.0, 120.0, 90.0]
+
+data:
+  image_shape: [320, 320]
+  dataset:
+    name: totalsegmentator
+    root: data/raw/totalsegmentator
+    split: auto
+    image_shape: [320, 320]
+    slices_per_volume: 1
+    intensity: volume_minmax
+    calib_fraction: 0.5
+    design_fraction: 0.10
+
+run:
+  limit: null
+  cache_reconstructions: 6
+  checkpoint_every: 10
+  scoring_device: cuda
+  skip_memory_check: true   # fitted to the 113M-parameter UNet, not this 4.1M NCSN++
