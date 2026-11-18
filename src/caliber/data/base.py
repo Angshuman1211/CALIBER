@@ -56,6 +56,14 @@ class SliceDataset(ABC):
     #: cannot quietly become a headline number. It mirrors the same distinction
     #: already drawn for reference solvers.
     reportable: bool = True
+    #: The claims this substrate carries, when that is neither all nor none (D82).
+    #: ``None`` means "read ``reportable``": everything, or nothing. M4Raw is the case
+    #: this exists for -- no pathology annotations, so coverage and not detection.
+    reportable_claims: frozenset[str] | None = None
+    #: What body part the images show, in the vocabulary of ``prior_anatomy``. A prior
+    #: of another anatomy leaves the bank its coverage claims and takes its detection
+    #: claims (D80). Undeclared matches no prior, so the gate fails closed.
+    anatomy: str = "undeclared"
 
     @abstractmethod
     def __len__(self) -> int: ...

@@ -40,6 +40,7 @@ from caliber.evaluation import (
 )
 from caliber.operators.distance import compute_distance
 from caliber.operators.registry import build_operator
+from caliber.reportability import CLAIMS, claims_of, describe
 from caliber.scorebank import read_bank, read_manifest
 from caliber.scoring.score import ScoreComponents, ScoreScales, ScoreWeights
 
@@ -89,11 +90,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[analyse] {len(df):,} region rows, {df['operator_id'].nunique()} operators")
 
     prov = manifest.get("provenance") or {}
-    if prov and not prov.get("reportable", True):
+    # Coverage and detection numbers both come out of this script, and a bank can carry
+    # one without the other (D80, D82), so the header says which.
+    if prov and claims_of(prov) != CLAIMS:
         print(
-            f"[analyse] NOT REPORTABLE - dataset={prov.get('dataset')}, "
-            f"solver_family={prov.get('solver_family')}. Numbers below exercise the "
-            "pipeline; none of them may appear in the write-up."
+            f"[analyse] {describe(prov)} [dataset={prov.get('dataset')}, "
+            f"prior_domain={prov.get('prior_domain')}, "
+            f"solver_family={prov.get('solver_family')}]"
         )
 
     nominal = 1.0 - args.alpha

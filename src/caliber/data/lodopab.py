@@ -38,6 +38,7 @@ class LoDoPaBDataset(SliceDataset):
 
     name = "lodopab"
     modality = "ct"
+    anatomy = "chest"
 
     def __init__(
         self,

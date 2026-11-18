@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 from caliber.evaluation.bank import add_label_args, derive_score_and_label, label_from_args
+from caliber.reportability import DETECTION, carries, stamp
 from caliber.scorebank import read_bank, read_manifest
 from caliber.scoring.weights import DEFAULT_GRID, select_weights
 
@@ -53,10 +54,10 @@ def main(argv: list[str] | None = None) -> int:
     df = derive_score_and_label(df, calib_op, **label.kwargs)
 
     print(f"[weights] bank             {args.bank}")
-    print(f"[weights] reportable       {provenance.get('reportable')}")
+    print(f"[weights] reportable       {stamp(provenance, DETECTION)} (a detection claim)")
     print(f"[weights] calibration op   {calib_op}")
     print(f"[weights] label            {label.text}")
-    if not provenance.get("reportable", False):
+    if not carries(provenance, DETECTION):
         print(
             "[weights] the weights selected here are DEVELOPMENT values. The score's "
             "definition is only pinned by a selection on a reportable bank (D-016, D-035).",

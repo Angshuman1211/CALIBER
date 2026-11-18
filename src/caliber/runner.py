@@ -38,13 +38,20 @@ import torch
 from .config import ConfigError, load_config
 from .data import build_dataset
 from .operators.registry import OperatorRegistry
+from .reportability import (
+    CLAIMS,
+    UNDECLARED_ANATOMY,
+    bank_claims,
+    prior_claims,
+    substrate_claims,
+)
 from .resources import memory_preflight
 from .scorebank.io import ScoreBankWriter, save_reconstructions
 from .scoring.labels import CRITERION_VERSION, compute_region_truth
 from .scoring.regions import RegionGrid
 from .scoring.score import SCORE_VERSION, compute_score_components
 from .solvers import build_solver
-from .solvers.denoiser import prior_is_admissible
+from .solvers.denoiser import prior_anatomy, prior_is_admissible
 
 #: Same-seed retries for a pair whose draws come back non-finite (P-29). One transient
 #: NaN in 1,791 GPU pairs recovered on the first retry; two leaves margin without
@@ -155,16 +162,27 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
     # both and produced a bank stamped `reportable: true`. Whether the prior
     # suits the modality is exactly as much a property of the bank as the other
     # two, and it fails closed for unrecognised checkpoints.
+    #
+    # D80 and D82 then showed that each gate reaches *claims*, not the bank: a prior of
+    # another anatomy, or a substrate without annotations, leaves coverage standing and
+    # takes detection. So the manifest records the set of claims the bank carries, and
+    # `reportable` keeps its meaning as the unqualified one -- every claim, or False.
     info = solver.info()
-    substrate_ok = bool(getattr(dataset, "reportable", True))
     solver_ok = solver.family != "reference"
     prior_ok = solver_ok and prior_is_admissible(info.checkpoint, dataset.modality)
+    anatomy = getattr(dataset, "anatomy", UNDECLARED_ANATOMY)
+    claims = bank_claims(dataset, solver)
 
-    reportable = substrate_ok and solver_ok and prior_ok
+    reportable = claims == CLAIMS
     if not reportable:
         why = []
-        if not substrate_ok:
+        if not substrate_claims(dataset):
             why.append(f"substrate {dataset.name!r} is for development only")
+        elif substrate_claims(dataset) != CLAIMS:
+            why.append(
+                f"substrate {dataset.name!r} carries "
+                f"{', '.join(sorted(substrate_claims(dataset)))} only (D82)"
+            )
         if not solver_ok:
             why.append("solver is a reference, not a generative prior")
         elif not prior_ok:
@@ -172,7 +190,15 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                 f"prior domain {info.prior_domain!r} is not appropriate for "
                 f"{dataset.modality!r} (D-016, P-18)"
             )
-        print(f"[caliber] NOT REPORTABLE   {'; '.join(why)}")
+        elif prior_claims(info.checkpoint, dataset.modality, anatomy) != CLAIMS:
+            why.append(
+                f"prior anatomy {prior_anatomy(info.checkpoint)!r} is not the substrate's "
+                f"{anatomy!r}, so detection is not carried (D80)"
+            )
+        if claims:
+            print(f"[caliber] REPORTABLE FOR   {', '.join(sorted(claims))} only: {'; '.join(why)}")
+        else:
+            print(f"[caliber] NOT REPORTABLE   {'; '.join(why)}")
 
     items = dataset.take(run_cfg.get("limit"))
     n_posterior = int(experiment.get("n_posterior", 8))
@@ -197,7 +223,9 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
             "modality": dataset.modality,
             "solver_family": solver.family,
             "prior_domain": info.prior_domain,
+            "anatomy": anatomy,
             "reportable": reportable,
+            "reportable_claims": sorted(claims),
         },
     )
     # P-24 / D-043: a pass that does not fit can segfault rather than raise, so check

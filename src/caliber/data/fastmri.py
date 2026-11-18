@@ -129,6 +129,7 @@ class FastMRIDataset(SliceDataset):
 
     name = "fastmri"
     modality = "mri"
+    anatomy = "knee"
 
     def __init__(
         self,
@@ -362,10 +363,21 @@ class M4RawDataset(FastMRIDataset):
       solver wiring, and the coverage-curve machinery — nothing that is
       written up.
 
+      **Scoped by D82 (Week 12).** The harm named above is annotation-linked, and
+      coverage under operator shift consumes no annotations. So M4Raw carries
+      *coverage* claims and not detection claims: ``reportable_claims`` says so,
+      and ``reportable`` stays ``False`` because the unqualified claim is still
+      not available (``caliber.reportability``).
+
     Volumes are multi-channel and reduced by root-sum-of-squares, consistent
     with D-008.
     """
 
     name = "m4raw"
     modality = "mri"
+    anatomy = "brain"
+    # D82 scopes D-015 rather than reversing it. The flag stays False: the unqualified
+    # claim is still not available. What M4Raw carries is coverage under operator shift,
+    # which consumes no annotations; a detection number from it stays a development value.
     reportable = False
+    reportable_claims = frozenset({"coverage"})
