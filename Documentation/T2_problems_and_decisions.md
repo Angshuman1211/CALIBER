@@ -23,6 +23,26 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
+#### P-43 - The repository has no licence, and the O7 release cannot go out without one
+
+**Open - decides:** all three tracks - **See:** O7, D79, D-070 (risk register), T2.11 §5
+
+The risk register asked Track 2 to resolve the *checkpoints'* licence before a release.
+That half is settled: `yang-song/score_inverse_problems` has no LICENSE file and GitHub
+reports no licence, so the weights cannot be redistributed, and the release does not need
+them. It ships the converter and the download command. Checking it turned up the other
+half. **This repository has no LICENSE file either**, and `pyproject.toml` names no licence,
+so an "open-source release" today would be source nobody is licensed to use.
+`solvers/ncsnpp.py` is adapted from Apache-2.0 code and keeps its header, and Apache-2.0
+asks for a copy of the licence alongside. Apache-2.0 for the whole repository would be
+consistent with that file. Also undecided: whether the score banks are released. The
+M4Raw and TotalSegmentator banks derive from CC BY 4.0 data and could be, with
+attribution; the fastMRI banks' cached reconstructions cannot. Not patched, because a
+licence is not one track's to choose. **What would close it:** a LICENSE file agreed by
+the three tracks, and a ruling on the banks.
+
+---
+
 #### P-41 - With the CT bank running, the laptop has 1-2 GB of memory left to commit
 
 **Open - mitigated, not removed** - **See:** P-38, P-24, P-39, T2.11 §1d
