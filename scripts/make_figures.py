@@ -65,6 +65,12 @@ plt.rcParams.update({
 })
 
 
+#: What the substrates are called in titles. The defaults are the banks of record the
+#: midterm figures were drawn from; ``--mri-label`` and ``--ct-label`` name another bank,
+#: so a figure of the M4Raw or LIDC-prior bank does not go out titled "fastMRI knee".
+LABELS = {"mri": "fastMRI knee, 44 test patients", "ct": "TotalSegmentator, 51 test subjects"}
+
+
 def parse_operator(oid: str) -> tuple[str, int]:
     """``mri.equispaced1d.R4.c0.08.s0`` -> ("equispaced1d", 4)."""
     parts = oid.split(".")
@@ -145,7 +151,7 @@ def fig_coverage_by_operator(t: pd.DataFrame, nominal: float, out: Path) -> Path
     handles = [Line2D([], [], color=c, marker="o", markersize=7, markeredgecolor=SURFACE,
                       linewidth=2.0, label=lab) for lab, c in METHOD.values()]
     fig.legend(handles=handles, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.02))
-    fig.suptitle("Coverage under operator shift, MRI (fastMRI knee, 44 test patients, "
+    fig.suptitle(f"Coverage under operator shift, MRI ({LABELS['mri']}, "
                  "95% intervals by patient)", x=0.01, ha="left", y=1.07, fontsize=10.5,
                  color=INK)
     fig.subplots_adjust(bottom=0.22, wspace=0.08, right=0.92)
@@ -283,16 +289,27 @@ def fig_ct_coverage_by_operator(t: pd.DataFrame, nominal: float, out: Path) -> P
     handles = [Line2D([], [], color=c, marker="o", markersize=7, markeredgecolor=SURFACE,
                       linewidth=2.0, label=lab) for lab, c in METHOD.values()]
     fig.legend(handles=handles, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.02))
-    fig.suptitle("Coverage under operator shift, CT (TotalSegmentator, 51 test subjects, "
+    fig.suptitle(f"Coverage under operator shift, CT ({LABELS['ct']}, "
                  "95% intervals by subject)", x=0.01, ha="left", y=1.07, fontsize=10.5, color=INK)
     fig.subplots_adjust(bottom=0.22, wspace=0.08, right=0.92)
     return save(fig, out / "fig4_ct_coverage_by_operator")
 
 
 def ct_distances_from(csv: Path) -> dict[tuple[str, str], float]:
+    """D-053's signed distance for every ordered pair the table can supply.
+
+    ``ct_distances.py --all-pairs`` writes each unordered pair once, and the figure needs
+    both directions. ``null_space_growth`` is antisymmetric -- what one operator's null
+    space gains is what the other's loses -- so a missing direction is the measured one
+    with its sign flipped. A direction that *was* measured is never overwritten: the two
+    estimates differ by their own noise (+0.6016 against -0.6011 on the CT bank of record).
+    """
     d = pd.read_csv(csv)
     d = d[d["measure"] == "null_space_growth"]
-    return {(r.calibration, r.deployment): float(r.value) for r in d.itertuples(index=False)}
+    dist = {(r.calibration, r.deployment): float(r.value) for r in d.itertuples(index=False)}
+    for (a, b), value in list(dist.items()):
+        dist.setdefault((b, a), -value)
+    return dist
 
 
 def fig_gap_two_modalities(mri: pd.DataFrame, mri_dist: dict, ct: pd.DataFrame, ct_dist: dict,
@@ -309,9 +326,10 @@ def fig_gap_two_modalities(mri: pd.DataFrame, mri_dist: dict, ct: pd.DataFrame, 
     # CT operators all sit at distinct x and need none.
     jitter = {"random1d": -0.02, "equispaced1d": 0.0, "variable_density2d": 0.02}
     omitted = []
+    mri_name, ct_name = (LABELS[k].split(",")[0] for k in ("mri", "ct"))
     for ax, (name, t, dist, marker_of) in zip(axes, (
-            ("MRI (fastMRI knee)", mri, mri_dist, lambda o: FAMILY_MARKER[o.split(".")[1]]),
-            ("CT (TotalSegmentator)", ct, ct_dist, lambda o: CT_MARKER[o.split(".")[1]])),
+            (f"MRI ({mri_name})", mri, mri_dist, lambda o: FAMILY_MARKER[o.split(".")[1]]),
+            (f"CT ({ct_name})", ct, ct_dist, lambda o: CT_MARKER[o.split(".")[1]])),
             strict=True):
         lows = t["calibrated_at"].drop_duplicates().tolist()
         for _, r in t[t["method"] == "naive"].iterrows():
@@ -379,7 +397,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="CT table from coverage_by_patient.py: adds Figures 4 and 5")
     ap.add_argument("--ct-distances", default=None,
                     help="ct_distances.py output, for Figure 5's CT x-axis")
+    ap.add_argument("--mri-label", default=LABELS["mri"],
+                    help="substrate and test-set size for the MRI titles, comma-separated")
+    ap.add_argument("--ct-label", default=LABELS["ct"],
+                    help="the same for the CT titles")
     args = ap.parse_args(argv)
+    LABELS.update(mri=args.mri_label, ct=args.ct_label)
 
     t = pd.read_csv(args.coverage_csv)
     nominal = 1.0 - args.alpha
