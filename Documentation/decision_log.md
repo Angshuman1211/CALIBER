@@ -3044,6 +3044,83 @@ minimum, with less forking-path pressure than a two-week deadline creates.
 
 *Affects:* O3, O4, O5, O7, T1.2, T1.4, T1.6, T1.7, T2.10, T3.4, T3.6, T3.7, D-015, D-061.
 
+## D-071 · The LIDC bank's intensities follow the prior's training rule: min-max per volume
+**Date:** Week 12 · **Status:** ACCEPTED · **Proposed by:** Track 2 · **See:** D-070, D-013, D79, T2.11
+
+D-070's pre-registration asks for the LIDC bank's HU mapping to be "fixed to the prior's
+training normalisation before the run". Song et al.'s builder (`ct2d_320/ct2d_320.py`)
+subtracts each volume's minimum and divides by its maximum, over the whole volume, before
+slicing. The bank therefore uses `intensity: volume_minmax`: the same rule, applied
+literally to each TotalSegmentator subject. No clip and no percentile, because neither is in
+the training code.
+
+D-013's fixed window `[-1000, 1000] HU` stays the default, so every earlier CT bank keeps
+its meaning and its config hash.
+
+**What the rule costs.** D-013 chose a fixed window so that a tissue has one value in every
+item. Under min-max the scale follows each volume's extremes: the scanner's padding value
+(the minimum is below −1024 HU in all 100 subjects on disk) and bone or metal (the maximum
+is above 3000 HU in 56). Soft tissue lands between 0.25 and 0.50, median 0.31, where the
+window puts it at 0.52 everywhere. The training volumes had the same property, so this is
+the prior's own input range, and it is a limitation the bank carries.
+
+**Checked, not chosen, on ground truth.** On the 8 design subjects the prior denoises better
+in its training range: median gain 43.5 against 33.3 at σ = 0.1, and better at every σ from
+0.05 to 1 and in the worst subject. The check reads no reconstruction, score or coverage. It
+could have shown the mapping was broken. It did not pick it.
+
+*Alternative:* keep D-013's window, as the 2-subject smoke bank did (T2.10 §8).
+*Reason:* the pre-registration names the training normalisation, and the training code
+states it. A mapping chosen after the bank exists could follow a coverage number.
+*Cost:* the label threshold ε and every `err_free` are in per-volume units, so they do not
+compare across subjects as HU. Coverage is a rank statement within the bank and does not
+need them to. The smoke bank's cos θ (+0.976, window) is not the same measurement as this
+bank's, which T2-C re-measures.
+*Affects:* T2-A, T2-C, T1-A, T1-B, T1-C, T3-A, D-013.
+
+## D-072 · A bank's manifest records the claims it carries; `reportable` means all of them
+**Date:** Week 12 · **Status:** ACCEPTED (implementation of D80, D82) · **Proposed by:** Track 2 · **See:** D80, D82, D-018, P-18, T2.11
+
+D82 asks for `reportable_claims` and a refusal "by construction rather than by memory".
+Implemented as `caliber.reportability`:
+
+- Two claims: `coverage` and `detection`.
+- **Substrate.** A dataset may declare `reportable_claims`. M4Raw declares `{coverage}` and
+  keeps `reportable = False`. A dataset that declares nothing carries all or none by its flag.
+- **Prior.** Not admissible for the modality: nothing. Admissible and of the substrate's
+  anatomy: everything. Admissible and of another anatomy: coverage only (D80). Datasets now
+  declare an `anatomy`; an undeclared one matches no prior, so it fails closed.
+- **Bank.** The intersection, and nothing for a reference sampler. The runner writes
+  `reportable_claims` and `anatomy` into the manifest's provenance.
+- **Reading.** `require_claim(provenance, claim)` raises `ClaimNotCarried`; `carries`,
+  `stamp` and `describe` are what scripts print. A manifest without the field is read by its
+  boolean: all or none.
+
+**One consequence that changes a stamp.** `reportable` now means the unqualified claim: true
+only when the bank carries both. The LIDC CT bank is a chest prior on whole-body slices, so
+by D80 it carries coverage and not detection, and its `reportable` is **false** with
+`reportable_claims = ["coverage"]`. Under the old boolean it would have been stamped `true`,
+and a detection number from it would have gone out as reportable. D82 names this case.
+
+| bank | old stamp | claims now |
+|---|---|---|
+| M4Raw + BraTS prior | false | coverage |
+| TotalSegmentator + LIDC prior | true | coverage |
+| fastMRI + BraTS prior (none built) | true | coverage |
+| any substrate + face prior | false | none |
+
+Scripts ask for the claim they report: `tool2_holdout` and `t1_component_lipschitz` for
+coverage; `select_weights`, `criterion_sweep` and `q6_attribution` for detection;
+`analyse_bank` prints which of the two the bank carries. `scripts/restamp_bank.py` rewrites
+a finished bank's manifest under these rules and keeps the previous values in
+`provenance.restamped`.
+
+*Alternative:* set `M4RawDataset.reportable = True`.
+*Reason:* D82 rules it out: it stamps M4Raw detection numbers reportable, which is P-18.
+*Cost:* a script that checks only the boolean now reports the M4Raw and LIDC banks as not
+reportable. That errs on the safe side; the six scripts that print a stamp are updated.
+*Affects:* D-018, D80, D82, T2-B, every script that reads `provenance`.
+
 ## Template
 
 ```

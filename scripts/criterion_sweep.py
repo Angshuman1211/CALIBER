@@ -29,6 +29,7 @@ from pathlib import Path
 
 import torch
 
+from caliber.reportability import DETECTION, carries
 from caliber.scorebank import read_bank, read_manifest
 from caliber.scoring.labels import MIN_FREE_CONTENT, positive_rate_sweep
 
@@ -85,7 +86,8 @@ def main(argv: list[str] | None = None) -> int:
 
     df = df[df["free_content"].notna()]
     provenance = manifest.get("provenance", {})
-    reportable = provenance.get("reportable")
+    # tau is the label's own threshold, so reading it off a bank is a detection claim
+    reportable = carries(provenance, DETECTION) if provenance else None
 
     print(f"[criterion] bank             {bank}")
     print(f"[criterion] solver           {sorted(df['solver_id'].unique())}")

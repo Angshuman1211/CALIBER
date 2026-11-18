@@ -101,6 +101,7 @@ from caliber.evaluation.bank import (
 )
 from caliber.operators.distance import compute_distance
 from caliber.operators.registry import build_operator
+from caliber.reportability import COVERAGE, carries
 from caliber.scorebank import read_bank, read_manifest
 
 
@@ -255,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[tool2] {exc}", file=sys.stderr)
         return 1
     print(f"[tool2] label            {label.text}")
-    if not provenance.get("reportable", False):
+    if not carries(provenance, COVERAGE):
         print(
             "[tool2] NOT REPORTABLE -- these numbers exercise the comparison, they do not "
             "settle it.",

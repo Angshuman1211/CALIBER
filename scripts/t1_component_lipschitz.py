@@ -69,6 +69,7 @@ import torch
 
 from caliber.operators.distance import compute_distance
 from caliber.operators.registry import build_operator
+from caliber.reportability import COVERAGE, carries
 from caliber.scorebank import read_bank, read_manifest
 from caliber.scoring.score import ScoreComponents, ScoreScales
 
@@ -113,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[lipschitz] {len(df):,} rows, {len(operators)} operators")
 
     prov = manifest.get("provenance") or {}
-    if prov and not prov.get("reportable", True):
+    if prov and not carries(prov, COVERAGE):
         print(
             f"[lipschitz] NOT REPORTABLE -- dataset={prov.get('dataset')}, "
             f"solver_family={prov.get('solver_family')}. Constants below are a development "
