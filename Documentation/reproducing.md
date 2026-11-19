@@ -1,6 +1,6 @@
 # Reproducing Track 2's Numbers
 
-**Owner:** Track 2 · **Started:** Week 12 (T2.11) · **Status:** first cut. It covers the two medical-prior banks the paper rests on (D-070) and the protocol replication. The CT rows are commands only until the LIDC bank's control has been read.
+**Owner:** Track 2 · **Started:** Week 12 (T2.11) · **Status:** first cut. It covers the two medical-prior banks the paper rests on (D-070) and the protocol replication. The CT rows are commands only: the LIDC bank's control failed as written and the rest waits on a ruling (T2.11 §1e).
 
 This is the path from a clean clone to the numbers Track 2 reports. Every command here has been run on the project machine and is recorded, with its output, in the weekly record named beside it. Nothing below ships data or weights: the repository carries code, configs and tests, and each of the rest is fetched from its owner (T2.11 §5).
 
@@ -26,7 +26,7 @@ The medical-prior results need M4Raw, TotalSegmentator and the two score models.
 
 ```bash
 pip install -e ".[dev,solvers,convert,figures]"
-python -m pytest -q          # 879 passed, 2 skipped at T2.11
+python -m pytest -q          # 882 passed, 2 skipped at T2.11
 ```
 
 The banks were built on one laptop GPU (RTX 3050, 6 GB) with `torch 2.13.0+cu126`. Every analysis runs on the CPU from a finished bank (score-bank rule 1). Two things from the problem log save time on Windows:
@@ -104,7 +104,7 @@ Thirty patients resampled 13 ways is a robustness check against the choice of sp
 
 ### CT, medical prior (T2.11; values pending the bank)
 
-Run in this order. The first command is the pre-registered control (T2.11 §1c): if its group-conditional arm does not sit at nominal, stop.
+Run in this order. The first command is the pre-registered control (T2.11 §1c): if its group-conditional arm does not sit at nominal, stop. **On the bank as built it does not** on the registry split (0.831), while it does over 13 patient splits (0.897). Steps 2 to 4 have not been run and wait on Track 1's ruling (T2.11 §1e, P-44).
 
 | Step | Command |
 |---|---|

@@ -23,6 +23,30 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
+#### P-44 - The LIDC bank's matched-operator control fails on the registry split and holds over splits
+
+**Open - decides:** Track 1 (the pre-registration is D-070's) - **See:** D-070 §2, T2.11 §1c and §1e, D-027, T1-D
+
+The pre-registered control for T2-A: calibrated and tested on the same operator, coverage
+must come back at about 0.90, "or the bank is wrong and nothing else is read". Track 2's
+written form of it (T2.11 §1c, fixed with 20 of 900 pairs built) asked for the
+group-conditional arm's interval to contain 0.90 at all 9 operators and for its mean to be
+within 0.03. On the registry split it is 0.795-0.856, mean **0.831**, and the interval
+contains 0.90 at 4 of 9. **Fail.** Nothing downstream was run. The bank is intact: 360,000
+rows, complete, no non-finite values. Over 13 patient splits the same arm averages
+**0.897** (0.892-0.905 by operator, sd 0.051), and the registry split is the lowest or
+near-lowest of the 13 at every operator. The same 41/51 partition is also low on the
+face-prior CT bank (0.893 against 0.912), which passes. So the control as written tests one
+draw of the calibration set, with an interval that resamples test subjects only. Whether
+"about 0.90" is met by the 13-split mean is a reading made after the first form failed,
+which is the kind of choice D-070's pre-registration exists to keep in the open, so it is
+Track 1's. Not established: why this bank's spread is wider than the face-prior bank's
+(positives are less concentrated here, and subjects differ less). **What would close it:**
+Track 1's ruling, and, either way, reporting this bank over patient splits and never from
+the registry split alone.
+
+---
+
 #### P-43 - The repository has no licence, and the O7 release cannot go out without one
 
 **Open - decides:** all three tracks - **See:** O7, D79, D-070 (risk register), T2.11 §5
