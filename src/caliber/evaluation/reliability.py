@@ -715,3 +715,338 @@ def clustered_coverage(
         level=level,
         alpha=a_level,
     )
+
+
+# -- the draw-marginal coverage the unsafe label is read from (D86) -----------
+
+#: ``t_{0.975}`` by integer degrees of freedom 1..30, for the reported t inflation only.
+#:
+#: Hard-coded rather than computed: scipy's distributions are unavailable on this machine
+#: (see :func:`_beta_ppf`), and a table a reader can check against any statistics text is
+#: better here than a special function implemented from scratch for a diagnostic.
+_T975 = (
+    12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228,
+    2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086,
+    2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042,
+)
+
+#: Normal two-sided 95% quantile, the project's reference width.
+_Z975 = 1.959964
+
+
+def _norm_ppf(q: float) -> float:
+    """Normal quantile by bisection on ``erf``. scipy is unavailable here (see _beta_ppf)."""
+    import math
+
+    if not 0.0 < q < 1.0:
+        return float("nan")
+    lo, hi = -12.0, 12.0
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        if 0.5 * (1.0 + math.erf(mid / math.sqrt(2.0))) < q:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
+
+
+def _t975(df: float) -> float:
+    """``t_{0.975}`` at possibly fractional ``df``. **Approximate**, and only a diagnostic.
+
+    Interpolated in ``1/df`` rather than in ``df``: below about three degrees of freedom
+    ``t_{0.975}`` is steeply convex, and linear interpolation there overstates it badly
+    (at df 1.6 it gives 7.7 against a true value near 5.8, while ``1/df`` gives 6.4).
+    Accurate enough for a reported inflation factor; it is never applied to an interval.
+    """
+    if not np.isfinite(df) or df <= 0:
+        return float("nan")
+    if df >= len(_T975):
+        return _Z975
+    if df <= 1.0:
+        return _T975[0]
+    lo = int(np.floor(df))
+    if lo >= len(_T975):
+        return _Z975
+    t_lo, t_hi = _T975[lo - 1], _T975[lo]
+    inv, inv_lo, inv_hi = 1.0 / df, 1.0 / lo, 1.0 / (lo + 1)
+    frac = (inv - inv_hi) / (inv_lo - inv_hi) if inv_lo != inv_hi else 0.0
+    return float(t_hi + frac * (t_lo - t_hi))
+
+
+def mean_pairwise_overlap(splits: Sequence[Sequence[str]]) -> float:
+    """Mean pairwise ``|a & b| / sqrt(|a| |b|)`` over the calibration sets.
+
+    **Not** the Jaccard overlap that :func:`split_spread_check` reports. For two sample
+    means over overlapping sets this quantity *is* their correlation, which is what the
+    effective-n correction needs; Jaccard understates it (a third shared gives Jaccard 0.20
+    against a correlation of 0.33). Both are kept because they answer different questions
+    and the existing spread check is documented against the Jaccard one.
+    """
+    sets = [set(map(str, s)) for s in splits]
+    if len(sets) < 2:
+        return 0.0
+    vals = []
+    for i, a in enumerate(sets):
+        for b in sets[i + 1 :]:
+            denom = np.sqrt(len(a) * len(b))
+            vals.append(len(a & b) / denom if denom else 0.0)
+    return float(np.mean(vals))
+
+
+@dataclass(frozen=True)
+class DrawMarginalCoverage:
+    """Coverage marginal over the calibration draw, which is what the label asks about.
+
+    Split conformal promises nominal coverage *on average over the draw of the calibration
+    set*, not on any one draw, and T2-A1 measured what one draw costs on T2-A's bank: the
+    registry split sits a near-constant 1.38 SD low at all nine matched operators at once.
+    Because that displacement is shared by the cells it does not average out over the 72
+    ordered pairs, so the label has to be read from the mean over splits (D86).
+    """
+
+    coverage: float
+    sd: float
+    n_splits: int
+    #: Mean pairwise calibration-set overlap; the correlation the mean must be corrected for.
+    overlap: float
+    nominal: float = prereg.NOMINAL
+    level: float = 0.95
+    min_splits: int = prereg.UNSAFE_LABEL_MIN_SPLITS
+
+    @property
+    def n_eff(self) -> float:
+        """``n / (1 + (n - 1) rho)``: independent-equivalent number of draws."""
+        n = float(self.n_splits)
+        if n <= 0:
+            return float("nan")
+        return float(n / (1.0 + (n - 1.0) * self.overlap))
+
+    @property
+    def se_naive(self) -> float:
+        """``sd / sqrt(n_splits)`` -- what the splits would give if they were independent."""
+        return self.sd / np.sqrt(self.n_splits) if self.n_splits > 0 else float("nan")
+
+    @property
+    def se(self) -> float:
+        """The reported standard error: ``sd / sqrt(n_eff)``."""
+        ne = self.n_eff
+        return float(self.sd / np.sqrt(ne)) if np.isfinite(ne) and ne > 0 else float("nan")
+
+    @property
+    def overlap_inflation(self) -> float:
+        """How much the overlap correction widened the interval. 1.0 means disjoint splits."""
+        return self.se / self.se_naive if self.se_naive > 0 else float("nan")
+
+    @property
+    def df(self) -> float:
+        """Degrees of freedom behind the mean, after the overlap correction."""
+        return self.n_eff - 1.0
+
+    @property
+    def t_inflation(self) -> float:
+        """``t_{0.975}(df) / z_{0.975}``: what a Student interval would have added.
+
+        Reported, not applied. The frozen interval is normal
+        (:data:`caliber.evaluation.prereg.UNSAFE_LABEL_INTERVAL`) and the reason is recorded
+        there; this is the number that lets a reader see the size of that choice.
+        """
+        t = _t975(self.df)
+        return float(t / _Z975) if np.isfinite(t) else float("nan")
+
+    def interval(self, level: float | None = None) -> tuple[float, float]:
+        """Two-sided interval on the draw-marginal coverage, normal quantile."""
+        lvl = self.level if level is None else float(level)
+        se = self.se
+        if not np.isfinite(se):
+            return (float("nan"), float("nan"))
+        z = _Z975 if abs(lvl - 0.95) < 1e-9 else _norm_ppf(0.5 + lvl / 2.0)
+        return (float(self.coverage - z * se), float(self.coverage + z * se))
+
+    @property
+    def hi(self) -> float:
+        """Upper end -- the quantity the unsafe label thresholds."""
+        return self.interval()[1]
+
+    @property
+    def lo(self) -> float:
+        return self.interval()[0]
+
+    @property
+    def reportable(self) -> bool:
+        """Enough splits for the mean to beat the bias it removes."""
+        return bool(self.n_splits >= self.min_splits and np.isfinite(self.se))
+
+    @property
+    def contains_nominal(self) -> bool:
+        lo, hi = self.interval()
+        return bool(np.isfinite(lo) and lo <= self.nominal <= hi)
+
+    @property
+    def note(self) -> str:
+        if self.n_splits < self.min_splits:
+            return (
+                f"{self.n_splits} split(s), below the frozen minimum of {self.min_splits}; "
+                "the across-split mean is noisier than the single-draw bias it removes, so "
+                "the registry-split label is preferable here"
+            )
+        return (
+            f"{self.n_splits} splits sharing {self.overlap:.0%} of their calibration "
+            f"subjects pairwise, so n_eff = {self.n_eff:.1f} and the standard error is "
+            f"{self.overlap_inflation:.2f}x the naive one; a Student interval on "
+            f"{self.df:.1f} df would widen it a further {self.t_inflation:.2f}x"
+        )
+
+    def as_row(self) -> dict[str, object]:
+        lo, hi = self.interval()
+        return {
+            "coverage_across": self.coverage,
+            "coverage_across_lo": lo,
+            "coverage_across_hi": hi,
+            "across_sd": self.sd,
+            "n_splits": self.n_splits,
+            "overlap": self.overlap,
+            "n_eff_splits": self.n_eff,
+            "se": self.se,
+            "se_naive": self.se_naive,
+            "overlap_inflation": self.overlap_inflation,
+            "t_inflation": self.t_inflation,
+            "reportable": self.reportable,
+            "contains_nominal": self.contains_nominal,
+            "note": self.note,
+        }
+
+
+def draw_marginal_coverage(
+    per_split_coverage: Sequence[float],
+    calib_splits: Sequence[Sequence[str]] | None = None,
+    overlap: float | None = None,
+    level: float = 0.95,
+) -> DrawMarginalCoverage:
+    """The mean coverage over patient splits, with an interval the overlap is taken out of.
+
+    ``per_split_coverage`` is one coverage per split for **one** cell. Either pass
+    ``calib_splits`` -- the calibration subject ids per split, in the same order -- so the
+    overlap can be measured, or pass ``overlap`` directly when it is already known for the
+    whole run (it is a property of the split design, not of the cell, so computing it once
+    and reusing it is both cheaper and less error-prone than recomputing per pair).
+
+    Non-finite coverages are dropped and the remaining count is what ``n_splits`` reports,
+    so a cell that was uncertifiable on some splits is described by the splits it has rather
+    than silently credited with all of them.
+    """
+    vals = np.asarray(per_split_coverage, dtype=float)
+    vals = vals[np.isfinite(vals)]
+    if overlap is None:
+        rho = mean_pairwise_overlap(calib_splits) if calib_splits is not None else 0.0
+    else:
+        rho = float(overlap)
+    rho = float(np.clip(rho, 0.0, 0.999))
+    if vals.size == 0:
+        return DrawMarginalCoverage(float("nan"), float("nan"), 0, rho, level=level)
+    sd = float(vals.std(ddof=1)) if vals.size > 1 else float("nan")
+    return DrawMarginalCoverage(
+        coverage=float(vals.mean()), sd=sd, n_splits=int(vals.size), overlap=rho, level=level
+    )
+
+
+def across_split_columns(
+    per_split: pd.DataFrame,
+    calib_splits: Sequence[Sequence[str]] | None = None,
+    overlap: float | None = None,
+    level: float = 0.95,
+    keys: Sequence[str] = ("calibration", "deployment"),
+    coverage_col: str = "coverage",
+    split_col: str = "split",
+) -> pd.DataFrame:
+    """Turn per-split per-pair coverage into the columns the unsafe label reads.
+
+    ``per_split`` is long: one row per (ordered pair, split) with its coverage. The result
+    is one row per ordered pair carrying ``coverage_across`` and ``coverage_across_hi``,
+    which is exactly what :data:`caliber.evaluation.safety.LABEL_SOURCE_COLUMNS` asks for
+    under the frozen label source, plus the diagnostics that make the overlap correction
+    visible.
+
+    The overlap is a property of the split design, so it is computed once here and shared
+    across pairs rather than re-derived per row.
+    """
+    missing = [c for c in (*keys, coverage_col, split_col) if c not in per_split.columns]
+    if missing:
+        raise KeyError(f"per-split frame is missing {missing}")
+    rho = overlap
+    if rho is None:
+        rho = mean_pairwise_overlap(calib_splits) if calib_splits is not None else 0.0
+    rows = []
+    for key, part in per_split.groupby(list(keys), dropna=False, sort=True):
+        est = draw_marginal_coverage(
+            part[coverage_col].to_numpy(dtype=float), overlap=rho, level=level
+        )
+        row = dict(zip(keys, key if isinstance(key, tuple) else (key,)))
+        row.update(est.as_row())
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+#: Columns a per-split coverage table must carry, whoever produced it.
+PER_SPLIT_REQUIRED = ("calibration", "deployment", "coverage")
+
+#: Columns the registry-split table must carry. ``hi`` is the upper end of that split's own
+#: both-sides interval, which is what the registry-split arm of the sensitivity thresholds.
+REGISTRY_REQUIRED = ("calibration", "deployment", "coverage", "hi")
+
+
+def pair_coverage_from_splits(
+    per_split: pd.DataFrame,
+    registry: pd.DataFrame,
+    calib_splits: Sequence[Sequence[str]] | None = None,
+    overlap: float | None = None,
+    level: float = 0.95,
+    keys: Sequence[str] = ("calibration", "deployment"),
+    split_col: str = "salt",
+) -> pd.DataFrame:
+    """Join a per-split coverage table to its registry split, carrying *both* label sources.
+
+    This is the contract between whoever measures coverage and whoever reads the unsafe
+    label. The result holds ``coverage``/``coverage_hi`` from the registry split and
+    ``coverage_across``/``coverage_across_hi`` from the splits, which is what
+    :data:`caliber.evaluation.safety.LABEL_SOURCE_COLUMNS` asks for under either source --
+    so the frozen arm and the arm it displaced can be scored on one frame and the
+    sensitivity table can compare them without recomputing anything.
+
+    **The across-split interval is rebuilt here from the per-split coverages, never read.**
+    A table that has already aggregated reports ``sd / sqrt(n)``, and these splits are
+    re-cuts of one cohort rather than independent replications: they share a large share of
+    their calibration subjects, so that standard error is too small by
+    :attr:`DrawMarginalCoverage.overlap_inflation`. Accepting a stored interval would
+    quietly reinstate the independence this correction exists to remove, and it would do it
+    in the direction that *narrows* the interval and so calls more pairs unsafe. Passing the
+    long table is therefore the supported path; ``overlap`` or ``calib_splits`` supplies the
+    sharing it cannot see.
+
+    ``registry`` is an outer merge, so a pair present in one table and not the other keeps a
+    row with the missing side blank rather than disappearing. A pair silently dropped here
+    would shrink the denominator of the false-safe rate, which is the project's own recurring
+    failure: a statistic that improves because its sample changed underneath it.
+    """
+    missing = [c for c in (*keys, "coverage") if c not in per_split.columns]
+    if split_col not in per_split.columns:
+        missing.append(split_col)
+    if missing:
+        raise KeyError(
+            f"per-split frame is missing {missing}; needed {[*keys, 'coverage', split_col]}"
+        )
+    missing = [c for c in REGISTRY_REQUIRED if c not in registry.columns]
+    if missing:
+        raise KeyError(
+            f"registry frame is missing {missing}; needed {list(REGISTRY_REQUIRED)}"
+        )
+    across = across_split_columns(
+        per_split,
+        calib_splits=calib_splits,
+        overlap=overlap,
+        level=level,
+        keys=keys,
+        coverage_col="coverage",
+        split_col=split_col,
+    )
+    reg = registry[[*keys, "coverage", "hi"]].rename(columns={"hi": "coverage_hi"})
+    return reg.merge(across, on=list(keys), how="outer")
