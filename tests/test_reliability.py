@@ -389,3 +389,228 @@ def test_a_genuinely_miscalibrated_cell_still_fails_the_clustered_control():
 def test_an_empty_side_returns_nan_not_a_number():
     c = R.clustered_coverage([], [np.array([1.0, 2.0])], n_boot=50)
     assert np.isnan(c.coverage) and not c.contains_nominal
+
+
+# -- D86: the draw-marginal coverage the unsafe label is read from ------------
+
+
+def _recuts(n_subjects: int = 100, n_calib: int = 41, n_splits: int = 13, seed: int = 0):
+    """Re-cuts of one fixed cohort, which is how this study's splits are actually made."""
+    rng = np.random.default_rng(seed)
+    ids = [f"s{i:03d}" for i in range(n_subjects)]
+    return [list(rng.permutation(ids)[:n_calib]) for _ in range(n_splits)]
+
+
+def test_overlap_measure_is_the_correlation_not_the_jaccard():
+    """A third shared gives a correlation of 0.33 and a Jaccard of 0.20; we need the former."""
+    a = [f"s{i}" for i in range(30)]
+    b = [f"s{i}" for i in range(20, 50)]          # 10 of 30 shared
+    assert R.mean_pairwise_overlap([a, b]) == pytest.approx(10 / 30, abs=1e-9)
+    assert R._shared_fraction([a, b]) == pytest.approx(10 / 50, abs=1e-9)
+    # the degenerate ends
+    assert R.mean_pairwise_overlap([a, a]) == pytest.approx(1.0)
+    assert R.mean_pairwise_overlap([a, [f"t{i}" for i in range(30)]]) == 0.0
+
+
+def test_disjoint_splits_get_no_overlap_correction():
+    """With independent draws the honest standard error is the naive one."""
+    est = R.draw_marginal_coverage([0.88, 0.90, 0.92, 0.89, 0.91, 0.90, 0.905, 0.895],
+                                   overlap=0.0)
+    assert est.n_eff == pytest.approx(est.n_splits)
+    assert est.overlap_inflation == pytest.approx(1.0, abs=1e-9)
+    assert est.se == pytest.approx(est.se_naive, abs=1e-12)
+
+
+def test_overlapping_recuts_lose_most_of_their_effective_n():
+    """13 re-cuts of 100 subjects taking 41 each are worth about 2.6 independent draws."""
+    splits = _recuts()
+    rho = R.mean_pairwise_overlap(splits)
+    assert rho == pytest.approx(41 / 100, abs=0.05)      # overlap ~ the calibration fraction
+    est = R.draw_marginal_coverage([0.9] * 12 + [0.8], calib_splits=splits)
+    assert 2.0 < est.n_eff < 4.0
+    assert est.overlap_inflation > 1.8
+    assert est.df < 3.0
+    # the Student form is reported, never applied
+    assert est.t_inflation > 2.0
+    assert est.interval()[1] == pytest.approx(est.coverage + R._Z975 * est.se, abs=1e-9)
+
+
+def test_too_few_splits_is_refused_with_the_reason():
+    est = R.draw_marginal_coverage([0.9, 0.91, 0.89], overlap=0.3)
+    assert est.n_splits < prereg.UNSAFE_LABEL_MIN_SPLITS
+    assert not est.reportable
+    assert "below the frozen minimum" in est.note
+
+
+def test_non_finite_splits_are_dropped_not_credited():
+    est = R.draw_marginal_coverage([0.9, np.nan, 0.88, float("inf"), 0.92], overlap=0.0)
+    assert est.n_splits == 3
+    assert est.coverage == pytest.approx(np.mean([0.9, 0.88, 0.92]))
+
+
+def test_across_split_columns_match_what_the_label_source_asks_for():
+    """The contract between the two modules, pinned so a rename cannot silently break it."""
+    import pandas as pd
+
+    from caliber.evaluation import safety
+
+    wanted = safety.LABEL_SOURCE_COLUMNS[prereg.UNSAFE_LABEL_SOURCE]
+    rows = [
+        {"calibration": "a", "deployment": b, "split": i, "coverage": cov}
+        for b, base in (("b", 0.91), ("c", 0.70))
+        for i, cov in enumerate([base - 0.01, base, base + 0.01] * 4 + [base])
+    ]
+    out = R.across_split_columns(pd.DataFrame(rows), overlap=1 / 3)
+    assert set(wanted) <= set(out.columns)
+    assert len(out) == 2
+    assert out["n_splits"].eq(13).all()
+
+
+def test_the_aggregated_columns_feed_the_safety_rule_end_to_end():
+    """D86's two halves actually join: aggregate, merge, label, with no fall-back raised."""
+    import pandas as pd
+
+    from caliber.evaluation import safety
+
+    ops = [f"op{i}" for i in range(5)]
+    sev = {o: i for i, o in enumerate(ops)}
+    long_rows, reg_rows = [], []
+    for a in ops:
+        for b in ops:
+            if a == b:
+                continue
+            base = 0.70 if sev[b] > sev[a] else 0.93
+            for i in range(13):
+                long_rows.append({"calibration": a, "deployment": b, "split": i,
+                                  "coverage": base + 0.004 * (i % 3 - 1)})
+            reg_rows.append({"calibration": a, "deployment": b,
+                             "signed_distance": float(sev[b] - sev[a]),
+                             "coverage": base - 0.07, "coverage_hi": base - 0.07})
+    across = R.across_split_columns(pd.DataFrame(long_rows), overlap=1 / 3)
+    frame = pd.DataFrame(reg_rows).merge(across, on=["calibration", "deployment"])
+
+    rule = safety.safety_rule(frame, with_null=False)
+    assert rule.label_source == prereg.UNSAFE_LABEL_SOURCE
+    assert rule.n_pairs == 20
+    assert rule.false_safe_rate == 0.0          # perfect on the draw-marginal label
+    both = safety.label_source_sensitivity(frame)
+    assert both["false_safe_rate"].notna().all()
+    # the single draw depresses every pair, so it manufactures unsafe cells
+    single = both.loc[both["label_source"] == "registry_split"].iloc[0]
+    assert single["n_unsafe"] > both.loc[both["frozen_primary"]].iloc[0]["n_unsafe"]
+
+
+# -- the contract between whoever measures coverage and whoever reads the label (D86) ----
+
+
+def _per_split(n_splits: int = 13, coverages=None, pairs=(("a", "b"), ("b", "a"))):
+    """A long per-split table shaped like ``pair_coverage_by_split.py``'s output."""
+    import pandas as pd
+
+    from caliber.data.splits import PROBE_SALTS
+
+    vals = coverages if coverages is not None else [0.88 + 0.004 * i for i in range(n_splits)]
+    return pd.DataFrame([
+        {"salt": PROBE_SALTS[i], "calibration": a, "deployment": b, "coverage": v}
+        for i, v in enumerate(vals)
+        for a, b in pairs
+    ])
+
+
+def _registry(pairs=(("a", "b"), ("b", "a")), coverage=0.84, hi=0.89):
+    import pandas as pd
+
+    return pd.DataFrame([
+        {"calibration": a, "deployment": b, "coverage": coverage, "lo": 0.79, "hi": hi}
+        for a, b in pairs
+    ])
+
+
+def test_pair_coverage_from_splits_carries_both_label_sources():
+    """One frame has to score the frozen arm and the arm it displaced, or there is no
+    sensitivity table to report."""
+    from caliber.evaluation.reliability import pair_coverage_from_splits
+    from caliber.evaluation.safety import LABEL_SOURCE_COLUMNS
+
+    frame = pair_coverage_from_splits(_per_split(), _registry(), overlap=0.41)
+    for cols in LABEL_SOURCE_COLUMNS.values():
+        for col in cols:
+            assert col in frame.columns, f"{col} missing; {sorted(frame.columns)}"
+    assert frame["coverage"].eq(0.84).all()
+    assert frame["coverage_across"].round(6).eq(round(0.88 + 0.004 * 6, 6)).all()
+
+
+def test_the_across_split_interval_is_rebuilt_not_read():
+    """The decisive property: a stored ``sd / sqrt(n)`` ignores that the splits overlap.
+
+    Accepting one would narrow the interval, and a narrower interval calls more pairs
+    unsafe -- so the error would move the primary endpoint, in a direction nobody notices.
+    """
+    import numpy as np
+
+    from caliber.evaluation.reliability import pair_coverage_from_splits
+
+    frame = pair_coverage_from_splits(_per_split(), _registry(), overlap=0.41)
+    row = frame.iloc[0]
+    assert row["overlap"] == 0.41
+    assert row["overlap_inflation"] > 2.0, row["overlap_inflation"]
+    # the honest half-width is the inflated one, not sd/sqrt(13)
+    naive_hi = row["coverage_across"] + 1.959964 * row["across_sd"] / np.sqrt(row["n_splits"])
+    assert row["coverage_across_hi"] > naive_hi + 1e-6
+
+
+def test_a_pair_in_one_table_only_keeps_its_row():
+    """A dropped pair shrinks the false-safe denominator, which is this project's own
+    recurring failure: a statistic that improves because its sample changed."""
+    import numpy as np
+
+    from caliber.evaluation.reliability import pair_coverage_from_splits
+
+    frame = pair_coverage_from_splits(
+        _per_split(pairs=(("a", "b"), ("b", "a"))),
+        _registry(pairs=(("a", "b"), ("b", "a"), ("a", "c"))),
+        overlap=0.41,
+    )
+    assert len(frame) == 3
+    only_registry = frame[(frame["calibration"] == "a") & (frame["deployment"] == "c")]
+    assert len(only_registry) == 1
+    assert np.isnan(float(only_registry["coverage_across"].iloc[0]))
+
+
+def test_pair_coverage_from_splits_names_the_columns_it_is_missing():
+    import pytest
+
+    from caliber.evaluation.reliability import pair_coverage_from_splits
+
+    with pytest.raises(KeyError, match="salt"):
+        pair_coverage_from_splits(
+            _per_split().drop(columns=["salt"]), _registry(), overlap=0.41
+        )
+    with pytest.raises(KeyError, match="hi"):
+        pair_coverage_from_splits(_per_split(), _registry().drop(columns=["hi"]), overlap=0.41)
+
+
+def test_the_overlap_can_be_measured_from_the_splits_instead_of_passed():
+    from caliber.data.splits import calib_sets_for_salts
+    from caliber.evaluation.reliability import pair_coverage_from_splits
+
+    splits = calib_sets_for_salts(
+        [f"LIDC-IDRI-{i:04d}" for i in range(1, 101)], design_fraction=0.10
+    )
+    frame = pair_coverage_from_splits(_per_split(), _registry(), calib_splits=splits)
+    assert 0.2 < float(frame["overlap"].iloc[0]) < 0.6
+
+
+def test_a_short_run_is_marked_unreportable_rather_than_averaged_anyway():
+    """Below the frozen minimum the mean is noisier than the single-draw bias it removes."""
+    from caliber.evaluation import prereg
+    from caliber.evaluation.reliability import pair_coverage_from_splits
+
+    n = prereg.UNSAFE_LABEL_MIN_SPLITS - 1
+    frame = pair_coverage_from_splits(
+        _per_split(n_splits=n, coverages=[0.88 + 0.004 * i for i in range(n)]),
+        _registry(),
+        overlap=0.41,
+    )
+    assert not frame["reportable"].any()
+    assert "below the frozen minimum" in frame["note"].iloc[0]

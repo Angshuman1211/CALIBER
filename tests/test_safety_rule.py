@@ -28,26 +28,41 @@ def _ordered_pairs(ops: list[str]) -> list[tuple[str, str]]:
     return [(a, b) for a in ops for b in ops if a != b]
 
 
-def _frame(ops, signed_of, coverage_of, half_width: float = 0.0) -> pd.DataFrame:
+def _frame(
+    ops,
+    signed_of,
+    coverage_of,
+    half_width: float = 0.0,
+    across: bool = True,
+    registry_shift: float = 0.0,
+) -> pd.DataFrame:
     """An ordered-pair frame. ``half_width`` 0 means an exact (zero-width) interval.
 
     The planted fixtures below want exact coverage, so they use a zero-width interval and
     the label reduces to the point-estimate form. Stating it as a width makes the choice
     visible rather than letting the fixture quietly exercise a different label from the
     one the real analysis uses.
+
+    ``coverage_of`` gives the **across-split** coverage, which is what the frozen label
+    reads (D86). ``registry_shift`` then displaces the single-draw columns by a constant,
+    which is the real effect T2-A1 measured: one draw moves every pair the same way. With
+    ``across=False`` the across-split columns are left out entirely, so the no-fall-back
+    guard can be exercised.
     """
     rows = []
     for a, b in _ordered_pairs(ops):
         cov = coverage_of(a, b)
-        rows.append(
-            {
-                "calibration": a,
-                "deployment": b,
-                "signed_distance": signed_of(a, b),
-                "coverage": cov,
-                "coverage_hi": cov + half_width,
-            }
-        )
+        row = {
+            "calibration": a,
+            "deployment": b,
+            "signed_distance": signed_of(a, b),
+            "coverage": cov + registry_shift,
+            "coverage_hi": cov + registry_shift + half_width,
+        }
+        if across:
+            row["coverage_across"] = cov
+            row["coverage_across_hi"] = cov + half_width
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -210,7 +225,8 @@ def test_sparse_grid_refuses_a_p_value_rather_than_inventing_one():
 
 def test_uncertifiable_cells_are_excluded_and_counted():
     frame = perfect_frame()
-    frame.loc[:5, ["coverage", "coverage_hi"]] = np.nan
+    frame.loc[:5, ["coverage", "coverage_hi",
+                   "coverage_across", "coverage_across_hi"]] = np.nan
     r = safety.safety_rule(frame, with_null=False)
     assert r.n_excluded == 6
     assert r.n_pairs == len(frame) - 6
@@ -234,7 +250,8 @@ def test_false_safe_rate_and_unsafe_miss_rate_are_different_quantities():
 def test_distance_lookup_fills_the_reverse_direction_antisymmetrically():
     frame = pd.DataFrame(
         [{"calibration": "a", "deployment": "b", "signed_distance": 0.4,
-          "coverage": 0.9, "coverage_hi": 0.9}]
+          "coverage": 0.9, "coverage_hi": 0.9,
+           "coverage_across": 0.9, "coverage_across_hi": 0.9}]
     )
     lookup = safety._distance_lookup(frame)
     assert lookup[("a", "b")] == pytest.approx(0.4)
@@ -258,7 +275,8 @@ def test_threshold_is_the_frozen_one():
 def test_self_pairs_are_rejected():
     frame = pd.DataFrame(
         [{"calibration": "a", "deployment": "a", "signed_distance": 0.0,
-          "coverage": 0.9, "coverage_hi": 0.9}]
+          "coverage": 0.9, "coverage_hi": 0.9,
+           "coverage_across": 0.9, "coverage_across_hi": 0.9}]
     )
     with pytest.raises(ValueError, match="itself"):
         safety.safety_rule(frame)
@@ -266,7 +284,8 @@ def test_self_pairs_are_rejected():
 
 def test_duplicate_pairs_are_rejected():
     row = {"calibration": "a", "deployment": "b", "signed_distance": 0.1,
-           "coverage": 0.9, "coverage_hi": 0.9}
+           "coverage": 0.9, "coverage_hi": 0.9,
+           "coverage_across": 0.9, "coverage_across_hi": 0.9}
     with pytest.raises(ValueError, match="more than once"):
         safety.safety_rule(pd.DataFrame([row, dict(row)]))
 
@@ -336,3 +355,100 @@ def test_tolerance_sweep_is_monotone_and_marks_the_frozen_row():
     assert sweep["frozen_primary"].sum() == 1
     assert sweep.loc[sweep["frozen_primary"], "tolerance"].iloc[0] == prereg.UNSAFE_TOLERANCE
     assert (sweep["n_unsafe"].diff().dropna() <= 0).all(), "a wider band cannot add unsafe cells"
+
+
+# -- D86: which split the label is read from ----------------------------------
+
+
+def _marginal_frame(
+    k: int = 9, registry_shift: float = 0.0, across: bool = True
+) -> pd.DataFrame:
+    """A rule that is perfect on the across-split label, plus a one-draw displacement.
+
+    Across splits the green-lit pairs cover 0.91 and the rest 0.80, so the sign rule is
+    exactly right. ``registry_shift`` then moves *every* pair by the same amount, which is
+    what T2-A1 measured a single calibration draw doing.
+    """
+    ops = _grid(k)
+    sev = _severity(ops)
+    signed = lambda a, b: float(sev[b] - sev[a])
+    cover = lambda a, b: 0.80 if sev[b] > sev[a] else 0.91
+    return _frame(ops, signed, cover, registry_shift=registry_shift, across=across)
+
+
+def test_the_frozen_source_is_read_and_there_is_no_fall_back():
+    """A frame with only the single-draw columns raises rather than quietly using them."""
+    frame = _marginal_frame(across=False)
+    assert prereg.UNSAFE_LABEL_SOURCE == "across_split_mean"
+    with pytest.raises(KeyError, match="across_split_mean"):
+        safety.safety_rule(frame)
+    # and the arm is still reachable, but only by naming it
+    named = safety.safety_rule(frame, source="registry_split", with_null=False)
+    assert named.label_source == "registry_split"
+
+
+def test_unknown_label_source_is_refused():
+    with pytest.raises(ValueError, match="not a label source"):
+        safety.safety_rule(_marginal_frame(), source="whichever_passes")
+
+
+def test_the_single_draw_label_inflates_the_primary_endpoint():
+    """D86's claimed direction, checked rather than asserted.
+
+    The registry split depresses every pair, so green-lit pairs that genuinely cover
+    nominal are relabelled unsafe and become false safes. The frozen across-split arm must
+    therefore give the *lower* false-safe rate -- i.e. the amendment flatters Track 1, which
+    is exactly why the sensitivity arm is mandatory.
+    """
+    frame = _marginal_frame(registry_shift=-0.07)
+    primary = safety.safety_rule(frame, with_null=False)
+    single = safety.safety_rule(frame, source="registry_split", with_null=False)
+
+    assert primary.label_source == prereg.UNSAFE_LABEL_SOURCE
+    assert primary.n_unsafe < single.n_unsafe
+    assert primary.false_safe_rate == 0.0
+    assert single.false_safe_rate > primary.false_safe_rate
+
+
+def test_label_source_sensitivity_reports_both_arms_and_marks_the_frozen_one():
+    table = safety.label_source_sensitivity(_marginal_frame(registry_shift=-0.07))
+    assert list(table["label_source"]) == list(prereg.UNSAFE_LABEL_SOURCE_SENSITIVITY)
+    assert table["frozen_primary"].sum() == 1
+    frozen = table.loc[table["frozen_primary"]].iloc[0]
+    other = table.loc[~table["frozen_primary"]].iloc[0]
+    assert frozen["label_source"] == prereg.UNSAFE_LABEL_SOURCE
+    assert frozen["false_safe_rate"] < other["false_safe_rate"]
+
+
+def test_an_unavailable_arm_is_a_nan_row_with_a_reason_not_a_missing_row():
+    """A sensitivity table that silently drops an arm is the thing this prevents."""
+    frame = _marginal_frame().drop(columns=["coverage_across", "coverage_across_hi"])
+    table = safety.label_source_sensitivity(frame)
+    assert len(table) == len(prereg.UNSAFE_LABEL_SOURCE_SENSITIVITY)
+    gone = table.loc[table["label_source"] == "across_split_mean"].iloc[0]
+    assert gone["verdict"] == "unavailable"
+    assert not np.isfinite(gone["false_safe_rate"])
+    assert gone["note"]
+
+
+def test_the_row_carries_which_arm_it_came_from():
+    """A table read as the primary endpoint when it is the sensitivity arm is unrecoverable."""
+    row = safety.safety_rule(_marginal_frame(), source="registry_split", with_null=False).as_row()
+    assert row["label_source"] == "registry_split"
+    assert row["frozen_source"] is False
+
+
+def test_the_sensitivity_arms_are_compared_on_the_same_pairs():
+    """A rate difference must be a change of label, not a change of sample.
+
+    Found by running the real runner: one pair was uncertifiable on the registry split and
+    fine averaged over re-cuts, so the two arms were reported over 1 and 2 pairs and their
+    false-safe rates sat on different denominators.
+    """
+    frame = _marginal_frame(registry_shift=-0.07)
+    frame.loc[0, ["coverage", "coverage_hi"]] = np.nan      # unusable on one arm only
+
+    table = safety.label_source_sensitivity(frame)
+    assert table["n_pairs"].nunique() == 1                  # same denominator everywhere
+    assert (table["n_dropped"] == 1).all()
+    assert table["n_pairs"].iloc[0] == len(frame) - 1

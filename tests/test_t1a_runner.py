@@ -213,3 +213,173 @@ def test_baseline_scope_covers_every_declared_baseline():
     """A baseline with no stated scope is one that can be defined after the fact."""
     assert set(prereg.BASELINE_SCOPE) == set(prereg.GAP_PREDICTION_BASELINES)
     assert "undefined across families" in prereg.BASELINE_SCOPE["acquisition_parameter"]
+
+
+# -- D86: the runner must produce the arm the frozen label reads --------------
+
+
+def _multi_operator_bank(n_patients: int = 40, per_patient: int = 30, seed: int = 0):
+    """Three operators of increasing severity on shared patients, registry split by half."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    n_cal = n_patients // 2
+    for i, (op, loc) in enumerate((("op0", 0.0), ("op1", 0.25), ("op2", 0.55))):
+        for p in range(n_patients):
+            for _ in range(per_patient):
+                rows.append({
+                    "operator_id": op,
+                    "operator_family": "sv" if i < 2 else "la",
+                    "sample_id": f"p{p:03d}",
+                    "split": "calib" if p < n_cal else "test",
+                    "label": True,
+                    "score": float(rng.normal(loc, 1.0)),
+                })
+    return pd.DataFrame(rows)
+
+
+def test_recuts_keep_the_registry_split_first_and_exclude_design_subjects():
+    df = _multi_operator_bank()
+    df.loc[df["sample_id"] == "p000", "split"] = "design"
+    splits = T1A._recut_splits(df, n_splits=5)
+
+    assert len(splits) == 5
+    reg_calib = sorted(set(df.loc[df["split"] == "calib", "sample_id"]))
+    assert splits[0][0] == reg_calib                     # registry partition is split 0
+    for calib, test in splits:
+        assert "p000" not in calib and "p000" not in test   # design held out everywhere
+        assert not set(calib) & set(test)                   # the sides stay disjoint
+        assert len(calib) == len(reg_calib)                 # same calibration size
+
+
+def test_the_runner_produces_exactly_the_columns_the_frozen_label_reads():
+    """The gap this closes: nothing previously ran the runner's frame through the label."""
+    from caliber.evaluation import safety
+
+    df = _multi_operator_bank()
+    splits = T1A._recut_splits(df, n_splits=9)
+    long = T1A._pairs_across_splits(df, splits, prereg.ALPHA)
+    assert set(long["split"]) == set(range(9))
+    assert len(long) == 9 * 6                            # 3 operators -> 6 ordered pairs
+
+    across = T1A.across_split_columns(
+        long, overlap=T1A.mean_pairwise_overlap([c for c, _ in splits])
+    )
+    wanted = safety.LABEL_SOURCE_COLUMNS[prereg.UNSAFE_LABEL_SOURCE]
+    assert set(wanted) <= set(across.columns)
+    assert across["n_splits"].eq(9).all()
+
+
+def test_the_merged_frame_runs_the_rule_without_tripping_the_no_fall_back_guard():
+    """End to end on the runner's own helpers, which is what main does."""
+    from caliber.evaluation import safety
+
+    df = _multi_operator_bank()
+    sev = {"op0": 0, "op1": 1, "op2": 2}
+    splits = T1A._recut_splits(df, n_splits=9)
+    rho = T1A.mean_pairwise_overlap([c for c, _ in splits])
+    across = T1A.across_split_columns(T1A._pairs_across_splits(df, splits, prereg.ALPHA),
+                                      overlap=rho)
+    registry = T1A._ordered_pairs(
+        df,
+        {(a, b): float(sev[b] - sev[a]) for a in sev for b in sev if a != b},
+        prereg.ALPHA,
+        n_boot=200,
+    )
+    frame = registry.merge(across, on=["calibration", "deployment"], how="left")
+
+    rules = safety.safety_by_family(frame, with_null=False)
+    assert rules[0].label_source == prereg.UNSAFE_LABEL_SOURCE
+    assert rules[0].n_pairs == 6
+    both = safety.label_source_sensitivity(frame)
+    assert both["verdict"].ne("unavailable").all()   # both arms present, neither skipped
+
+
+# -- reading the across-split label from T2-A3's artefact (D86) --------------------------
+
+
+def _split_bank(n_patients: int = 60, design_fraction: float = 0.10) -> pd.DataFrame:
+    """A frame whose ``split`` column really is what ``split_for`` assigns."""
+    from caliber.data.splits import split_for
+
+    return pd.DataFrame([
+        {
+            "sample_id": f"LIDC-IDRI-{i:04d}",
+            "split": split_for(
+                f"LIDC-IDRI-{i:04d}", calib_fraction=0.5, design_fraction=design_fraction
+            ),
+        }
+        for i in range(1, n_patients + 1)
+    ])
+
+
+def _artefact(tmp_path, salts=None, coverage=0.89):
+    """A directory shaped like ``pair_coverage_by_split.py``'s output."""
+    from caliber.data.splits import PROBE_SALTS
+
+    use = list(PROBE_SALTS) if salts is None else list(salts)
+    pairs = (("a", "b"), ("b", "a"))
+    pd.DataFrame([
+        {"salt": s, "calibration": x, "deployment": y, "coverage": coverage + 0.003 * i}
+        for i, s in enumerate(use)
+        for x, y in pairs
+    ]).to_csv(tmp_path / "pair_coverage_by_split.csv", index=False)
+    pd.DataFrame([
+        {"calibration": x, "deployment": y, "coverage": 0.84, "lo": 0.79, "hi": 0.88}
+        for x, y in pairs
+    ]).to_csv(tmp_path / "pair_coverage_registry.csv", index=False)
+    return tmp_path
+
+
+def test_the_split_design_is_checked_against_the_bank_not_trusted():
+    """The overlap is reconstructed from the fractions, so the wrong ones silently report
+    another design's overlap -- and a too-low overlap narrows the interval."""
+    df = _split_bank(design_fraction=0.10)
+    T1A._verify_split_design(df, "sample_id", 0.5, 0.10)   # the truth: no raise
+    with pytest.raises(SystemExit, match="does not match split_for"):
+        T1A._verify_split_design(df, "sample_id", 0.5, 0.30)
+
+
+def test_reading_the_artefact_measures_the_overlap_from_its_salts(tmp_path):
+    from caliber.data.splits import PROBE_SALTS
+
+    frame, rho, n_salts = T1A._read_pair_coverage(
+        str(_artefact(tmp_path)), _split_bank(100), "sample_id", 0.5, 0.10, 0.95
+    )
+    assert n_salts == len(PROBE_SALTS)
+    assert 0.2 < rho < 0.6, rho
+    # both label sources, from the one artefact
+    for col in ("coverage", "coverage_hi", "coverage_across", "coverage_across_hi"):
+        assert col in frame.columns
+    assert float(frame["overlap_inflation"].iloc[0]) > 2.0
+
+
+def test_a_salt_the_protocol_does_not_name_is_refused(tmp_path):
+    """Membership is reconstructed from the salt, so an unnamed draw cannot be placed and
+    its share of the overlap cannot be measured. Guessing it would widen or narrow the
+    interval by an unknown amount."""
+    from caliber.data.splits import PROBE_SALTS
+
+    bad = _artefact(tmp_path, salts=[*PROBE_SALTS[:12], "probe-rerun-with-new-seed"])
+    with pytest.raises(SystemExit, match="salts this protocol does not define"):
+        T1A._read_pair_coverage(str(bad), _split_bank(100), "sample_id", 0.5, 0.10, 0.95)
+
+
+def test_a_subset_of_the_salts_is_read_as_the_splits_it_has(tmp_path):
+    """A split whose design side could not value the label is skipped upstream, so the
+    table arrives short. It is described by the draws it has, not credited with all 13."""
+    from caliber.data.splits import PROBE_SALTS
+
+    short = _artefact(tmp_path, salts=PROBE_SALTS[:9])
+    frame, _, n_salts = T1A._read_pair_coverage(
+        str(short), _split_bank(100), "sample_id", 0.5, 0.10, 0.95
+    )
+    assert n_salts == 9
+    assert int(frame["n_splits"].iloc[0]) == 9
+    assert bool(frame["reportable"].iloc[0]) is True
+
+
+def test_a_missing_artefact_says_which_file_and_what_makes_it(tmp_path):
+    with pytest.raises(SystemExit, match="pair_coverage_by_split"):
+        T1A._read_pair_coverage(
+            str(tmp_path), _split_bank(60), "sample_id", 0.5, 0.10, 0.95
+        )
