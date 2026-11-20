@@ -26,7 +26,7 @@ The medical-prior results need M4Raw, TotalSegmentator and the two score models.
 
 ```bash
 pip install -e ".[dev,solvers,convert,figures]"
-python -m pytest -q          # 885 passed, 2 skipped at T2.11
+python -m pytest -q          # 968 passed, 2 skipped at T2.11
 ```
 
 The banks were built on one laptop GPU (RTX 3050, 6 GB) with `torch 2.13.0+cu126`. Every analysis runs on the CPU from a finished bank (score-bank rule 1). Two things from the problem log save time on Windows:
@@ -104,7 +104,7 @@ Thirty patients resampled 13 ways is a robustness check against the choice of sp
 
 ### CT, medical prior (T2.11; values pending the bank)
 
-Run in this order. The first command is the pre-registered control (T2.11 §1c): if its group-conditional arm does not sit at nominal, stop. **On the bank as built it does not**: 0.831 on the registry split, and with the interval Track 1 ruled for (both sides resampled, threshold refitted) it still excludes 0.90 at 3 of 9 operators. By that ruling the bank is not read; steps 3 and 4 have not been run. Step 2 was run as a diagnostic: cos θ +0.882 (T2.11 §1f, P-44, P-45).
+Run in this order. The first command is the pre-registered control (T2.11 §1c): if its group-conditional arm does not sit at nominal, stop. On the bank as built the control misses on the registry split (0.831) and holds over 13 patient splits (0.897); Track 1's D86 rules the bank read on that table (T2.11 §1e to §1g). Every number from it is reported on the registry split with the both-sides interval and beside the across-split mean: `pair_coverage_by_split.py $C --cluster sample_id --out-dir <dir>`.
 
 | Step | Command |
 |---|---|
