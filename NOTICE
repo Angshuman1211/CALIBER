@@ -1,0 +1,16 @@
+CALIBER
+Operator-shift-robust conformal hallucination flagging for generative-prior image reconstruction.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository includes code adapted from other projects:
+
+- src/caliber/solvers/ncsnpp.py is adapted from yang-song/score_sde_pytorch
+  (https://github.com/yang-song/score_sde_pytorch), Copyright 2020 The Google Research
+  Authors, licensed under the Apache License, Version 2.0. The file keeps its original
+  header and lists what was changed.
+
+No model weights and no data are distributed with this repository. The score models of
+Song et al. (ICLR 2022) carry no stated licence and are downloaded from their authors;
+fastMRI, M4Raw, TotalSegmentator and the data the priors were trained on are obtained from
+their owners under their own terms (Documentation/T2.11_lidc_ct_bank_and_claims.md, section 5).

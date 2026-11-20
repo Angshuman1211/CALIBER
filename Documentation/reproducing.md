@@ -26,7 +26,7 @@ The medical-prior results need M4Raw, TotalSegmentator and the two score models.
 
 ```bash
 pip install -e ".[dev,solvers,convert,figures]"
-python -m pytest -q          # 882 passed, 2 skipped at T2.11
+python -m pytest -q          # 968 passed, 2 skipped at T2.11
 ```
 
 The banks were built on one laptop GPU (RTX 3050, 6 GB) with `torch 2.13.0+cu126`. Every analysis runs on the CPU from a finished bank (score-bank rule 1). Two things from the problem log save time on Windows:
@@ -95,7 +95,7 @@ CLOW=ct.sparse_view.v180.a180.dfull;  CHIGH=ct.sparse_view.v30.a180.dfull
 
 | Number | Value | Command |
 |---|---|---|
-| Naive coverage, 1-D mask → `variable_density2d` R2 / R4 / R8 | 0.000 / 0.016 / 0.118 | `coverage_by_patient.py $M --low $MLOW --high $MHIGH` |
+| Naive coverage, 1-D mask → `variable_density2d` R2 / R4 / R8 | 0.000 / 0.016 / 0.118 | `coverage_by_patient.py $M --low $MLOW --high $MHIGH --transfer` |
 | Group-conditional, same cells | 0.857 / 0.890 / 0.901 | same |
 | Below nominal on every one of 13 patient splits | 13 of 13 | `split_noise_floor.py $M --low $MLOW --high $MHIGH` |
 | cos θ, median | +0.596 | `label_comparison.py $M --calibration-operator $MLOW` |
@@ -104,11 +104,11 @@ Thirty patients resampled 13 ways is a robustness check against the choice of sp
 
 ### CT, medical prior (T2.11; values pending the bank)
 
-Run in this order. The first command is the pre-registered control (T2.11 §1c): if its group-conditional arm does not sit at nominal, stop. **On the bank as built it does not** on the registry split (0.831), while it does over 13 patient splits (0.897). Steps 2 to 4 have not been run and wait on Track 1's ruling (T2.11 §1e, P-44).
+Run in this order. The first command is the pre-registered control (T2.11 §1c): if its group-conditional arm does not sit at nominal, stop. On the bank as built the control misses on the registry split (0.831) and holds over 13 patient splits (0.897); Track 1's D86 rules the bank read on that table (T2.11 §1e to §1g). Every number from it is reported on the registry split with the both-sides interval and beside the across-split mean: `pair_coverage_by_split.py $C --cluster sample_id --out-dir <dir>`.
 
 | Step | Command |
 |---|---|
-| 1. Matched-operator control, then naive transfer both ways | `coverage_by_patient.py $C --cluster sample_id --low $CLOW --high $CHIGH` |
+| 1. Matched-operator control, alone (add `--transfer` only once it has passed) | `coverage_by_patient.py $C --cluster sample_id --low $CLOW --high $CHIGH` |
 | 2. cos θ, before any score result is read (T2-C) | `label_comparison.py $C --calibration-operator $CLOW` |
 | 3. Patient-split noise floor | `split_noise_floor.py $C --cluster sample_id --low $CLOW --high $CHIGH` |
 | 4. Operator distances, all pairs | `ct_distances.py $C --all-pairs --measures null_space_growth null_space_projection --out <csv>` |

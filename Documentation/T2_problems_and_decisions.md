@@ -23,9 +23,58 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
+#### P-45 - `label_comparison.py` refuses the LIDC bank: 0.48% of regions fail the identity
+
+**Open - decides:** Track 2 (the cause), Track 1 (the guard's tolerance) - **See:** D38, D74, T2.11 §1f, T2.6
+
+**Update, D86.** By operator: limited-angle 90 degrees 714, sparse-view 30 329,
+limited-angle 150 degrees 230, sparse-view 180 176, limited-angle 120 degrees 156,
+sparse-view 90 76, sparse-view 45 63, none at sparse-view 120 or 60. 221 of the 1,744 are
+positives. D86 also rules on the guard: its form should change, since one region should not
+condemn a bank, but its threshold must come from what the solver's tolerance can explain and
+not from the share observed here. That needs the CG measurement below, so the guard is
+unchanged for now and still refuses this bank.
+
+`label_comparison.py` checks D38's identity before it reports cos theta: the three stored
+columns must give |cos theta| <= 1 at every region, to 1e-3 of `err_free^2`. On the LIDC bank
+1,744 of 360,000 regions do not, by a median of 0.006 in cos theta and at most 0.31, and the
+script stops. The face-prior CT bank has 11 such regions and the 2-subject smoke bank 5, so
+this was always present and is forty times more common here. The regions are those where
+the error is small beside the content, so cos theta sits near 1 and a small inconsistency
+crosses it; they concentrate at limited-angle 90 degrees (709) and sparse-view 30 (329).
+The medical prior reconstructs well, which is what puts so many regions at that boundary.
+The suspected cause is the CT null-space projection: it is a CG solve, so `P_N(x_hat - x)`
+and `P_N x_hat - P_N x` agree only to its tolerance. Not confirmed. For T2-C the median was
+computed directly with cos theta clipped (+0.882, unchanged when the violating regions are
+dropped). **What would close it:** measuring the CG tolerance's effect on the three columns
+at one limited-angle operator, and a ruling on whether the guard should refuse on the
+worst region or on a share of regions.
+
+---
+
 #### P-44 - The LIDC bank's matched-operator control fails on the registry split and holds over splits
 
-**Open - decides:** Track 1 (the pre-registration is D-070's) - **See:** D-070 §2, T2.11 §1c and §1e, D-027, T1-D
+**Ruled (D86, 20 Nov): the bank is read; one of D86's two checks is left with Track 1** - **See:** D85, D86, D-070 §2, T2.11 §1c, §1e, §1f and §1g, D-027, T1-D
+
+**Update, D86.** Track 1 reversed D85's reverting clause as mis-specified (one pooled
+calibration term for nine cells; a gate that fails a sound bank when any one of nine
+intervals misses) and ruled the bank read on the 13-split table. Both checks D86 attached
+were run first (T2.11 §1g). Track 1's `clustered_coverage` reproduces T2-A1. The
+identity-violating regions do sit mostly at two of the three failing cells (69%), but 221
+of the 1,744 are positives and dropping them moves the control by at most 0.0014, so the
+bank was read; that reading of the condition is Track 2's and is flagged to Track 1.
+T2-A3 (per-pair coverage over 13 splits) is delivered. Still not known: what moves the
+threshold between splits.
+
+**Update, 20 Nov.** Track 1 ruled that the control stays on the registry split and that its
+interval must resample subjects on both sides and refit the threshold in each replicate, as
+D-070 §2 already required of every interval. Recomputed that way (T2.11 §1f) the interval
+contains 0.90 at 6 of 9 operators and excludes it at limited-angle 120° (upper end 0.897),
+limited-angle 90° (0.888) and sparse-view 30 (0.899). The ruling said that outcome reverts to
+"the bank is not read". Still open: the run used Track 2's implementation, because Track
+1's `clustered_coverage` was not yet pushed, and two of the three failures are within
+0.003 of the line. The entry below is as written on 19 Nov.
+
 
 The pre-registered control for T2-A: calibrated and tested on the same operator, coverage
 must come back at about 0.90, "or the bank is wrong and nothing else is read". Track 2's
@@ -49,7 +98,12 @@ the registry split alone.
 
 #### P-43 - The repository has no licence, and the O7 release cannot go out without one
 
-**Open - decides:** all three tracks - **See:** O7, D79, D-070 (risk register), T2.11 §5
+**Half closed (20 Nov): licence added; the banks' release still open** - **See:** O7, D79, D86, D-070 (risk register), T2.11 §5
+
+**Update, D86.** Track 1 has no objection to Apache-2.0. `LICENSE` and a `NOTICE` for the
+adapted `ncsnpp.py` are in the repository and `pyproject.toml` names the licence. Banks are
+not released. TotalSegmentator (CC BY 4.0) and LIDC-IDRI (CC BY 3.0) both permit derived
+data with attribution on their own pages; the fastMRI banks remain a separate reading.
 
 The risk register asked Track 2 to resolve the *checkpoints'* licence before a release.
 That half is settled: `yang-song/score_inverse_problems` has no LICENSE file and GitHub

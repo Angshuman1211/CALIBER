@@ -380,6 +380,68 @@ def fig_gap_two_modalities(mri: pd.DataFrame, mri_dist: dict, ct: pd.DataFrame, 
     return save(fig, out / "fig5_gap_vs_distance_two_modalities")
 
 
+def fig_split_reliability(by_split: pd.DataFrame, registry: pd.DataFrame, nominal: float,
+                          out: Path) -> Path:
+    """The matched-operator control over patient splits (T1-D's first row; T2.11, D86).
+
+    One column per operator. Grey dots are the probe splits, the blue marker is the registry
+    split the bank reports on, and the short bar is the across-split mean. Behind them are
+    the two references a reader might hold the control to: the Beta law split conformal
+    follows if every *region* were independent (the narrow band), and the registry split's
+    own interval with patients resampled on both sides (the wide one). The distance between
+    the two bands is the clustering.
+    """
+    from caliber.evaluation.reliability import beta_reference
+
+    blue = METHOD["group"][1]
+    matched = by_split[by_split["calibration"] == by_split["deployment"]]
+    reg = registry[registry["matched"]].set_index("deployment")
+    order = sorted(reg.index, key=lambda o: (o.split(".")[1] != "sparse_view",
+                                             -int(o.split(".")[2][1:]), -int(o.split(".")[3][1:])))
+    project = matched["salt"].iloc[0]
+    fig, ax = plt.subplots(figsize=(10.5, 4.2))
+    for x, oid in enumerate(order):
+        r = reg.loc[oid]
+        ax.add_patch(plt.Rectangle((x - 0.30, r["lo"]), 0.60, r["hi"] - r["lo"], color=blue,
+                                   alpha=0.13, linewidth=0, zorder=1))
+        lo, hi = beta_reference(int(r["n_positives_calib"])).interval()
+        ax.add_patch(plt.Rectangle((x - 0.30, lo), 0.60, hi - lo, color=INK_2, alpha=0.35,
+                                   linewidth=0, zorder=2))
+        cell = matched[matched["deployment"] == oid]
+        probes = cell[cell["salt"] != project]["coverage"].to_numpy()
+        jitter = [(-0.16 + 0.32 * i / max(len(probes) - 1, 1)) for i in range(len(probes))]
+        ax.plot([x + j for j in jitter], probes, marker="o", markersize=4.5, linestyle="none",
+                markerfacecolor=SURFACE, markeredgecolor=MUTED, markeredgewidth=1.1, zorder=3)
+        mean = float(cell["coverage"].mean())
+        ax.plot([x - 0.24, x + 0.24], [mean, mean], color=INK, linewidth=1.8, zorder=4)
+        ax.plot([x], [r["coverage"]], marker="D", markersize=7, linestyle="none",
+                markerfacecolor=blue, markeredgecolor=SURFACE, markeredgewidth=1.0, zorder=5)
+    nominal_line(ax, nominal)
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels([ct_tick(o) for o in order])
+    n_sparse = sum(o.split(".")[1] == "sparse_view" for o in order)
+    ax.axvline(n_sparse - 0.5, color=AXIS, linewidth=0.8)
+    ax.set_xlabel("sparse-view (views)" + " " * 44 + "limited-angle (arc)")
+    ax.set_ylabel("matched-operator coverage")
+    ax.set_ylim(min(0.55, float(reg["lo"].min()) - 0.02), 1.0)
+    ax.grid(axis="x", visible=False)
+    handles = [
+        Line2D([], [], marker="D", linestyle="none", markersize=7, markerfacecolor=blue,
+               markeredgecolor=SURFACE, label="registry split"),
+        Line2D([], [], marker="o", linestyle="none", markersize=4.5, markerfacecolor=SURFACE,
+               markeredgecolor=MUTED, label=f"{matched['salt'].nunique() - 1} probe splits"),
+        Line2D([], [], color=INK, linewidth=1.8, label="across-split mean"),
+        plt.Rectangle((0, 0), 1, 1, color=blue, alpha=0.13, linewidth=0,
+                      label="registry split, 95% interval, both sides resampled"),
+        plt.Rectangle((0, 0), 1, 1, color=INK_2, alpha=0.35, linewidth=0,
+                      label="Beta law if regions were independent (98%)"),
+    ]
+    fig.legend(handles=handles, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.06))
+    fig.suptitle(f"The matched-operator control over patient splits, CT ({LABELS['ct']})",
+                 x=0.01, ha="left", y=1.13, fontsize=10.5, color=INK)
+    return save(fig, out / "fig6_split_reliability")
+
+
 def save(fig, stem: Path) -> Path:
     for ext in ("png", "pdf"):
         fig.savefig(stem.with_suffix(f".{ext}"), dpi=200, bbox_inches="tight")
@@ -397,6 +459,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="CT table from coverage_by_patient.py: adds Figures 4 and 5")
     ap.add_argument("--ct-distances", default=None,
                     help="ct_distances.py output, for Figure 5's CT x-axis")
+    ap.add_argument("--pair-dir", default=None,
+                    help="pair_coverage_by_split.py output directory: adds Figure 6")
     ap.add_argument("--mri-label", default=LABELS["mri"],
                     help="substrate and test-set size for the MRI titles, comma-separated")
     ap.add_argument("--ct-label", default=LABELS["ct"],
@@ -420,6 +484,12 @@ def main(argv: list[str] | None = None) -> int:
             path = fig_gap_two_modalities(t, dist, ct, ct_distances_from(Path(args.ct_distances)),
                                           nominal, out)
             print(f"[figures] wrote {path} (+ .pdf)")
+    if args.pair_dir:
+        pairs = Path(args.pair_dir)
+        path = fig_split_reliability(pd.read_csv(pairs / "pair_coverage_by_split.csv"),
+                                     pd.read_csv(pairs / "pair_coverage_registry.csv"),
+                                     nominal, out)
+        print(f"[figures] wrote {path} (+ .pdf)")
     return 0
 
 
