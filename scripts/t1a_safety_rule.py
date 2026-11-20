@@ -19,10 +19,21 @@ measured at the deployment operator, on disjoint patients. Joined to the signed 
 distance, which is a property of the two operators alone and so was computed before this
 bank existed.
 
+**Then the label, read over patient re-cuts rather than one draw (D86).** Split conformal
+promises nominal coverage marginally over the draw of the calibration set, and T2-A1
+measured what one draw costs: on T2-A's bank the registry split sits a near-constant 1.38 SD
+low at all nine matched operators at once. That displacement is *shared* by the cells, so it
+does not average out over the 72 pairs -- a single-draw label is biased, not merely noisy.
+The bank holds every subject's scores at every operator, so this script makes its own
+re-cuts (``--n-splits``, registry partition first) and reads the label from their mean, with
+the interval widened for the overlap between re-cuts. The single-draw arm is printed beside
+it every time, because the frozen choice is the one that *flatters* the rule.
+
 **Then the rule, pooled and per family cell.** Every choice -- the threshold at zero, the
-tolerance at zero, the permutation statistic, the resampling unit -- comes from
-:mod:`caliber.evaluation.prereg` and none is a command-line option, so no number printed
-here can have been obtained by picking a cut-point after seeing the coverages.
+tolerance at zero, the permutation statistic, the resampling unit, which split the label
+comes from -- comes from :mod:`caliber.evaluation.prereg` and none is a command-line option,
+so no number printed here can have been obtained by picking a cut-point after seeing the
+coverages.
 
 Scale handling, which is easy to get wrong: the score's component scales are estimated once
 on ``--scale-operator`` and frozen (D26/D27). Re-estimating them per deployment operator
@@ -42,13 +53,22 @@ import numpy as np
 import pandas as pd
 
 from caliber.calibration.conformal import split_threshold
+from caliber.data.splits import PROBE_SALTS, calib_sets_for_salts, split_for
 from caliber.evaluation import add_label_args, derive_score_and_label, label_from_args, prereg
 from caliber.evaluation.reliability import (
+    across_split_columns,
     beta_reference,
     clustered_coverage,
+    mean_pairwise_overlap,
+    pair_coverage_from_splits,
     worst_operator_coverage,
 )  # noqa: F401  -- beta_reference is reported beside the bootstrap as the idealisation
-from caliber.evaluation.safety import safety_by_family, safety_table, tolerance_sensitivity
+from caliber.evaluation.safety import (
+    label_source_sensitivity,
+    safety_by_family,
+    safety_table,
+    tolerance_sensitivity,
+)
 from caliber.reportability import COVERAGE, ClaimNotCarried, describe, require_claim, stamp
 from caliber.scorebank import read_bank
 
@@ -260,6 +280,157 @@ def _ordered_pairs(
     return pd.DataFrame(rows)
 
 
+def _recut_splits(
+    df: pd.DataFrame, n_splits: int, cluster_col: str = "sample_id", seed: int = 0
+) -> list[tuple[list[str], list[str]]]:
+    """``n_splits`` calibration/test partitions of the bank's subjects, the registry one first.
+
+    The bank already holds every subject's scores at every operator, so the calibration/test
+    assignment is only a partition of subject ids and T1-A can make its own re-cuts without
+    waiting on anything. The registry partition is kept as split 0 because it is one of the
+    draws, not a privileged one, and because it is the arm the sensitivity table reports.
+
+    The design subjects are excluded from both sides of every re-cut: they carry the label's
+    own threshold (epsilon) and putting them in a calibration half would leak it.
+    """
+    reg_calib = sorted(set(df.loc[df["split"] == "calib", cluster_col].astype(str)))
+    reg_test = sorted(set(df.loc[df["split"] == "test", cluster_col].astype(str)))
+    pool = sorted(set(reg_calib) | set(reg_test))
+    if not pool:
+        return []
+    k = len(reg_calib) or max(1, len(pool) // 2)
+    rng = np.random.default_rng(seed)
+    out = [(reg_calib, reg_test)]
+    for _ in range(max(0, n_splits - 1)):
+        perm = list(rng.permutation(pool))
+        out.append((sorted(perm[:k]), sorted(perm[k:])))
+    return out
+
+
+def _verify_split_design(
+    df: pd.DataFrame, cluster_col: str, calib_fraction: float, design_fraction: float
+) -> None:
+    """Refuse unless the bank's own split column is what these fractions reproduce.
+
+    The overlap correction is reconstructed from :func:`split_for`, not stored, so it is
+    only right if the fractions handed in are the ones the splits were actually drawn
+    under. A mismatch would not raise anywhere -- it would return a *different* design's
+    overlap, and a too-low overlap narrows the interval and calls more pairs unsafe. So the
+    assumption is checked against the bank instead of trusted.
+    """
+    sides = {
+        str(c): split_for(
+            str(c), calib_fraction=calib_fraction, design_fraction=design_fraction
+        )
+        for c in df[cluster_col].unique()
+    }
+    rebuilt = df[cluster_col].astype(str).map(sides)
+    disagree = int((rebuilt != df["split"].astype(str)).sum())
+    if disagree:
+        raise SystemExit(
+            f"[t1a] the bank's split column does not match split_for at calib_fraction="
+            f"{calib_fraction} design_fraction={design_fraction} ({disagree} of {len(df)} "
+            "regions disagree). The overlap correction is reconstructed from those "
+            "fractions, so reading an across-split label under the wrong ones would report "
+            "another design's overlap. Pass the fractions the bank was split under."
+        )
+
+
+def _read_pair_coverage(
+    directory: str,
+    df: pd.DataFrame,
+    cluster_col: str,
+    calib_fraction: float,
+    design_fraction: float,
+    level: float,
+) -> tuple[pd.DataFrame, float, int]:
+    """T2-A3's per-split and registry tables, as the frame the unsafe label reads.
+
+    Returns the frame, the measured calibration overlap, and the number of salts used.
+
+    Both label sources are taken from this one artefact rather than mixing its across-split
+    arm with this script's own bootstrap for the registry arm. The sensitivity table exists
+    to show what *the label source* changes; if the two arms also came from two measurement
+    pipelines, any difference between them would be part source and part pipeline, and the
+    table would not answer the question it is there to answer. That is the same defect as
+    scoring the two arms on different pair sets, caught once already.
+    """
+    root = Path(directory)
+    per_split_path = root / "pair_coverage_by_split.csv"
+    registry_path = root / "pair_coverage_registry.csv"
+    for path in (per_split_path, registry_path):
+        if not path.exists():
+            raise SystemExit(f"[t1a] {path} is missing; run pair_coverage_by_split.py first")
+    per_split = pd.read_csv(per_split_path)
+    registry = pd.read_csv(registry_path)
+    if "salt" not in per_split.columns:
+        raise SystemExit(f"[t1a] {per_split_path} has no salt column; cannot name its draws")
+    seen = [str(x) for x in per_split["salt"].unique()]
+    unknown = sorted(set(seen) - set(PROBE_SALTS))
+    if unknown:
+        raise SystemExit(
+            f"[t1a] {per_split_path} contains salts this protocol does not define: "
+            f"{unknown}. Calibration membership is reconstructed from the salt, so an "
+            "unnamed draw cannot be placed and its share of the overlap cannot be "
+            "measured. Add it to PROBE_SALTS or drop it from the table."
+        )
+    _verify_split_design(df, cluster_col, calib_fraction, design_fraction)
+    salts = [s for s in PROBE_SALTS if s in set(seen)]
+    calib_splits = calib_sets_for_salts(
+        df[cluster_col].astype(str).unique(),
+        salts,
+        calib_fraction=calib_fraction,
+        design_fraction=design_fraction,
+    )
+    rho = mean_pairwise_overlap(calib_splits)
+    frame = pair_coverage_from_splits(per_split, registry, overlap=rho, level=level)
+    return frame, rho, len(salts)
+
+
+def _pairs_across_splits(
+    df: pd.DataFrame,
+    splits: list[tuple[list[str], list[str]]],
+    alpha: float,
+    cluster_col: str = "sample_id",
+) -> pd.DataFrame:
+    """Long frame of per-pair coverage on every re-cut: the label's estimand (D86).
+
+    One threshold fit and one comparison per (pair, split) -- no bootstrap, because the
+    interval on the mean comes from the spread *across* splits, not from within one.
+
+    **One difference from Track 2's 13-split run, in the conservative direction.** Theirs
+    re-values the label's epsilon on each split's own design side; this holds the registry
+    epsilon fixed, so the spread here misses that component and the interval is narrower.
+    A narrower interval calls more pairs unsafe, which is harsher on the rule, so the gap
+    cannot flatter the endpoint. It is reported rather than corrected.
+    """
+    operators = sorted(set(df["operator_id"].astype(str)))
+    ids = df[cluster_col].astype(str)
+    rows = []
+    for s, (calib_ids, test_ids) in enumerate(splits):
+        in_calib = ids.isin(set(calib_ids))
+        in_test = ids.isin(set(test_ids))
+        for a in operators:
+            calib = df[(df["operator_id"] == a) & in_calib & df["label"]]
+            if calib.empty:
+                continue
+            res = split_threshold(calib["score"], np.ones(len(calib), bool), alpha=alpha)
+            for b in operators:
+                if a == b:
+                    continue
+                test = df[(df["operator_id"] == b) & in_test & df["label"]]
+                if test.empty:
+                    continue
+                caught, total = _coverage(test, res.threshold)
+                rows.append({
+                    "calibration": a,
+                    "deployment": b,
+                    "split": s,
+                    "coverage": caught / total if total else float("nan"),
+                })
+    return pd.DataFrame(rows)
+
+
 def _print_table(frame: pd.DataFrame, cols: list[str], title: str) -> None:
     print(f"\n== {title} " + "=" * max(0, 74 - len(title)))
     have = [c for c in cols if c in frame.columns]
@@ -278,6 +449,20 @@ def main(argv: list[str] | None = None) -> int:
                     help="the resampling unit for the control's interval; regions within "
                          "one of these are not independent")
     ap.add_argument("--out", default=None, help="directory for the CSVs")
+    ap.add_argument("--n-splits", type=int, default=13,
+                    help="patient re-cuts the across-split label is averaged over (D86)")
+    ap.add_argument("--split-seed", type=int, default=0,
+                    help="seed for the re-cuts; the registry split is always split 0")
+    ap.add_argument("--pair-coverage-dir", default=None,
+                    help="read the across-split label from a pair_coverage_by_split.py run "
+                         "(T2-A3) instead of re-cutting here; both label sources then come "
+                         "from that one artefact, so the sensitivity table compares sources "
+                         "and not pipelines")
+    ap.add_argument("--calib-fraction", type=float, default=0.5,
+                    help="the fraction the bank was split under; checked against it, "
+                         "because the overlap correction is reconstructed from it")
+    ap.add_argument("--design-fraction", type=float, default=0.10,
+                    help="as --calib-fraction, for the label's own held-out side (D-051)")
     ap.add_argument("--ignore-control", action="store_true",
                     help="read the rule even though the matched-operator control failed")
     ap.add_argument("--development", action="store_true",
@@ -352,6 +537,50 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[t1a] per-pair coverage sd: median {pairs['coverage_sd'].median():.4f}, "
               f"design effect: median {pairs['design_effect'].median():.0f} regions per unit")
 
+    # D86: the label's estimand is coverage marginal over the calibration draw. One draw
+    # displaces every pair the same way, so a single-split label is biased, not just noisy.
+    if args.pair_coverage_dir:
+        across, rho, n_salts = _read_pair_coverage(
+            args.pair_coverage_dir, df, args.cluster,
+            args.calib_fraction, args.design_fraction, PAIR_LEVEL,
+        )
+        print(f"[t1a] label source = {prereg.UNSAFE_LABEL_SOURCE} from "
+              f"{args.pair_coverage_dir} over {n_salts} salted re-cuts, pairwise "
+              f"calibration overlap {rho:.0%} (reconstructed from the salts, not read)")
+        # Both arms now come from that artefact. This script's own bootstrap is kept
+        # alongside under _local names: the two are independent implementations of the
+        # same registry cell, so their largest disagreement is a free agreement check and
+        # it costs one merge to have it.
+        pairs = pairs.rename(
+            columns={"coverage": "coverage_local", "coverage_hi": "coverage_hi_local"}
+        ).merge(across, on=["calibration", "deployment"], how="left")
+        both = pairs[["coverage", "coverage_local"]].dropna()
+        if len(both):
+            gap = (both["coverage"] - both["coverage_local"]).abs()
+            print(f"[t1a] registry coverage agrees with this script's own bootstrap to "
+                  f"{gap.max():.4f} at worst over {len(both)} pairs (median "
+                  f"{gap.median():.4f}); the artefact's value is the one read")
+    else:
+        splits = _recut_splits(
+            df, args.n_splits, cluster_col=args.cluster, seed=args.split_seed
+        )
+        rho = mean_pairwise_overlap([c for c, _ in splits])
+        print(f"[t1a] label source = {prereg.UNSAFE_LABEL_SOURCE} over {len(splits)} "
+              f"re-cuts made here (registry split first), pairwise calibration overlap "
+              f"{rho:.0%}")
+        long = _pairs_across_splits(df, splits, alpha, cluster_col=args.cluster)
+        if long.empty:
+            print("[t1a] no re-cut produced a usable pair; cannot form the frozen label")
+            return 2
+        across = across_split_columns(long, overlap=rho, level=PAIR_LEVEL)
+        pairs = pairs.merge(across, on=["calibration", "deployment"], how="left")
+    n_short = int((pairs["n_splits"] < prereg.UNSAFE_LABEL_MIN_SPLITS).sum())
+    if n_short:
+        print(f"[t1a] {n_short} pair(s) have fewer than "
+              f"{prereg.UNSAFE_LABEL_MIN_SPLITS} usable splits; their label is not reportable")
+    print(f"[t1a] across-split se is {pairs['overlap_inflation'].median():.2f}x the naive "
+          f"one after the overlap correction (n_eff = {pairs['n_eff_splits'].median():.1f})")
+
     rules = safety_by_family(pairs)
     table = safety_table(rules)
     _print_table(table, ["cells", "n_pairs", "false_safe_rate", "false_safe_lo",
@@ -362,6 +591,13 @@ def main(argv: list[str] | None = None) -> int:
                  ["tolerance", "frozen_primary", "n_unsafe", "false_safe_rate",
                   "trivial_false_safe_rate", "green_light_fraction", "beats_trivial"],
                  "sensitivity to what counts as under-coverage (primary is tolerance=0)")
+    # Required by D86: the frozen source runs the favourable way for the rule, so the
+    # single-draw arm is printed beside it every time rather than on request.
+    _print_table(label_source_sensitivity(pairs),
+                 ["label_source", "frozen_primary", "n_pairs", "n_dropped", "n_unsafe",
+                  "false_safe_rate", "trivial_false_safe_rate", "green_light_fraction",
+                  "verdict", "note"],
+                 "which split the unsafe label is read from (D86)")
 
     print("\n== T1-D worst cell " + "=" * 56)
     for name, frame in (("matched", control), ("transfer", pairs)):

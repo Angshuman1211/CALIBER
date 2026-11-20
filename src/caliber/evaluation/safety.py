@@ -44,6 +44,7 @@ threshold or a tolerance after seeing the coverage numbers.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Iterable, Sequence
 
 import numpy as np
@@ -79,6 +80,27 @@ MIN_OPERATORS_FOR_CI = 4
 #: grid is complete (9 operators, all 72 ordered pairs), so this does not bind there.
 MIN_PAIR_COMPLETENESS = 0.80
 
+#: Which pair of columns each frozen label source reads (D86).
+#:
+#: The label's estimand is coverage **marginal over the calibration draw**, which is what
+#: split conformal actually promises. T2-A1 measured what one draw does on T2-A's bank: the
+#: registry split sits a near-constant 1.38 SD low at all nine matched operators at once,
+#: with the per-operator amplitude set by that operator's own sensitivity. The displacement
+#: is therefore *common to the cells*, so it moves all 72 ordered pairs the same way and
+#: cannot average out over them -- a single-draw label is biased one direction by a known
+#: amount, which is not what the conservative orientation was bought for.
+#:
+#: There is deliberately **no fall-back**. If the frame lacks the frozen source's columns
+#: this raises, because the one thing that must not happen is a table silently computed on
+#: the registry split and read as the primary endpoint. The registry arm is reachable only
+#: by naming it, which is what :func:`label_source_sensitivity` does.
+LABEL_SOURCE_COLUMNS = MappingProxyType(
+    {
+        "across_split_mean": ("coverage_across", "coverage_across_hi"),
+        "registry_split": ("coverage", "coverage_hi"),
+    }
+)
+
 
 # -- the confusion matrix ------------------------------------------------------
 
@@ -108,6 +130,9 @@ class SafetyRule:
     loo_false_safe: tuple[float, ...] = field(default_factory=tuple)
     #: Share of the ordered pairs among this frame's operators that are present.
     pair_completeness: float = float("nan")
+    #: Which frozen label source the truth column came from (D86). Carried on the row so a
+    #: table can never be read as the primary endpoint when it is the sensitivity arm.
+    label_source: str = ""
 
     # -- endpoints ------------------------------------------------------------
 
@@ -215,6 +240,8 @@ class SafetyRule:
                 max(self.loo_false_safe) if self.loo_false_safe else float("nan")
             ),
             "pair_completeness": self.pair_completeness,
+            "label_source": self.label_source,
+            "frozen_source": self.label_source == prereg.UNSAFE_LABEL_SOURCE,
             "beats_trivial": self.beats_trivial,
             "verdict": self.verdict,
             "prereg": prereg.fingerprint(),
@@ -224,10 +251,42 @@ class SafetyRule:
 # -- internals -----------------------------------------------------------------
 
 
-def _check(frame: pd.DataFrame) -> None:
+def _usable_mask(frame: pd.DataFrame, source: str) -> np.ndarray:
+    """Rows this label source can score: both its columns and the distance finite."""
+    cov_col, hi_col = _label_columns(source)
+    if not {cov_col, hi_col}.issubset(frame.columns):
+        return np.zeros(len(frame), dtype=bool)
+    return (
+        np.isfinite(frame[cov_col].to_numpy(dtype=float))
+        & np.isfinite(frame[hi_col].to_numpy(dtype=float))
+        & np.isfinite(frame["signed_distance"].to_numpy(dtype=float))
+    )
+
+
+def _label_columns(source: str) -> tuple[str, str]:
+    """The (point, upper-end) column names for a frozen label source, or raise."""
+    try:
+        return LABEL_SOURCE_COLUMNS[source]
+    except KeyError:
+        raise ValueError(
+            f"{source!r} is not a label source; known: {sorted(LABEL_SOURCE_COLUMNS)}"
+        ) from None
+
+
+def _check(frame: pd.DataFrame, source: str) -> None:
     missing = [c for c in REQUIRED if c not in frame.columns]
     if missing:
         raise KeyError(f"ordered-pair frame is missing {missing}; needed {list(REQUIRED)}")
+    cov_col, hi_col = _label_columns(source)
+    absent = [c for c in (cov_col, hi_col) if c not in frame.columns]
+    if absent:
+        raise KeyError(
+            f"the frozen label source {source!r} needs {absent}, which this frame does not "
+            f"carry. There is no fall-back to {list(REQUIRED[-2:])} on purpose (D86): the "
+            "registry split displaces every pair the same way, so a table computed on it "
+            "and read as the primary endpoint is biased, not merely noisy. Produce the "
+            "across-split columns, or ask for the sensitivity arm by name."
+        )
     same = frame["calibration"].astype(str) == frame["deployment"].astype(str)
     if same.any():
         raise ValueError(
@@ -238,15 +297,17 @@ def _check(frame: pd.DataFrame) -> None:
     dup = frame.duplicated(subset=["calibration", "deployment"])
     if dup.any():
         raise ValueError(f"{int(dup.sum())} ordered pair(s) appear more than once")
-    hi, point = frame["coverage_hi"].to_numpy(dtype=float), frame["coverage"].to_numpy(float)
-    both = np.isfinite(hi) & np.isfinite(point)
-    if np.any(hi[both] < point[both] - 1e-9):
-        bad = int((hi[both] < point[both] - 1e-9).sum())
-        raise ValueError(
-            f"{bad} pair(s) have coverage_hi below coverage; the upper end of an interval "
-            "cannot sit under its own point estimate, so the columns are swapped or the "
-            "interval was computed on different rows"
-        )
+    for cov, hicol in {("coverage", "coverage_hi"), (cov_col, hi_col)}:
+        hi = frame[hicol].to_numpy(dtype=float)
+        point = frame[cov].to_numpy(dtype=float)
+        both = np.isfinite(hi) & np.isfinite(point)
+        if np.any(hi[both] < point[both] - 1e-9):
+            bad = int((hi[both] < point[both] - 1e-9).sum())
+            raise ValueError(
+                f"{bad} pair(s) have {hicol} below {cov}; the upper end of an interval "
+                "cannot sit under its own point estimate, so the columns are swapped or "
+                "the interval was computed on different rows"
+            )
 
 
 def _predict_safe(signed: np.ndarray) -> np.ndarray:
@@ -454,6 +515,7 @@ def safety_rule(
     tolerance: float | None = None,
     seed: int = 0,
     with_null: bool = True,
+    source: str | None = None,
 ) -> SafetyRule:
     """Evaluate the sign rule on one set of ordered pairs.
 
@@ -467,12 +529,16 @@ def safety_rule(
     invention. ``tolerance`` defaults to the frozen
     :data:`caliber.evaluation.prereg.UNSAFE_TOLERANCE` and is exposed only so
     :func:`tolerance_sensitivity` can sweep it; the primary endpoint uses the frozen value.
+    ``source`` behaves the same way for :func:`label_source_sensitivity` and defaults to
+    the frozen :data:`caliber.evaluation.prereg.UNSAFE_LABEL_SOURCE` (D86).
     """
-    _check(frame)
+    src = prereg.UNSAFE_LABEL_SOURCE if source is None else str(source)
+    _check(frame, src)
     tol = prereg.UNSAFE_TOLERANCE if tolerance is None else float(tolerance)
+    cov_col, hi_col = _label_columns(src)
 
-    coverage = frame["coverage"].to_numpy(dtype=float)
-    coverage_hi = frame["coverage_hi"].to_numpy(dtype=float)
+    coverage = frame[cov_col].to_numpy(dtype=float)
+    coverage_hi = frame[hi_col].to_numpy(dtype=float)
     usable = (
         np.isfinite(coverage)
         & np.isfinite(coverage_hi)
@@ -481,10 +547,10 @@ def safety_rule(
     n_excluded = int((~usable).sum())
     sub = frame.loc[usable].reset_index(drop=True)
     if sub.empty:
-        return SafetyRule(label, 0, n_excluded, 0, 0, 0, 0)
+        return SafetyRule(label, 0, n_excluded, 0, 0, 0, 0, label_source=src)
 
     signed = sub["signed_distance"].to_numpy(dtype=float)
-    truth_safe = _actually_safe(sub["coverage_hi"].to_numpy(dtype=float), tol)
+    truth_safe = _actually_safe(sub[hi_col].to_numpy(dtype=float), tol)
     ts, fs, fa, tu = _counts(_predict_safe(signed), truth_safe)
     j = _youden_j(ts, fs, fa, tu)
 
@@ -505,6 +571,7 @@ def safety_rule(
         false_safe_ci=ci,
         loo_false_safe=_leave_one_operator_out(sub, truth_safe),
         pair_completeness=_pair_completeness(sub),
+        label_source=src,
     )
 
 
@@ -514,6 +581,7 @@ def safety_by_family(
     family_col_deployment: str = "family_deployment",
     seed: int = 0,
     with_null: bool = True,
+    source: str | None = None,
 ) -> list[SafetyRule]:
     """The pooled rule **and** every ordered family cell, in that order.
 
@@ -522,7 +590,7 @@ def safety_by_family(
     R4 against +0.100 at R8. Pooling across families is the same operation on a different
     axis, so both are always printed.
     """
-    out = [safety_rule(frame, "pooled", seed=seed, with_null=with_null)]
+    out = [safety_rule(frame, "pooled", seed=seed, with_null=with_null, source=source)]
     have = family_col_calibration in frame.columns and family_col_deployment in frame.columns
     if not have:
         return out
@@ -537,6 +605,7 @@ def safety_by_family(
                 f"{fa} -> {fb}",
                 seed=seed,
                 with_null=with_null,
+                source=source,
             )
         )
     return out
@@ -549,10 +618,11 @@ def tolerance_sensitivity(
 ) -> pd.DataFrame:
     """The primary endpoint against the width of the band that counts as under-coverage.
 
-    The frozen primary is ``tolerance = 0``: a cell is unsafe if its point estimate misses
-    nominal at all. That is the conservative orientation, so this sweep can only make the
-    rule look *better*, and it is reported to show how much of the headline rests on cells
-    that miss nominal by a hair.
+    The frozen primary is ``tolerance = 0``: a cell is unsafe if the **upper end of its
+    coverage interval** misses nominal at all (D85; not the point estimate, which the first
+    form of this label used). That is the conservative orientation, so this sweep can only
+    make the rule look *better*, and it is reported to show how much of the headline rests
+    on cells that miss nominal by a hair.
     """
     tols = prereg.UNSAFE_TOLERANCE_SENSITIVITY if tolerances is None else tolerances
     rows = []
@@ -569,6 +639,77 @@ def tolerance_sensitivity(
                 "beats_trivial": r.beats_trivial,
             }
         )
+    return pd.DataFrame(rows)
+
+
+def label_source_sensitivity(
+    frame: pd.DataFrame,
+    sources: Sequence[str] | None = None,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """The primary endpoint on each frozen label source. **Reported, never chosen from.**
+
+    This sweep exists because the frozen choice runs the *favourable* way for the rule, and
+    a change in that direction does not get to be silent (D86). The registry split depresses
+    every pair by about 0.07, which manufactures unsafe cells among the green-lit ones and so
+    **inflates** the false-safe rate; taking the label from the across-split mean removes
+    that and lowers the headline number. Both arms are therefore printed side by side, with
+    ``frozen_primary`` marking which one the paper's number comes from, so a reader can see
+    which way the choice cut rather than taking it on trust.
+
+    A source whose columns the frame does not carry is reported as a row of NaN with its
+    reason, rather than skipped: a sensitivity table with a silently missing arm is the
+    thing this is meant to prevent.
+
+    **The arms are restricted to the pairs every arm can score.** They need not agree on
+    that: a pair can be uncertifiable on the registry split and fine averaged over re-cuts,
+    or the reverse. Scoring each arm on its own usable rows puts the two rates on different
+    denominators, which is the one thing a sensitivity table must not do -- the difference
+    would then be partly a change of sample rather than a change of label. ``n_dropped``
+    reports what comparability cost.
+    """
+    names = list(prereg.UNSAFE_LABEL_SOURCE_SENSITIVITY if sources is None else sources)
+    available = [n for n in names if _usable_mask(frame, n).any()]
+    common = np.ones(len(frame), dtype=bool)
+    for name in available:
+        common &= _usable_mask(frame, name)
+    shared = frame.loc[common].reset_index(drop=True)
+    n_dropped = int(len(frame) - len(shared))
+    rows = []
+    for name in names:
+        row: dict[str, object] = {
+            "label_source": name,
+            "frozen_primary": name == prereg.UNSAFE_LABEL_SOURCE,
+        }
+        try:
+            r = safety_rule(shared, f"source={name}", seed=seed, with_null=False, source=name)
+        except (KeyError, ValueError) as exc:
+            row.update(
+                {
+                    "n_pairs": 0,
+                    "n_dropped": n_dropped,
+                    "n_unsafe": float("nan"),
+                    "false_safe_rate": float("nan"),
+                    "trivial_false_safe_rate": float("nan"),
+                    "green_light_fraction": float("nan"),
+                    "verdict": "unavailable",
+                    "note": str(exc).strip('"')[:120],
+                }
+            )
+        else:
+            row.update(
+                {
+                    "n_pairs": r.n_pairs,
+                    "n_dropped": n_dropped,
+                    "n_unsafe": r.n_unsafe,
+                    "false_safe_rate": r.false_safe_rate,
+                    "trivial_false_safe_rate": r.trivial_false_safe_rate,
+                    "green_light_fraction": r.green_light_fraction,
+                    "verdict": r.verdict,
+                    "note": "",
+                }
+            )
+        rows.append(row)
     return pd.DataFrame(rows)
 
 

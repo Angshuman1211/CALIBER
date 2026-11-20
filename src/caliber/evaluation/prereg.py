@@ -123,6 +123,25 @@ UNSAFE_LABEL_MIN_SPLITS = 8
 #: replaced by it, so a reader can see which way the choice cut.
 UNSAFE_LABEL_SOURCE_SENSITIVITY = ("across_split_mean", "registry_split")
 
+#: How the interval on the across-split mean is formed (D86).
+#:
+#: The splits are **re-cuts of one cohort**, not independent draws, so `sd / sqrt(n_splits)`
+#: overstates the precision of their mean. The correction is the standard one for a mean of
+#: correlated estimates, `n_eff = n / (1 + (n - 1) * rho)`, with `rho` the mean pairwise
+#: calibration-set overlap -- at 13 splits sharing about a third, `n_eff` is near 2.6, so
+#: the honest standard error is roughly 2.2x the naive one.
+#:
+#: The quantile is **normal, not Student t**, and that choice is frozen here rather than
+#: left to the caller. `n_eff - 1` is about 1.6 degrees of freedom, where `t_{0.975}` is
+#: near 6 and would widen the interval by a further ~3.3x -- which would shrink the unsafe
+#: class until
+#: the false-safe rate were near-vacuously zero, flattering the rule for an arithmetic
+#: reason. `rho` is itself a modelled quantity, so compounding it with a t on 1.6 df stacks
+#: one rough correction on another. The t width is **reported** beside the interval as a
+#: diagnostic (`DrawMarginalCoverage.t_inflation`) so the choice is visible and a reader can
+#: see what the stricter form would have done.
+UNSAFE_LABEL_INTERVAL = "normal_overlap_corrected"
+
 #: The permutation null shuffles **operator labels**, not the distance column.
 #:
 #: Shuffling distances independently would destroy the antisymmetry of
@@ -286,6 +305,7 @@ def as_dict() -> dict[str, object]:
         "unsafe_label": UNSAFE_LABEL,
         "unsafe_label_source": UNSAFE_LABEL_SOURCE,
         "unsafe_label_min_splits": UNSAFE_LABEL_MIN_SPLITS,
+        "unsafe_label_interval": UNSAFE_LABEL_INTERVAL,
         "n_permutations": N_PERMUTATIONS,
         "n_boot": N_BOOT,
         "permutation_sided": PERMUTATION_SIDED,

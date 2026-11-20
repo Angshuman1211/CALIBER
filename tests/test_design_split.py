@@ -156,3 +156,61 @@ def test_straddle_check_reports_a_patient_split_across_design_and_calib():
     sample_to_patient = {"vol_a": "P1", "vol_b": "P1", "vol_c": "P2"}
     leaky = {"vol_a": "design", "vol_b": "calib", "vol_c": "test"}
     assert verify_no_patient_straddles(sample_to_patient, leaky) == ["P1"]
+
+
+# -- the salted re-cut design the draw-marginal label averages over (D86) ---------------
+
+
+def _keys(n: int) -> list[str]:
+    return [f"LIDC-IDRI-{i:04d}" for i in range(1, n + 1)]
+
+
+def test_the_probe_salts_lead_with_the_project_salt():
+    """The registry draw has to stay identifiable: it is the sensitivity table's other arm."""
+    from caliber.data.splits import DEFAULT_SALT, PROBE_SALTS
+
+    assert PROBE_SALTS[0] == DEFAULT_SALT
+    assert len(PROBE_SALTS) == len(set(PROBE_SALTS)), "a repeated salt is the same draw twice"
+    assert len(PROBE_SALTS) >= 8, "below the frozen minimum the mean is noisier than the bias"
+
+
+def test_calib_sets_for_salts_reproduces_the_registry_split_first():
+    from caliber.data.splits import PROBE_SALTS, calib_sets_for_salts, split_for
+
+    keys = _keys(80)
+    sets = calib_sets_for_salts(keys, design_fraction=0.10)
+    assert len(sets) == len(PROBE_SALTS)
+    expected = [k for k in sorted(keys) if split_for(k, design_fraction=0.10) == "calib"]
+    assert sets[0] == expected
+
+
+def test_calib_sets_are_not_all_the_same_size():
+    """The sides are drawn per patient, so a fixed-size reshuffle is a *different* design.
+
+    Pinning this stops someone "tidying" the sizes to be equal, which would change the
+    overlap and so the width of the interval the unsafe label is read from.
+    """
+    from caliber.data.splits import calib_sets_for_salts
+
+    sizes = {len(s) for s in calib_sets_for_salts(_keys(100), design_fraction=0.10)}
+    assert len(sizes) > 1
+
+
+def test_the_recut_overlap_is_well_short_of_independence():
+    """13 re-cuts of one cohort are not 13 replications, and the correction must show it."""
+    from caliber.data.splits import calib_sets_for_salts
+    from caliber.evaluation.reliability import mean_pairwise_overlap
+
+    rho = mean_pairwise_overlap(calib_sets_for_salts(_keys(100), design_fraction=0.10))
+    assert 0.2 < rho < 0.6, rho
+    n_eff = 13 / (1 + 12 * rho)
+    assert n_eff < 4, f"n_eff {n_eff} would make the naive standard error nearly honest"
+
+
+def test_calib_sets_for_salts_is_deterministic_and_takes_any_order():
+    from caliber.data.splits import calib_sets_for_salts
+
+    keys = _keys(60)
+    once = calib_sets_for_salts(keys, design_fraction=0.10)
+    again = calib_sets_for_salts(list(reversed(keys)), design_fraction=0.10)
+    assert once == again

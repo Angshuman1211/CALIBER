@@ -1452,10 +1452,13 @@ at commit `c06c51f`, **25 October 2026**, three and a half weeks before the bank
 attribution of it to D-070 Sec. 2 was wrong -- that text is D73's -- but the substance is
 committed and early.
 
-The multiplicity rule is **not** in that position. `git grep Bonferroni HEAD -- Documentation/`
-returns nothing: the simultaneous-lower-bound rule and `FAMILY_WISE_ALPHA` live only in an
-untracked `reliability.py` and in D83, which is still uncommitted. Its 18 Nov date is my word
-and an unpushed file. **This ruling therefore does not rest on it.** For the record the
+The multiplicity rule is **not** in that position, and committing it has not fixed that.
+`reliability.py` and D83 landed in `1e94d37`, **20 Nov 16:20** -- a day after the bank
+finished and hours after T2-A1's result was known. Git now confirms the rule's *content* but
+can say nothing about its 18 Nov date, which rests on my word and on the file's own
+`FROZEN_ON`. A reader who suspects the correction was reached for once the gate fired cannot
+be answered from the history. **This ruling therefore does not rest on it**, and that is why
+it is built on Track 2's 13-split table instead, which needs no rule of mine at all. For the record the
 correction would not settle the matter anyway: rescaling the three percentile intervals to the
 one-sided Bonferroni level over nine cells clears limited-angle 120 deg (0.909) and sparse-view
 30 (0.914) but leaves limited-angle 90 deg at **0.9001** -- on the line. Unresolved, not passed.
@@ -1497,8 +1500,159 @@ calibration half. It also predicts the contrast already observed, since the face
 maps a fixed HU window (D-013) and so has a subject-independent score scale (sd 0.034 against
 0.051). Named as the T2-A2 test; untested.
 
-**Status:** pre-registration amended, 65 Track 1 tests unchanged by this entry. T1-A's coverage
-side is unblocked and is the next thing to run, against the across-split labels.
+**Implemented, not just decided.** An amendment nothing imports is prose, so the freeze is
+wired: `safety.LABEL_SOURCE_COLUMNS` maps each source to its columns, `safety_rule` reads
+`prereg.UNSAFE_LABEL_SOURCE`, and a frame lacking the frozen source's columns **raises rather
+than falling back** -- the one outcome that must not happen is a table computed on the
+registry split and read as the primary endpoint. `reliability.draw_marginal_coverage` forms
+the mean with the overlap taken out (`n_eff = n / (1 + (n-1) rho)`, `rho` the mean pairwise
+calibration overlap, which is the correlation and *not* the Jaccard figure the existing
+spread check uses); at 13 re-cuts of 100 subjects taking 41 each, `n_eff` is 2.6 and the
+honest standard error is **2.2x** the naive one. The quantile is frozen normal, with the
+Student inflation (3.3x at 1.6 df) reported beside it: compounding a modelled `rho` with a t
+on 1.6 df would shrink the unsafe class until the false-safe rate was near-vacuously zero,
+which is the flattering direction again.
+
+The runner makes its **own** re-cuts from the bank's subject ids rather than waiting on
+Track 2, so T1-A runs the moment the bank lands; the registry partition is split 0 and the
+design subjects are held out of both sides everywhere. One difference from Track 2's
+13-split run, in the conservative direction: theirs re-values the label's epsilon per split,
+this holds the registry epsilon fixed, so the spread here misses that component, the interval
+is narrower, and *more* pairs are called unsafe.
+
+**A defect the end-to-end run caught, which no unit test would have.** The first sensitivity
+table scored each arm on its own usable rows. A pair can be uncertifiable on the registry
+split and fine averaged over re-cuts, so the arms came out over 1 and 2 pairs and their
+false-safe rates sat on **different denominators** -- the difference would have been partly a
+change of sample dressed as a change of label. The arms are now restricted to the pairs every
+arm can score, with `n_dropped` reporting what that cost.
+
+**Status:** pre-registration amended twice (`2d5f00f0761f` -> `b63c76138528`), 84 Track 1
+tests passing, and the runner verified end to end on the MRI fixture bank. T1-A's coverage
+side is unblocked and waits only on the bank.
+
+### D87 - The identity violations do concentrate in the cells that failed T2-A1, and the reading still stands [rules T2.11 Sec. 1g; discharges D86's live condition]
+
+D86 named one measurement a live condition that could still overturn it: the per-operator
+cross-tab of the 1,744 regions with `|cos theta| > 1`. The words were that concentration in
+the three cells that failed T2-A1 "is the pattern that sends the bank back". **They
+concentrate.** So this entry owes either that reversal or the reason the condition was the
+wrong one. It is the second, and the condition was mine.
+
+**The concentration is real; it should not be softened.** Per operator: la 90 deg 714,
+sv 30 329, la 150 deg 230, sv 180 176, la 120 deg 156, sv 90 76, sv 45 63, sv 120 and sv 60
+none. The three failing cells average 400 violations against the six passing cells' 91 --
+**4.4x**. An exact one-sided rank-sum over the nine cells puts the failing three at W = 8
+against an expected 15: **p = 0.048** (4 of the 84 ways to choose 3 of 9 are at least this
+extreme). Track 2's "69% of the mass" overstates it slightly -- la 90 deg alone is 41% of all
+violations, and setting it aside leaves the failing three holding 485 against the passing
+six's 545 -- but the effect survives that, and p = 0.048 is the number to quote.
+
+**The exoneration offered does not do the work claimed, and the reason matters.** Two figures
+came with it: only 221 of the 1,744 are positives (0.23% of positives), and dropping every
+violating region moves matched coverage by at most 0.0014. The second is close to the first
+restated. Those 221 imply about 10,700 positives per operator, so at la 90 deg (about 90
+violating positives) the *arithmetic ceiling* on dropping them is +0.0072 upward and -0.0013
+downward. The shortfall being explained is 0.053. **The test's entire range is 14% of the
+quantity it was pointed at**; it could not have convicted the bank and it cannot acquit it.
+It is a bound, not evidence, and belongs in Sec. 1g as one.
+
+There is a further reason not to lean on it. `|cos theta| > 1` is a **threshold on a
+continuous numerical error**, so the 1,744 are its visible tail, not the affected population.
+Dropping them removes the regions where the inconsistency crossed 1 and keeps every region
+where it reached 0.99. A CG solve that converges worse at limited angle converges worse
+there everywhere, not only where it broke the identity.
+
+**What settles it: the defect is split-invariant, the failure is split-specific.** The
+reconstructions and the scores are computed once. Re-cutting calibration and deployment
+re-partitions subject ids; it does not recompute a single reconstruction. So whatever score
+corruption the CG tolerance causes is **identical in all 13 splits**. D86's load sits on
+Sec. 1e: per-operator 13-split means 0.892 to 0.905, nominal contained at all nine, widest
+miss 0.008 -- and la 90 deg, the worst T2-A1 cell and the holder of 41% of the violations,
+carries the *highest* across-draw mean of the nine. A defect present in every split cannot
+explain a shortfall that appears in one split and vanishes in the mean of thirteen. The
+concentration survives as a fact about which operators are numerically hardest. It is not
+evidence about the bank's coverage.
+
+**A second check, from Track 2's own transfer table.** sv 120 is the out-of-order operator,
+hardest to cover from almost every row. It has **zero** violations, as does sv 60. The most
+anomalous cell in the transfer structure is one of the two numerically cleanest, so the
+defect does not explain that structure either.
+
+**Where the concentration does bite, and it is not a coverage question.** It is largely a
+family effect: la holds 1,100 over three cells, sv 644 over six. Limited angle is more
+ill-posed, so CG converges worse -- *and* limited angle has the largest reconstruction error
+and the greatest score sensitivity. One cause, both symptoms. That is a confound for **T1-B**,
+which predicts the transfer gap from operator distance: if solver quality co-varies with
+ill-posedness, part of the distance-gap slope is the solver rather than the geometry. Within
+la the violations do not order the failures -- la 150 deg has more violations than la 120 deg
+and passed -- which is mild evidence for two separate channels, on n = 3.
+
+**My error in D86, the third one.** "If they concentrate, the bank goes back" named a
+correlation without naming the mechanism it would have to act through, and the mechanism is
+ruled out by the split invariance above. A condition that cannot distinguish "these operators
+are harder" from "these numbers are wrong" is not a test. Conditions in this log should name
+the channel, not the pattern.
+
+**Still owed, and what would overturn this.** The **CG residual per operator** -- not the
+violation count -- is the measurement that settles whether the limited-angle scores are
+numerically sound. The `label_comparison.py` guard stays unchanged until it exists: a
+share-based threshold chosen after seeing 0.48% is the same shape as reversing a reverting
+clause, and it should be set from the residual, not from the share it has to admit. If the
+residual at limited angle moves `err_free` by an appreciable fraction of epsilon, the
+*detection* content at those operators is in question -- not the coverage -- and D80 already
+refuses that independently.
+
+#### Both of my Sec. 1f predictions failed, and one failure should close its question
+
+- **Fixed epsilon does not shrink the 13-split spread** (0.051 either way). That kills the
+  explanation D86 offered for Track 2's bootstrap SEs running 0.73 to 0.92 of the empirical
+  across-split sds. The residual gap is unexplained; I should stop attributing it.
+- **The calibration half's mean per-volume HU range does not order tau** (rho -0.05 to +0.36,
+  median +0.08). Within a subject a wider range does go with lower positive scores (-0.19 to
+  -0.44), so D-071's normalisation does reach the scores -- the half's *mean* is simply the
+  wrong aggregate for a *quantile*.
+
+The next step is **not** a third composition variable. `tau` is the k-th smallest positive
+score over about 41 subjects' worth of regions, and an order statistic of a subsample varies
+whether or not any composition variable drives it. **Test that null before fishing further:**
+draw 13 subject-level subsamples of the observed size from the pooled positives, recompute
+`tau` in each, and compare the simulated sd of `tau` with the observed one. If the null
+reproduces it there is nothing to explain, D-071 is exonerated, and the face/CT contrast
+(sd 0.034 vs 0.051) becomes tail shape -- which the same simulation checks on both banks. If
+the null undershoots, a composition channel exists and the predictor to try is the **lower
+tail** of the per-volume range distribution, not its mean, because a low quantile is set by
+the widest-range subjects. That direction is named here, before the run, so that if it works
+it is a prediction rather than a shape found afterwards.
+
+#### The artefact contract, which was the other thing asked for
+
+T1-A could not read Sec. 1g's table. Now it can, and the plumbing carries three refusals
+rather than conveniences:
+
+- `caliber.data.splits.PROBE_SALTS` and `calib_sets_for_salts` -- the 13-salt re-cut design in
+  one place instead of three literal copies. Membership is **reconstructed** from the salt, so
+  a per-split table need not carry it and cannot disagree with it. A salt the protocol does
+  not name is refused, because an unplaceable draw's share of the overlap cannot be measured.
+- `reliability.pair_coverage_from_splits` -- their two CSVs to the one ordered-pair frame the
+  label reads, with both label sources on it. Measured overlap **0.413**, so n_eff = 2.2 and
+  the standard error is **2.44x the naive one**. Their `split_sd / sqrt(13)` is the naive one,
+  so the interval is rebuilt here and never read: accepting a stored one would narrow it, and
+  a narrower interval calls more pairs unsafe. The merge is outer, so a pair in one table only
+  keeps its row instead of shrinking the false-safe denominator.
+- `t1a_safety_rule.py --pair-coverage-dir` -- both arms come from that one artefact rather
+  than mixing its across-split arm with this script's own bootstrap for the registry arm.
+  Otherwise the sensitivity table would compare pipelines as well as label sources, which is
+  D86's different-denominators defect in a subtler dress. The split fractions are checked
+  against the bank's own `split` column, since the overlap is reconstructed from them and the
+  wrong ones would silently report another design's overlap. This script's bootstrap is kept
+  beside theirs under `_local` names, as a free cross-implementation check.
+
+**Status:** 699 tests passing (was 683). Verified end to end by running Track 2's own
+`pair_coverage_by_split.py` on a synthetic 120-subject CT-shaped bank and reading its output
+with `t1a_safety_rule.py`; the two implementations' registry coverage agreed to 0.0000 on
+every pair. Apache-2.0 for the repository is agreed; NOTICE must carry the TotalSegmentator
+(CC BY 4.0) and LIDC-IDRI (CC BY 3.0) attributions, since both licences require them.
 
 ---
 
