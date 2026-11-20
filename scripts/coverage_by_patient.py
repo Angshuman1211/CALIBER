@@ -14,7 +14,13 @@ missing hallucinations is not efficiency.
 
     python scripts/add_patient_ids.py runs/<run_id>
     python scripts/coverage_by_patient.py runs/<run_id>_by_patient \
-        --low mri.random1d.R2.c0.08.s0 --high mri.random1d.R8.c0.08.s0
+        --low mri.random1d.R2.c0.08.s0 --high mri.random1d.R8.c0.08.s0 --transfer
+
+**The control comes first, and alone.** Without ``--transfer`` only the matched arm is
+computed and shown: group-conditional calibration, fitted and tested on the same operator.
+That is the control a bank has to pass before its transfer numbers are read (D-070), and
+on the LIDC bank the naive arm was on screen while the control was being read, because
+this script printed both (T2.11, P-44). ``--transfer`` adds the naive arm, deliberately.
 """
 
 from __future__ import annotations
@@ -42,6 +48,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--alpha", type=float, default=0.10)
     add_label_args(ap)
     ap.add_argument("--cluster", default="patient_id")
+    ap.add_argument("--transfer", action="store_true",
+                    help="also compute and show naive transfer; without it, only the "
+                         "matched-operator control (read that first, D-070)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
 
@@ -63,7 +72,10 @@ def main(argv: list[str] | None = None) -> int:
         for oid, part in test.groupby("operator_id"):
             own = cal[cal["operator_id"] == oid]
             group_tau = split_threshold(own["score"], own["label"], alpha=args.alpha)
-            for method, tau in (("naive", naive_tau.threshold), ("group", group_tau.threshold)):
+            arms = [("group", group_tau.threshold)]
+            if args.transfer:
+                arms.insert(0, ("naive", naive_tau.threshold))
+            for method, tau in arms:
                 flagged = apply_threshold(part, tau, "score")
                 s = cluster_bootstrap_coverage(flagged["flag"], flagged["label"],
                                                flagged[args.cluster])
@@ -75,6 +87,21 @@ def main(argv: list[str] | None = None) -> int:
 
     table = pd.DataFrame(rows)
     pd.set_option("display.width", 200)
+    if not args.transfer:
+        # The matched arm does not depend on the direction: one row per operator.
+        control = table.drop_duplicates(subset=["deployed_at"])
+        print("\n[coverage] matched-operator control: calibrated and tested on the same operator")
+        print(f"{'operator':<36}{'group':>8}{'95% CI':>18}{'area':>7}")
+        for _, r in control.iterrows():
+            ci = f"[{r['lo']:.3f}, {r['hi']:.3f}]"
+            print(f"{r['deployed_at']:<36}{r['coverage']:>8.3f}{ci:>18}{r['flag_area']:>7.3f}")
+        print("\n[coverage] the interval resamples test " + args.cluster + "s only; it does not "
+              "move the calibration side (P-44). Naive transfer was not computed: pass "
+              "--transfer once the control has been read.")
+        if args.out:
+            table.to_csv(args.out, index=False)
+            print(f"[coverage] wrote {args.out}")
+        return 0
     for direction, part in table.groupby("direction", sort=False):
         wide = part.pivot(index="deployed_at", columns="method",
                           values=["coverage", "lo", "hi", "flag_area"])
