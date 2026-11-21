@@ -70,6 +70,42 @@ AMENDMENTS = (
         "Track 1, including one monotonicity violation. Per-pair gaps were not in hand and "
         "no fit had been run.",
     ),
+    (
+        "2026-11-21",
+        "GAP_PREDICTION_DIRECTION named explicitly as increasing. This CHANGES NOTHING: "
+        "GAP_PREDICTION_FORM was already isotonic and the implementation already fitted a "
+        "non-decreasing function, so the direction was frozen de facto from the start. The "
+        "entry exists because the direction has now been REFUTED on the CT bank and a "
+        "refutation must be legible without reading the implementation. No amendment can "
+        "rescue it: a sign fitted after the sign is seen is free. GAP_BARRED_PREDICTORS "
+        "and GAP_FACE_BANK_PREDICTION are added under the same date and are the only new "
+        "constraints -- both narrow what may be claimed, neither widens it.",
+    ),
+    (
+        "2026-11-21",
+        "GAP_DIRECTION_SOURCE added: the direction of the fit stops being a frozen "
+        "constant and becomes a function of the CALIBRATION THRESHOLDS, which every "
+        "bank's ordered_pairs.csv already records and which take no coverage value as "
+        "input. THIS AMENDMENT WIDENS WHAT MAY BE CLAIMED -- the first of the seven "
+        "that does -- so it carries its own fence. GAP_DIRECTION_BANKS_BARRED names "
+        "every bank whose per-pair gaps have already been seen; on those the rule may "
+        "be shown and may not be reported, and the CT bank is named there. The motive "
+        "is not the CT refutation but what D89's identity implies: the direction is a "
+        "property of how tau orders the operators, so NO single frozen direction can "
+        "be right for a project using two banks whose orderings differ. A constant was "
+        "the wrong KIND of choice, which is a different defect from a wrong value.",
+    ),
+    (
+        "2026-11-21",
+        "GAP_ARM_SIGN_AGREEMENT_BARRED added. Track 2's T1-B run cited gap-sign "
+        "agreement at 72 of 72 pairs between the registry and across-split arms as "
+        "support for D86. It is not support: by D89's identity the gap's sign is "
+        "sign(tau_a - tau_b) under either arm, so the statistic says only that the two "
+        "arms rank the nine thresholds the same way. It is compatible with any amount "
+        "of non-cancellation and it breaks under perfect cancellation if one adjacent "
+        "threshold pair transposes. The magnitude comparison D88 actually predicted "
+        "stands and is strengthened; the sign count comes out of the support set.",
+    ),
 )
 
 #: Miss-rate budget. Unchanged since Week 2; restated here so one import gives the
@@ -200,6 +236,104 @@ GAP_PREDICTION_DISTANCE_SYMMETRIC = "null_space_projection"
 #: parametric curve would add a shape assumption the claim does not need. It also cannot
 #: be tuned, which is the point.
 GAP_PREDICTION_FORM = "isotonic"
+
+#: **One direction, and it is part of the claim.** Isotonic regression as implemented fits
+#: a *non-decreasing* function, so "isotonic" alone already froze this; naming it makes the
+#: hypothesis falsifiable on its face rather than only in the source.
+#:
+#: **Refuted on the CT bank, 21 November 2026.** Within every family cell the gap *falls*
+#: with the signed distance (rho -0.72, -0.70, -0.70, -1.00). The cause is not subtle and
+#: is derived in D89: coverage of positives at ``b`` is ``1 - F_b(tau)``, so
+#: ``gap = F_b(tau_a) - F_b(tau_b)`` and ``sign(gap) == sign(tau_a - tau_b)`` exactly. The
+#: threshold rises with ill-posedness because the score tracks reconstruction error, and
+#: the signed distance is positive when ``b`` is the more ill-posed operator -- so a
+#: positive distance forces a negative gap. The frozen direction is backwards by
+#: arithmetic, not by bad luck.
+#:
+#: A decreasing fit is reported beside it as a DIAGNOSTIC and is barred from the verdict.
+#: Letting it set ``reportable`` would be fitting one bit to the data that refuted the
+#: hypothesis, on the same grid, and calling the result a confirmation.
+GAP_PREDICTION_DIRECTION = "increasing"
+
+#: Directions the output may *show*. Only the frozen one may be *reported as a result*.
+GAP_PREDICTION_DIRECTIONS = ("increasing", "decreasing")
+
+#: **Where the direction comes from, as of the seventh amendment.** D89's identity makes
+#: ``sign(gap) == sign(tau_a - tau_b)`` a theorem, so the sign of the gap-versus-distance
+#: relation is fixed by how the calibration threshold orders the operators along the
+#: distance's own axis -- a property of the bank, not of the hypothesis. The CT bank and
+#: the face-prior bank order tau oppositely (rho -0.70..-1.00 against +0.976), which is why
+#: one frozen constant could not have been right for both.
+#:
+#: The rule takes the recorded thresholds and the signed distance and **nothing else**: no
+#: coverage, no gap, no fitted quantity. It therefore spends one bit on the outcome's
+#: *global* sign, against the 72 per-pair values that :data:`GAP_BARRED_PREDICTORS` forbids
+#: -- and that one bit is the same for all 72 pairs of a bank, so it is checkable as one
+#: number rather than hidden in a fit.
+GAP_DIRECTION_SOURCE = "threshold_ordering"
+
+#: The rule, spelled out so it can be run by hand from one CSV.
+GAP_DIRECTION_RULE = (
+    "let d be the signed distance and tau the calibration threshold, both per pair",
+    "if rho(d, tau_deployment - tau_calibration) > 0 the fit is non-increasing",
+    "if it is < 0 the fit is non-decreasing",
+    "inputs are thresholds and distances only; no coverage or gap may enter",
+)
+
+#: **Banks on which the rule may be shown and may not be reported**, because their per-pair
+#: gaps were already seen when the rule was written. Choosing a direction after seeing the
+#: gaps it has to fit is free, whatever the stated justification, and a fence that names the
+#: bank is the only kind that cannot be argued around later.
+GAP_DIRECTION_BANKS_BARRED = ("lidc_ct",)
+
+#: **When the rule declines to answer.** Near-flat tau leaves the ordering undetermined and
+#: the correlation in :data:`GAP_DIRECTION_RULE` will still return a sign, from noise. The
+#: across-operator tau range must exceed the median per-operator tau sampling spread --
+#: T2-A4's quantity, measured, not assumed -- by at least this factor, or the direction is
+#: recorded as undetermined and no fit is reported under this source at all.
+GAP_DIRECTION_DETERMINACY_MIN_RATIO = 3.0
+
+#: **A statistic barred from the support set, with the reason it cannot work.**
+GAP_ARM_SIGN_AGREEMENT_BARRED = (
+    "gap-sign agreement between label arms may not be cited as evidence for D86",
+    "by D89 the gap's sign is sign(tau_a - tau_b) under either arm, so the count"
+    " measures only whether the two arms rank the thresholds the same way",
+    "it stays at 100% under arbitrarily large non-cancellation and falls below it"
+    " under perfect cancellation if one adjacent threshold pair transposes",
+    "report instead corr(level_difference(a,b), level_difference(b,b)), which is"
+    " the common-mode quantity D86's argument actually rests on",
+)
+
+#: **Quantities barred from the baseline set because they are the endpoint in other units.**
+#:
+#: Added before anyone proposed them, which is the only time such a bar is worth anything.
+#: Having derived ``gap = F_b(tau_a) - F_b(tau_b)``, the temptation is to enter
+#: ``tau_a - tau_b`` as a predictor; it would beat every baseline and the distance, and the
+#: win would be arithmetic. Its sign agreement with the gap is 100% by theorem, not by
+#: measurement, and a tautology entered as a predictor is a further form of the failure
+#: mode this module exists to prevent. (The project's running tally of instances lives
+#: in the decision log, which is the only place it can be kept consistently.)
+#:
+#: They stay barred from the baselines and are used only in
+#: :func:`caliber.evaluation.gap.gap_sign_from_thresholds`, as a CHECK ON THE BANK: an
+#: agreement rate below 100% means the recorded thresholds and coverages contradict the
+#: definition of coverage, which is a defect no coverage result can survive. A check that
+#: can only find faults is not a result that can only flatter.
+GAP_BARRED_PREDICTORS = ("threshold_difference", "tau_difference", "calibration_quantile")
+
+#: **Stated before the number exists.** The signed distance ordered the gaps at rho = +0.976
+#: on the face-prior bank and at rho -0.70 to -1.00 within the CT family cells. If D89's
+#: account is right, the sign of that relation is set by how the calibration threshold
+#: orders the operators, so the face bank must have the OPPOSITE threshold ordering: tau
+#: must *fall* as the face operators hide more of the image. The face bank's own
+#: ``ordered_pairs.csv`` already holds the thresholds, so this costs one groupby and no new
+#: bank pass. If tau rises there too, the account in D89 is wrong and the sign difference
+#: between the two banks is unexplained -- which must then be reported as unexplained.
+GAP_FACE_BANK_PREDICTION = (
+    "tau is decreasing in the signed distance measure on the face-prior bank",
+    "equivalently: the two banks disagree on the threshold ordering, not on the mechanism",
+    "falsified if tau rises with the distance on the face bank as it does on CT",
+)
 
 #: The distance must beat **both** of these or T1-B is not reported as a result.
 #: A constant predictor tests whether distance carries any information; a predictor built
@@ -382,6 +516,15 @@ def as_dict() -> dict[str, object]:
         "permutation_statistic": PERMUTATION_STATISTIC,
         "gap_prediction_distance": GAP_PREDICTION_DISTANCE,
         "gap_prediction_form": GAP_PREDICTION_FORM,
+        "gap_prediction_direction": GAP_PREDICTION_DIRECTION,
+        "gap_prediction_directions": list(GAP_PREDICTION_DIRECTIONS),
+        "gap_direction_source": GAP_DIRECTION_SOURCE,
+        "gap_direction_rule": list(GAP_DIRECTION_RULE),
+        "gap_direction_banks_barred": list(GAP_DIRECTION_BANKS_BARRED),
+        "gap_direction_determinacy_min_ratio": GAP_DIRECTION_DETERMINACY_MIN_RATIO,
+        "gap_arm_sign_agreement_barred": list(GAP_ARM_SIGN_AGREEMENT_BARRED),
+        "gap_barred_predictors": list(GAP_BARRED_PREDICTORS),
+        "gap_face_bank_prediction": list(GAP_FACE_BANK_PREDICTION),
         "gap_prediction_baselines": list(GAP_PREDICTION_BASELINES),
         "baseline_scope": dict(BASELINE_SCOPE),
         "gap_prediction_report_by_family_scope": GAP_PREDICTION_REPORT_BY_FAMILY_SCOPE,
