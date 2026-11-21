@@ -383,3 +383,125 @@ def test_a_missing_artefact_says_which_file_and_what_makes_it(tmp_path):
         T1A._read_pair_coverage(
             str(tmp_path), _split_bank(60), "sample_id", 0.5, 0.10, 0.95
         )
+
+
+# -- the gate's level: family-wise, not per cell (D89) ---------------------------------
+#
+# The gate tests every matched cell at once and stops the whole run if any one fails, so
+# its level has to be family-wise. Before D89 the 98% was applied per cell, which on nine
+# cells leaves a 17% chance of stopping a sound bank -- and on T2-A's CT bank it did,
+# at limited-angle 90 deg, by 0.004 at the upper end.
+
+
+def test_the_gate_level_is_corrected_for_the_number_of_cells_it_tests():
+    for n in (1, 2, 9, 72):
+        per_cell = T1A.control_cell_level(n, family_level=0.98)
+        family_wise = 1.0 - per_cell ** n
+        assert abs(family_wise - 0.02) < 0.002, (n, per_cell, family_wise)
+
+
+def test_one_cell_needs_no_correction():
+    assert T1A.control_cell_level(1, family_level=0.98) == 0.98
+
+
+def test_the_uncorrected_level_is_what_it_was_and_is_still_reported():
+    assert T1A.CONTROL_LEVEL == 0.98
+    assert T1A.CONTROL_FAMILY_LEVEL == 0.98
+    # the defect the correction fixes, stated as arithmetic
+    assert abs((1.0 - 0.98 ** 9) - 0.166) < 0.002
+
+
+def test_a_degenerate_cell_count_does_not_produce_an_impossible_level():
+    for n in (0, -3):
+        assert T1A.control_cell_level(n, family_level=0.98) == 0.98
+
+
+def test_the_control_reports_both_the_gate_and_the_uncorrected_band():
+    df = _multi_operator_bank()
+    control = T1A._matched_control(df, prereg.ALPHA, n_boot=300)
+    for col in ("status", "status_uncorrected", "n_cells_gated", "cell_level",
+                "coverage_lo_uncorrected", "coverage_hi_uncorrected"):
+        assert col in control.columns, col
+    assert (control["n_cells_gated"] == df["operator_id"].nunique()).all()
+    expected = T1A.control_cell_level(int(df["operator_id"].nunique()))
+    assert np.allclose(control["cell_level"], expected)
+
+
+def test_the_gate_band_is_never_narrower_than_the_uncorrected_one():
+    """The correction can only widen. If it narrowed, it would call more banks broken."""
+    df = _multi_operator_bank()
+    control = T1A._matched_control(df, prereg.ALPHA, n_boot=300)
+    live = control[np.isfinite(control["ci_lo"])
+                   & np.isfinite(control["coverage_lo_uncorrected"])]
+    assert len(live)
+    assert (live["ci_lo"] <= live["coverage_lo_uncorrected"] + 1e-12).all()
+    assert (live["ci_hi"] >= live["coverage_hi_uncorrected"] - 1e-12).all()
+
+
+def test_the_gate_does_not_enter_any_number_the_rule_reports():
+    """The self-interest audit, as a test.
+
+    The correction makes the gate harder to fail, which is the direction that serves the
+    hypothesis -- so it matters that the gate cannot reach the rule's output at all. The
+    pair table is a function of the bank and the distances, and of nothing the control
+    computes; ``--ignore-control`` changes a printed label and stops nothing else.
+    """
+    df = _multi_operator_bank()
+    distances = {
+        (a, b): 0.0
+        for a in df["operator_id"].unique()
+        for b in df["operator_id"].unique()
+        if a != b
+    }
+    first = T1A._ordered_pairs(df, distances, prereg.ALPHA, n_boot=200)
+    _ = T1A._matched_control(df, prereg.ALPHA, n_boot=200)
+    second = T1A._ordered_pairs(df, distances, prereg.ALPHA, n_boot=200)
+    pd.testing.assert_frame_equal(first, second)
+
+
+# -- the threshold identity, as a check on the bank (D89) ------------------------------
+
+
+def _pairs_and_control(n_boot: int = 200):
+    df = _multi_operator_bank()
+    ops = list(df["operator_id"].unique())
+    distances = {(a, b): 0.0 for a in ops for b in ops if a != b}
+    pairs = T1A._ordered_pairs(df, distances, prereg.ALPHA, n_boot=n_boot)
+    control = T1A._matched_control(df, prereg.ALPHA, n_boot=n_boot)
+    return pairs, control
+
+
+def test_the_identity_holds_on_a_real_pair_table():
+    pairs, control = _pairs_and_control()
+    check = T1A._threshold_identity(pairs, control)
+    assert check is not None
+    live = check[check["decidable"]]
+    if len(live):
+        assert live["agrees"].all(), live[~live["agrees"]]
+
+
+def test_the_matched_coverage_is_taken_from_the_control_not_the_pair_table():
+    """The bug this pins: _ordered_pairs has no diagonal.
+
+    Reading the matched cell from the pair table picks an arbitrary *transfer* cell as the
+    matched one, which produces a table of zero gaps -- a wrong answer that looks like a
+    degenerate input rather than an error.
+    """
+    pairs, control = _pairs_and_control()
+    assert (pairs["calibration"] != pairs["deployment"]).all()
+    check = T1A._threshold_identity(pairs, control)
+    assert check is not None
+    matched = control.set_index(control["operator_id"].astype(str))["coverage"]
+    expected = (
+        pairs["deployment"].astype(str).map(matched).to_numpy(dtype=float)
+        - pairs["coverage"].to_numpy(dtype=float)
+    )
+    assert np.allclose(check["gap"].to_numpy(dtype=float), expected, equal_nan=True)
+    # and it is not the all-zero table the bug produced
+    finite = expected[np.isfinite(expected)]
+    assert finite.size == 0 or not np.allclose(finite, 0.0)
+
+
+def test_a_control_without_a_diagonal_is_refused_not_guessed():
+    pairs, control = _pairs_and_control()
+    assert T1A._threshold_identity(pairs, control.drop(columns=["coverage"])) is None
