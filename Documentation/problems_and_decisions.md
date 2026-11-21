@@ -2172,7 +2172,7 @@ turned out to matter.
 seven and eight; `gap.direction_from_thresholds`, `gap.DirectionCall` and
 `gap.arm_difference_identity`. Fingerprint `ce668b3e9b98` -> **`4a7426a10a50`**, so every
 table produced under the old one is visibly from an earlier freeze - including Track 2's
-T1-B run at `fe192e610104`, which is two amendments further back and whose 0-of-4 verdict
+T1-B run at `fe192e610104`, which is three amendments and three fingerprints further back and whose 0-of-4 verdict
 is unaffected. On branch `T1-B`, uncommitted: Track 2 cannot see D89, D90 or this entry
 until it is pushed.
 
