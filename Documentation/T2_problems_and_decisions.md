@@ -27,6 +27,13 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 **Open - decides:** Track 2 (the cause), Track 1 (the guard's tolerance) - **See:** D38, D74, T2.11 §1f, T2.6
 
+**Update, D87 (T2-A5).** Measured on the design subjects: CG uses all 20 iterations at
+every operator and stops at a relative residual of 0.7e-4 to 5.6e-4 against a tolerance of
+1e-6; the null projection is not idempotent (9-41%) and not additive (2-12%), because a
+stopped CG is not a linear map. Ten times the iterations lowers the residual and makes
+additivity worse. The guard asks for 1e-3, a hundred times tighter than the solver gives.
+The cause is confirmed; the guard's tolerance is Track 1's to set and is unchanged.
+
 **Update, D86.** By operator: limited-angle 90 degrees 714, sparse-view 30 329,
 limited-angle 150 degrees 230, sparse-view 180 176, limited-angle 120 degrees 156,
 sparse-view 90 76, sparse-view 45 63, none at sparse-view 120 or 60. 221 of the 1,744 are
@@ -54,7 +61,15 @@ worst region or on a share of regions.
 
 #### P-44 - The LIDC bank's matched-operator control fails on the registry split and holds over splits
 
-**Ruled (D86, 20 Nov): the bank is read; one of D86's two checks is left with Track 1** - **See:** D85, D86, D-070 §2, T2.11 §1c, §1e, §1f and §1g, D-027, T1-D
+**Resolved (D86, D87): the bank is read** - **See:** D85, D86, D87, D-070 §2, T2.11 §1c and §1e to §1h, D-027, T1-D
+
+**Update, D87.** Track 1 confirmed the reading and corrected its basis: the violations do
+concentrate at the failing cells (rank-sum p = 0.048), and what settles it is that the
+scores are computed once, so a solver defect is identical in all 13 splits and cannot
+produce a shortfall that one split has and their mean does not. T2-A4 then closed the
+other open question: the threshold's spread is what random calibration halves of this
+cohort give (inside the null's 95% at 8 of 9 operators), so nothing about the bank
+explains it.
 
 **Update, D86.** Track 1 reversed D85's reverting clause as mis-specified (one pooled
 calibration term for nine cells; a gate that fails a sound bank when any one of nine

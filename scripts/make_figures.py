@@ -442,6 +442,113 @@ def fig_split_reliability(by_split: pd.DataFrame, registry: pd.DataFrame, nomina
     return save(fig, out / "fig6_split_reliability")
 
 
+def fig_pairs_vs_distance(pairs: pd.DataFrame, nominal: float, out: Path) -> Path:
+    """Coverage of every ordered pair against the signed operator distance (T1-A; D86 (i)).
+
+    One point per ordered pair: the across-split mean, with the interval
+    ``t1a_safety_rule.py`` rebuilds for it (the splits share calibration subjects, so it is
+    wider than sd / sqrt(n)). Colour is the family the threshold is *used* at, the marker is
+    the family it was *calibrated* at. Left of zero the sign rule says "safe to transfer";
+    a point there below nominal is a false safe.
+    """
+    color = {"sparse_view": METHOD["group"][1], "limited_angle": METHOD["naive"][1]}
+    fig, ax = plt.subplots(figsize=(10.5, 4.6))
+    ax.axvspan(min(-0.05, float(pairs["signed_distance"].min()) - 0.03), 0.0, color=GRID,
+               alpha=0.45, linewidth=0, zorder=0)
+    for _, r in pairs.iterrows():
+        c = color[r["family_deployment"]]
+        x, y = r["signed_distance"], r["coverage_across"]
+        ax.plot([x, x], [r["coverage_across_lo"], r["coverage_across_hi"]], color=c,
+                linewidth=1.3, alpha=0.55, solid_capstyle="round", zorder=2)
+        ax.plot([x], [y], marker=CT_MARKER[r["family_calibration"]], markersize=6.5,
+                linestyle="none", markerfacecolor=c, markeredgecolor=SURFACE,
+                markeredgewidth=0.8, zorder=3)
+    nominal_line(ax, nominal)
+    ax.axvline(0.0, color=AXIS, linewidth=1.0, zorder=1)
+    ax.text(0.01, 0.03, "sign rule: safe to transfer", transform=ax.transAxes, color=INK_2,
+            fontsize=8, ha="left")
+    ax.text(0.99, 0.03, "sign rule: unsafe", transform=ax.transAxes, color=INK_2, fontsize=8,
+            ha="right")
+    ax.set_xlabel("signed operator distance, null_space_growth (calibration to deployment)")
+    ax.set_ylabel("naive-transfer coverage, across-split mean")
+    ax.set_ylim(max(0.0, float(pairs["coverage_across_lo"].min()) - 0.04), 1.02)
+    handles = (
+        [Line2D([], [], marker="o", linestyle="none", markersize=7, markerfacecolor=c,
+                markeredgecolor=SURFACE, label=f"used at {f.replace('_', '-')}")
+         for f, c in color.items()]
+        + [Line2D([], [], marker=m, linestyle="none", markersize=6.5, markerfacecolor=INK_2,
+                  markeredgecolor=SURFACE, label=f"calibrated at {f.replace('_', '-')}")
+           for f, m in CT_MARKER.items()])
+    fig.legend(handles=handles, loc="upper center", ncol=4, bbox_to_anchor=(0.5, 1.02))
+    fig.suptitle(f"Naive transfer over the {len(pairs)} ordered operator pairs, CT "
+                 f"({LABELS['ct']}; intervals over patient splits)", x=0.01, ha="left", y=1.08,
+                 fontsize=10.5, color=INK)
+    return save(fig, out / "fig7_pairs_vs_distance")
+
+
+def fig_safety_rule(rule: pd.DataFrame, out: Path) -> Path:
+    """The sign rule's 2 x 2 and its false-safe rate by family cell (T1-A; D86 (ii)).
+
+    Left: of the pairs the rule green-lights and the pairs it stops, how many were measured
+    valid. Right: the false-safe rate in each family cell beside the trivial rule's -- the
+    share of pairs that are unsafe whatever the rule says -- which is the bar it has to beat.
+    """
+    primary = rule[rule["frozen_source"]] if "frozen_source" in rule else rule
+    pooled = primary[primary["cells"] == "pooled"].iloc[0]
+    cells = primary[primary["cells"] != "pooled"]
+    blue, orange = METHOD["group"][1], METHOD["naive"][1]
+    fig, (a, b) = plt.subplots(1, 2, figsize=(10.5, 3.9), gridspec_kw={"width_ratios": [1, 1.5]})
+
+    counts = [[pooled["true_safe"], pooled["false_safe"]],
+              [pooled["false_alarm"], pooled["true_unsafe"]]]
+    shade = [[blue, orange], [MUTED, blue]]
+    for i, row in enumerate(counts):
+        for j, n in enumerate(row):
+            a.add_patch(plt.Rectangle((j, 1 - i), 1, 1, color=shade[i][j], alpha=0.16,
+                                      linewidth=0))
+            a.text(j + 0.5, 1.5 - i, f"{int(n)}", ha="center", va="center", fontsize=20,
+                   color=INK)
+    a.text(1.5, 1.14, "false safe", ha="center", fontsize=8, color=INK_2)
+    a.set_xlim(0, 2)
+    a.set_ylim(0, 2)
+    a.set_xticks([0.5, 1.5])
+    a.set_xticklabels(["measured valid", "measured unsafe"])
+    a.set_yticks([1.5, 0.5])
+    a.set_yticklabels(["rule: safe", "rule: unsafe"])
+    a.grid(False)
+    a.tick_params(length=0)
+    for side in ("left", "bottom"):
+        a.spines[side].set_visible(False)
+    a.set_title(f"All {int(pooled['n_pairs'])} ordered pairs", loc="left", fontsize=9.5, pad=8)
+
+    labels = [c.replace("limited_angle", "limited-angle").replace("sparse_view", "sparse-view")
+               .replace(" -> ", "\nto ") for c in cells["cells"]] + ["pooled"]
+    rule_rate = list(cells["false_safe_rate"]) + [pooled["false_safe_rate"]]
+    trivial = list(cells["trivial_false_safe_rate"]) + [pooled["trivial_false_safe_rate"]]
+    n = list(cells["n_pairs"]) + [pooled["n_pairs"]]
+    for k in range(len(labels)):
+        b.bar(k - 0.19, rule_rate[k], width=0.34, color=orange, zorder=3)
+        b.bar(k + 0.19, trivial[k], width=0.34, color=MUTED, zorder=3)
+        b.text(k - 0.19, rule_rate[k] + 0.02, f"{rule_rate[k]:.2f}", ha="center", fontsize=8,
+               color=INK)
+        b.text(k + 0.19, trivial[k] + 0.02, f"{trivial[k]:.2f}", ha="center", fontsize=8,
+               color=INK_2)
+    b.set_xticks(range(len(labels)))
+    b.set_xticklabels([f"{lab}\n(n = {int(m)})" for lab, m in zip(labels, n, strict=True)],
+                      fontsize=8)
+    b.set_ylim(0, 1.12)
+    b.set_ylabel("false-safe rate")
+    b.grid(axis="x", visible=False)
+    b.set_title("False-safe rate by family cell", loc="left", fontsize=9.5, pad=8)
+    handles = [plt.Rectangle((0, 0), 1, 1, color=orange, label="sign rule"),
+               plt.Rectangle((0, 0), 1, 1, color=MUTED, label="trivial rule (the base rate)")]
+    fig.legend(handles=handles, loc="upper right", ncol=2, bbox_to_anchor=(0.98, 1.04))
+    fig.suptitle(f"The sign rule on the across-split label, CT ({LABELS['ct']})", x=0.01,
+                 ha="left", y=1.06, fontsize=10.5, color=INK)
+    fig.subplots_adjust(wspace=0.28)
+    return save(fig, out / "fig8_safety_rule")
+
+
 def save(fig, stem: Path) -> Path:
     for ext in ("png", "pdf"):
         fig.savefig(stem.with_suffix(f".{ext}"), dpi=200, bbox_inches="tight")
@@ -461,6 +568,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="ct_distances.py output, for Figure 5's CT x-axis")
     ap.add_argument("--pair-dir", default=None,
                     help="pair_coverage_by_split.py output directory: adds Figure 6")
+    ap.add_argument("--t1a-dir", default=None,
+                    help="t1a_safety_rule.py --out directory: adds Figures 7 and 8")
     ap.add_argument("--mri-label", default=LABELS["mri"],
                     help="substrate and test-set size for the MRI titles, comma-separated")
     ap.add_argument("--ct-label", default=LABELS["ct"],
@@ -489,6 +598,12 @@ def main(argv: list[str] | None = None) -> int:
         path = fig_split_reliability(pd.read_csv(pairs / "pair_coverage_by_split.csv"),
                                      pd.read_csv(pairs / "pair_coverage_registry.csv"),
                                      nominal, out)
+        print(f"[figures] wrote {path} (+ .pdf)")
+    if args.t1a_dir:
+        t1a = Path(args.t1a_dir)
+        path = fig_pairs_vs_distance(pd.read_csv(t1a / "ordered_pairs.csv"), nominal, out)
+        print(f"[figures] wrote {path} (+ .pdf)")
+        path = fig_safety_rule(pd.read_csv(t1a / "safety_rule.csv"), out)
         print(f"[figures] wrote {path} (+ .pdf)")
     return 0
 
