@@ -12,5 +12,27 @@ This repository includes code adapted from other projects:
 
 No model weights and no data are distributed with this repository. The score models of
 Song et al. (ICLR 2022) carry no stated licence and are downloaded from their authors;
-fastMRI, M4Raw, TotalSegmentator and the data the priors were trained on are obtained from
-their owners under their own terms (Documentation/T2.11_lidc_ct_bank_and_claims.md, section 5).
+fastMRI is obtained from NYU under its data sharing agreement.
+
+Results in this repository's documentation are derived from the following datasets, which
+are used under their own licences and require attribution:
+
+- TotalSegmentator CT dataset, v2.0.1. Wasserthal, J. et al., "TotalSegmentator: Robust
+  Segmentation of 104 Anatomic Structures in CT Images", Radiology: Artificial
+  Intelligence, 2023. Zenodo record 10047292. Licensed under Creative Commons
+  Attribution 4.0 International (CC BY 4.0). The slices used here are cropped or padded
+  to a fixed grid and rescaled in intensity.
+
+- LIDC-IDRI. Armato III, S. G. et al., "Data From LIDC-IDRI", The Cancer Imaging Archive,
+  2015, https://doi.org/10.7937/K9/TCIA.2015.LO9QL9SX. Licensed under Creative Commons
+  Attribution 3.0 Unported (CC BY 3.0). The CT score model used here was trained on
+  LIDC-IDRI by Song et al.; this repository holds none of the data. The authors
+  acknowledge the National Cancer Institute and the Foundation for the National
+  Institutes of Health, and their critical role in the creation of the free publicly
+  available LIDC/IDRI Database used in this study.
+
+- M4Raw. Lyu, M. et al., "M4Raw: A multi-contrast, multi-repetition, multi-channel MRI
+  k-space dataset for low-field MRI research", Scientific Data, 2023. Zenodo record
+  8056074. Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0).
+
+See Documentation/T2.11_lidc_ct_bank_and_claims.md, section 5.
