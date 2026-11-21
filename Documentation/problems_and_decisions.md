@@ -1654,6 +1654,111 @@ with `t1a_safety_rule.py`; the two implementations' registry coverage agreed to 
 every pair. Apache-2.0 for the repository is agreed; NOTICE must carry the TotalSegmentator
 (CC BY 4.0) and LIDC-IDRI (CC BY 3.0) attributions, since both licences require them.
 
+### D88 - T1-B's response variable was never frozen; it is frozen now, with its contamination stated [T1-B; completes D83 and D84's freeze]
+
+D83 froze the distance. D84 froze the baselines and their scope. `GAP_PREDICTION_FORM`
+froze the functional form. **Nobody froze what the gap is.** The one quantity T1-B is
+*about* -- the response -- was the one left selectable, and T2-A3's cell table now exists,
+so it had to be closed before the first fit rather than after.
+
+The hole is not academic. Both of these are defensible readings of "the gap":
+
+- `NOMINAL - coverage(a -> b)` -- the shortfall against the promise;
+- `coverage(b -> b) - coverage(a -> b)` -- the shortfall against what that deployment
+  operator reaches when it calibrates on itself.
+
+They give different fits, and picking the one the distance predicts better after seeing
+both is exactly the forking path `prereg.py` exists to close.
+
+**The ruling: `GAP_DEFINITION = "matched_minus_transfer"`.** T1-B's claim is that distance
+predicts *how much coverage you lose by having calibrated somewhere else*, and what you
+would otherwise have had is the matched cell at the deployment operator. Subtracting it
+removes the bank's own per-operator level -- a property of the bank, not of the shift --
+from the response instead of leaving it in. It also vanishes identically at zero distance,
+which anchors a monotone fit at the origin. `nominal_minus_transfer` is reported beside it
+every time as the operational reading, since that is what a deployment certificate cares
+about.
+
+**A property of the difference worth stating, because it is a check on D86.** D86 moved
+T1-A's label to the across-split mean because one calibration draw displaces every cell
+together -- a bias common to all 72 pairs, which therefore does not average out across
+them. A *gap* is a difference of two cells, so a displacement common to both cancels to
+first order. Track 2's own numbers put the registry displacement at a median -0.061 on
+transfer cells and a comparable amount on matched ones. **Prediction, recorded before the
+fit: the registry arm and the across-split arm will agree far more closely for the gap than
+they do for the level.** If they do not, the displacement is not common-mode, and D86's
+central argument -- not merely D88's choice -- needs revisiting. The sensitivity table
+therefore tests D86 as well as D88, which is why it runs on both arms crossed with both
+definitions, four combinations, every time.
+
+**`GAP_ERROR_METRIC = "mae"`, chosen so it is *not* the method's own objective.** PAVA
+minimises squared error. Grading the fit by RMSE would score the method on the criterion it
+optimises while scoring the baselines on someone else's. MAE also stops the single extreme
+pair -- the worst gap is near 0.5 -- from setting the comparison by itself. RMSE is reported
+alongside.
+
+**`GAP_CLUSTER_UNIT = "operator"`.** There are 72 ordered pairs and nine operators, each
+appearing in 16 pairs. Every interval resamples operators and weights a pair by the
+*product* of its two endpoints' draw counts, which is the dyadic form: a pair is an
+observation about two operators, so a replicate drawing one of them twice should count it
+twice. Resampling pairs instead would report an interval for a sample size the design does
+not have, which is D86's error in a new costume.
+
+**Both protocols, and both *directions* of the cross-family fit, reported separately.** The
+work plan asks to "fit on sparse-view only, predict limited-angle, **then reverse**". The
+first implementation here aggregated over folds and so averaged the two directions. That
+was wrong, and the correction is the most informative thing in this entry -- see below.
+
+#### What this declaration is worth, stated honestly
+
+`GAP_DECLARATION_KNEW` records the six summary figures from T2.11 Sec. 1g that had already
+been reported to Track 1 when the above was named. So this is a freeze **before the
+per-pair gaps**, not before any knowledge of them, and the difference matters. The last
+entry is the costly one: *sv 120 is out of order, hardest to cover from almost every row*
+-- a monotonicity violation, already known. Two consequences bind:
+
+1. The sv 120 anomaly **cannot be reported as something the fit discovered**. It was known
+   first, and it is in the pre-registration as known.
+2. **No sv-120 term may be added** to the model, under any name.
+
+A freeze that does not state its own contamination is a claim of a freeze, not one.
+
+#### Three findings from the implementation, all before a real gap existed
+
+Verified on the real nine-operator grid (`runs/t1a_ct_distances/`) with synthetic responses,
+so the grid is real and only the gaps are invented.
+
+1. **The cross-family protocol is radically asymmetric, and averaging the directions hides
+   it.** Fitting on the 30 within-sparse-view pairs and predicting limited-angle and the
+   span pairs gives MAE about 0.005 to 0.010 with **0 per cent extrapolation**. Fitting on
+   the 6 within-limited-angle pairs and predicting sparse-view gives MAE about 0.05 with
+   **78 to 93 per cent of the held-out points outside the training range**. Outside that
+   range a monotone fit is clamped, so in that direction it *is* a constant predictor, and
+   any apparent skill is the clamp. `extrapolated` is therefore reported on every row and a
+   warning fires above one half. Six within-family pairs cannot support a curve, and the
+   honest form of the limited-angle direction may be "not estimable" rather than a number.
+2. **`null_space_dimension` collapses to exactly the constant predictor** on any fold
+   trained inside limited angle, because all three limited-angle operators share a
+   null-space dimension of 64000. Beating it there is beating a constant twice, not beating
+   two baselines, and the verdict table must not be read as though it were. D84 predicted
+   the degeneracy; it is now visible in the output rather than in a footnote.
+3. **The machinery can say no.** Given gaps generated from the view-count knob alone, the
+   distance is reported as predictive on **none** of the four protocol x scope cells, and
+   the acquisition parameter is correctly left unbeaten within family. A comparison that
+   cannot decline is not evidence, so this is pinned as a test rather than checked once.
+
+One smaller thing, recorded because it looked like a bug and was not: on one slice the
+null-space baseline's MAE equalled the constant's to ten decimal places. Six observations
+differed in prediction by a constant offset, three with positive residuals and three with
+negative, so the absolute-error changes cancelled exactly. Coincidence, confirmed by
+computation rather than assumed.
+
+**Status:** 737 tests passing, 31 of them T1-B's; `src/caliber/evaluation/gap.py` and
+`scripts/t1b_gap_prediction.py`. Fingerprint `b63c76138528` -> `fe192e610104`, amendments
+now five. On branch `T1-B`. **No result**: the response needs T2-A3's cell table, which is
+on Track 2's disk. The runner reads that artefact directly, so T1-B is one command away
+from a number the moment it arrives.
+
 ---
 
 ## Open Questions
