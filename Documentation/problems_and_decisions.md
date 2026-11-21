@@ -2178,6 +2178,105 @@ until it is pushed.
 
 ---
 
+### D92 - The Beta law transfers; the matched band does not. T1-D gets a positive result that needs no bank [T1-D, local, derived then verified]
+
+Everything handed to Track 2 on 21 Nov needs their artefacts. One Track 1 row needed
+nothing: T1-D's calibration-conditional side is a statement about split conformal, and
+D89's identity extends it from the matched cell to every transfer cell.
+
+**The law.** With `F_a`, `F_b` the positive-score CDFs at the calibration and deployment
+operators, `tau_a` the `k`-th smallest of `n` calibration positives, and coverage the
+fraction clearing the threshold:
+
+    U := F_a(tau_a) ~ Beta(k, n + 1 - k)                  [probability integral transform]
+    coverage(a -> b) = 1 - F_b(tau_a) = 1 - G_ab(U),      G_ab := F_b o F_a^{-1}
+
+**A transfer cell's coverage is the same Beta variable pushed through the operator pair's
+probability-probability map, and the matched cell is the case `G = identity`.** Verified
+draw by draw at `2e-16` before any of what follows was written, so this is algebra, not a
+model. `reliability.transfer_beta_reference` builds it by sampling the exact Beta and
+evaluating the *empirical* `G`, so no density is estimated and no asymptotics are used.
+
+#### 1. The matched Beta band is wrong at a transfer cell, and it can be too narrow
+
+`G'(u) = f_b/f_a` at the threshold, so the spread rescales by that density ratio. Measured
+against the first-order prediction across a **7.1x** range of spreads:
+
+| deployment scale | transfer mean | transfer sd | sd ratio | `G'` | ratio / `G'` |
+|---|---|---|---|---|---|
+| 0.7 (easier) | 0.8251 | 0.04343 | **1.605** | 1.603 | 1.0015 |
+| 1.0 (matched) | 0.9008 | 0.02677 | 0.989 | 0.990 | 0.9996 |
+| 1.6 | 0.9565 | 0.01309 | 0.484 | 0.490 | 0.9869 |
+| 2.4 (harder) | 0.9793 | 0.00611 | **0.226** | 0.221 | 1.0220 |
+
+Agreement to ~2% over a factor of seven. **The direction is the finding:** the ratio
+crosses 1, so a certificate quoting the matched Beta band at a transfer cell is not
+conservative - at the easier deployment operator the true spread is **1.6x** the band it
+would quote. `TransferBetaReference.matched_band_is_too_narrow` is a property rather than a
+note, because that is the case a deployment certificate must not get wrong. This is what
+T1-D's row asked for - "naive transfer should be shifted off the Beta law" - except that it
+is *rescaled* as well as shifted, and the rescaling is the part that bites.
+
+#### 2. The sign of the gap, in the law rather than in the bank
+
+The table above re-derives D89 without a bank. The **more** ill-posed deployment operator
+*over*-covers (mean 0.9793, gap -0.0785) because its high scores clear an inherited low
+threshold easily; the operator that **loses** coverage is the **easier** one (0.8251, gap
++0.0757). So any operator distance that tracks ill-posedness must get the gap's sign
+backwards. T1-A's refutation and T1-B's 0-of-4 are now both consequences of a two-line
+identity, and the test is named for the counterintuitive direction rather than the
+expected one, because the first version of it was named backwards and asserted the truth.
+
+#### 3. D86's mechanism is a theorem within a row, and 72-of-72 is about the cohort
+
+At a fixed calibration draw every deployment operator in one row is a monotone function of
+the same scalar `U`, so a row's cells are **exactly comonotone** - rank correlation `+1.0000`
+across 40,000 draws, not approximately. That is D86's "one calibration draw displaces every
+cell together", derived rather than observed.
+
+**But only within a row.** Nine rows have nine draws. Nine *independent* rows land on the
+same side with probability `2 * (1/2)^9 = 0.0039`; measured, **0.00392**. With one cohort
+imaged through all nine operators, **1.00000**. So the registry arm sitting below the
+across-split mean at **72 of 72** pairs is not evidence for the within-row mechanism - it
+is evidence that the nine operators share a calibration cohort. D86's remedy is right and
+unaffected; the mechanism it states is one layer short of what makes the number come out
+at 72 rather than at 64 or 8.
+
+**This is the second time a 72-of-72 has meant something other than what it was read as**
+(D91 was the first, on gap signs between label arms). The shape of the error is the same
+both times: a count over 72 pairs that is really a statement about 9 operators. The pairs
+are not the sample size - which `GAP_CLUSTER_UNIT` already says for intervals, and which
+evidently needs saying for counts too.
+
+**One question for Track 2, one line:** within a single split, do all nine operators
+calibrate on the same patient ids? If yes, point 3 is closed and D86 is proved. If no,
+72-of-72 at p = 0.004 is itself the anomaly and wants explaining.
+
+#### What this does not claim
+
+The law is conditional on exchangeability *within* each operator's own positives, which is
+the assumption split conformal already needs and which the region-clustering caveat at the
+end of this module qualifies. It says nothing about whether `G_ab` is estimable from
+operator geometry - that was T1-B's question and the answer there was no. It predicts the
+spread *ratio* between cells, not the absolute spread, for which the finite test set and
+the split overlap corrections already in `SpreadCheck` still apply.
+
+**Status:** `reliability.transfer_beta_reference`, `reliability.probability_map`,
+`reliability.TransferBetaReference`; 10 new tests, `tests/test_reliability.py` 40 -> 50;
+full suite **1,081 passed, 7 skipped**.
+
+**`TRANSFER_SPREAD_PREDICTION` frozen before the number exists**, on the same footing as
+`GAP_FACE_BANK_PREDICTION`: the across-split spread of cell `(a, b)` must be the spread of
+cell `(a, a)` times `f_b/f_a` at the threshold -- 72 predictions from artefacts that
+already exist, no fitted parameter, falsifiable on Track 2's 13-split table. Amendment
+nine; fingerprint `4a7426a10a50` -> **`f3b3f1b6aed8`**. The entry first claimed the
+deployment operator's matched cell "would not be `G'` at all"; that is false, since the
+spread ratio divides out the Beta's scale, so at the bank's ~10,760 positives per operator
+either reference gives the same number. Corrected in the constant and pinned by
+`test_either_matched_cell_gives_the_same_spread_ratio_at_equal_counts`. Branch `T1-B`.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)

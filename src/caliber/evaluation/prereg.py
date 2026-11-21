@@ -106,6 +106,16 @@ AMENDMENTS = (
         "threshold pair transposes. The magnitude comparison D88 actually predicted "
         "stands and is strengthened; the sign count comes out of the support set.",
     ),
+    (
+        "2026-11-22",
+        "TRANSFER_SPREAD_PREDICTION added, before the number exists, on the same footing "
+        "as GAP_FACE_BANK_PREDICTION. D92 derives the coverage law at a transfer cell -- "
+        "the matched Beta pushed through the pair's probability-probability map -- and it "
+        "predicts the across-split SPREAD of every transfer cell from the two operators' "
+        "positive-score distributions, with no free parameter. Track 2's 13-split table "
+        "can falsify it. This narrows what may be claimed: without the entry the ratio "
+        "could be fitted after the fact and reported as agreement.",
+    ),
 )
 
 #: Miss-rate budget. Unchanged since Week 2; restated here so one import gives the
@@ -335,6 +345,33 @@ GAP_FACE_BANK_PREDICTION = (
     "falsified if tau rises with the distance on the face bank as it does on CT",
 )
 
+#: **Stated before the number exists (D92).** The coverage law at a transfer cell is the
+#: matched Beta pushed through ``G_ab = F_b o F_a^{-1}``, so the across-split spread of
+#: cell ``(a, b)`` must be the spread of cell ``(a, a)`` -- the matched cell of the
+#: *calibration* operator, which shares the same calibration draw -- times ``G'`` at the
+#: nominal level, which is the density ratio ``f_b/f_a`` at the threshold. Both sides are
+#: computable from artefacts that already exist: the left from the 13 splits, the right
+#: from the two operators' positive scores. 72 predictions, no fitted parameter.
+#:
+#: The ratio is predicted, not the absolute spread: the finite test set inflates each
+#: spread by about 36% and the split overlap deflates it by about 2% (see
+#: ``reliability.SpreadCheck``), and those corrections apply to numerator and denominator
+#: alike only to the extent that the two cells have similar positive counts. Cells whose
+#: counts differ materially are therefore excluded rather than explained.
+TRANSFER_SPREAD_PREDICTION = (
+    "sd[coverage(a->b)] / sd[coverage(a->a)] across splits equals f_b/f_a at the"
+    " threshold, for every ordered pair",
+    "the reference cell is the matched cell of the CALIBRATION operator, because that"
+    " is the one sharing the calibration draw",
+    "at equal positive counts the deployment operator's matched cell gives the same"
+    " ratio, so this choice is not load-bearing on a bank with ~10,760 per operator;"
+    " it is the right reference when the counts differ",
+    "falsified if the measured ratios do not track the predicted ones across the 72"
+    " pairs, once cells with materially different positive counts are dropped",
+    "a ratio above 1 means the matched Beta band is too NARROW at that cell, which is"
+    " the direction a deployment certificate must not get wrong",
+)
+
 #: The distance must beat **both** of these or T1-B is not reported as a result.
 #: A constant predictor tests whether distance carries any information; a predictor built
 #: from view count or arc fraction tests whether it carries information beyond the knob
@@ -523,6 +560,7 @@ def as_dict() -> dict[str, object]:
         "gap_direction_banks_barred": list(GAP_DIRECTION_BANKS_BARRED),
         "gap_direction_determinacy_min_ratio": GAP_DIRECTION_DETERMINACY_MIN_RATIO,
         "gap_arm_sign_agreement_barred": list(GAP_ARM_SIGN_AGREEMENT_BARRED),
+        "transfer_spread_prediction": list(TRANSFER_SPREAD_PREDICTION),
         "gap_barred_predictors": list(GAP_BARRED_PREDICTORS),
         "gap_face_bank_prediction": list(GAP_FACE_BANK_PREDICTION),
         "gap_prediction_baselines": list(GAP_PREDICTION_BASELINES),
