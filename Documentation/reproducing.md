@@ -1,6 +1,6 @@
 # Reproducing Track 2's Numbers
 
-**Owner:** Track 2 · **Started:** Week 12 (T2.11) · **Status:** first cut. It covers the two medical-prior banks the paper rests on (D-070) and the protocol replication. The CT rows are commands only: the LIDC bank's control failed as written and the rest waits on a ruling (T2.11 §1e).
+**Owner:** Track 2 · **Started:** Week 12 (T2.11) · **Status:** first cut. It covers the two medical-prior banks the paper rests on (D-070) and the protocol replication. The LIDC bank's control failed as written and Track 1's D86 rules the bank read on its 13-split table (T2.11 §1e to §1g); the CT numbers below are quoted on that basis.
 
 This is the path from a clean clone to the numbers Track 2 reports. Every command here has been run on the project machine and is recorded, with its output, in the weekly record named beside it. Nothing below ships data or weights: the repository carries code, configs and tests, and each of the rest is fetched from its owner (T2.11 §5).
 
@@ -26,7 +26,7 @@ The medical-prior results need M4Raw, TotalSegmentator and the two score models.
 
 ```bash
 pip install -e ".[dev,solvers,convert,figures]"
-python -m pytest -q          # 1,001 passed, 2 skipped at T2.11
+python -m pytest -q          # 1,037 passed, 3 skipped at T2.11
 ```
 
 The banks were built on one laptop GPU (RTX 3050, 6 GB) with `torch 2.13.0+cu126`. Every analysis runs on the CPU from a finished bank (score-bank rule 1). Two things from the problem log save time on Windows:
@@ -102,7 +102,7 @@ CLOW=ct.sparse_view.v180.a180.dfull;  CHIGH=ct.sparse_view.v30.a180.dfull
 
 Thirty patients resampled 13 ways is a robustness check against the choice of split. It is not 13 replications (D82).
 
-### CT, medical prior (T2.11; values pending the bank)
+### CT, medical prior (T2.11 §1g to §1i)
 
 Run in this order. The first command is the pre-registered control (T2.11 §1c): if its group-conditional arm does not sit at nominal, stop. On the bank as built the control misses on the registry split (0.831) and holds over 13 patient splits (0.897); Track 1's D86 rules the bank read on that table (T2.11 §1e to §1g). Every number from it is reported on the registry split with the both-sides interval and beside the across-split mean: `pair_coverage_by_split.py $C --cluster sample_id --out-dir <dir>`.
 
@@ -112,6 +112,15 @@ Run in this order. The first command is the pre-registered control (T2.11 §1c):
 | 2. cos θ, before any score result is read (T2-C) | `label_comparison.py $C --calibration-operator $CLOW` |
 | 3. Patient-split noise floor | `split_noise_floor.py $C --cluster sample_id --low $CLOW --high $CHIGH` |
 | 4. Operator distances, all pairs | `ct_distances.py $C --all-pairs --measures null_space_growth null_space_projection --out <csv>` |
+| 5. Track 1's safety rule on the pair tables (T2.11 §1h) | `t1a_safety_rule.py $C --distances <csv> --pair-coverage-dir <dir> --out <t1a dir> --ignore-control` |
+| 6. Track 1's gap prediction on the same tables (T2.11 §1i) | `t1b_gap_prediction.py <dir> --distances <csv> --manifest $C/manifest.json --out <t1b dir>` |
+
+| Number | Value |
+|---|---|
+| Matched arm, across 13 patient splits | 0.892 to 0.905 |
+| Naive transfer below nominal, across-split mean | 36 of 72 ordered pairs; worst 0.377 |
+| Sign rule, false-safe rate against the trivial rule | 0.361 against 0.319 |
+| Gap prediction, cells where the distance beats every baseline | 0 of 4 |
 
 ### The protocol replication (T2.11 §3)
 
