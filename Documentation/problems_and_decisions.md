@@ -1939,7 +1939,12 @@ negative side of the signed distance. The worst cell in the entire table, la 90 
 grid identifies in advance.
 
 **"sv 120 is out of order" is one adjacent transposition, and it is testable from one
-column.** The threshold order was declared from the acquisition knob before any coverage
+column.** (Corrected in D93: the prediction below holds -- `tau(sv 120) < tau(sv 180)`, 0.893
+against 0.972, 13 of 13 splits -- but the localisation in this section does not. Track 2's
+full ordering puts sv 90 below sv 180 as well, so it is not one transposition, and the
+parsimonious reading is that **sv 180** sits two positions too high rather than that sv 120
+is anomalous. `rho(views, tau) = -0.83` within sparse view, not -1.00. Left in place rather
+than edited away.) The threshold order was declared from the acquisition knob before any coverage
 number was consulted: fewer views and narrower arcs mean larger reconstruction error, larger
 score, higher threshold. Against the five coverage values Track 2 quoted, that order
 generates seven constraints and **six hold**. The one violation is:
@@ -2418,3 +2423,538 @@ S1 and S2 are delivered, which unblocks Track 3's T3.3 and Track 2's Week 2. **T
 | # | Track 1 asks | For | Cost |
 |---|---|---|---|
 | **A1** | One nullable bank column `free_content` = ‖P_N x_true‖ per region / `ref_intensity` | D21's criterion | Additive nullable column — backwards-compatible, no `SCHEMA_VERSION` bump (spec §6) |
+
+### D93 - One cohort closes D86; and four of my own claims break, one of them a floor the data walks under [T1-B, T1-D; rules on Track 2's T2.11 Sec. 1j; amendments 10-12]
+
+Track 2's run (f1d0012, 1,097 tests) answers both outstanding questions, confirms two frozen
+predictions, and falsifies three things I wrote. The falsifications are the useful part of
+this entry, so they come first.
+
+#### 1. The correlation floor I reported was wrong, and the data goes under it
+
+D91 reported `r >= 0.93` for the common-mode correlation between the two label arms'
+difference tables, from the assumption-free bound `r >= sqrt(1 - ratio^2)` with a ratio of
+0.364. Track 2 measured `common_mode_correlation = +0.788`.
+
+**The bound is right; I fed it the wrong quantity.** The algebra is in sd's --
+`sd(gap)/sd(level) = sqrt(s^2 - 2*r*s + 1)`, minimised at `s = r` with value
+`sqrt(1 - r^2)`. The 0.364 I substituted was a ratio of **mean absolute** differences
+(0.024 / 0.066). In sd's the ratio is 0.0287 / 0.0425 = 0.675, which gives a floor of
+**0.738**, and the measured 0.788 clears it.
+
+So the corrected statement is `r >= 0.738`, measured `+0.788`. D86's common-mode claim
+survives and is weaker than I reported: the common displacement is most of the level
+difference, not nearly all of it.
+
+This is worse than an overstatement. A floor of 0.93 with a true value of 0.788 is a
+**false floor** -- a claim of the form "at least", published, that the data violates. I
+caught the equal-variance version of this error in D91 and replaced it with the
+assumption-free bound; I then fed the assumption-free bound a mean-absolute input. The
+lesson that generalises is not about this bound: **a dimensionless ratio does not carry a
+label saying which norm produced it**, and sd-algebra silently accepts an L1 ratio. The
+`common_mode_correlation_lower_bound` field is computed from `sd_difference_ratio` in code
+and always was; only the number I wrote into the prose came from the wrong column.
+
+Ninth instance of the project's recurring failure -- a statistic returning the hoped-for
+number -- and the sixth of them mine.
+
+#### 2. "At equal positive counts" was a false premise, and the retraction reverses a correction
+
+`TRANSFER_SPREAD_PREDICTION` (amendment 9) carried the clause: *"at equal positive counts
+the deployment operator's matched cell gives the same ratio, so this choice is not
+load-bearing on a bank with ~10,760 per operator."*
+
+The bank's positive counts run **3,157 (sv 180) to 21,762 (la 90)**. 10,760 is their mean.
+The premise was false and the choice is load-bearing, as Track 2 measured:
+
+| Reference cell | rho | log-log slope |
+|---|---|---|
+| Calibration operator's matched cell | **+0.977** | **1.08** |
+| Deployment operator's matched cell | +0.88 | 0.66 |
+
+**The sequence matters more than the error.** I first wrote that the reference is
+load-bearing. I then "corrected" that to not-load-bearing on the basis of my own fixture --
+which had equal counts *by construction*, so it could not have returned anything else. The
+original instinct was right and the correction was the mistake. A fixture that confirms a
+claim because the claim is built into the fixture is the same failure mode wearing a test's
+clothing. **Tenth instance**, and the seventh of them mine.
+
+The clause is retracted in place with the retraction left visible, because the clause
+licensed the wrong reference and a silently rewritten freeze is not a freeze.
+
+#### 3. The Beta unit: a real local defect, inside a finding the repo already had
+
+Track 2's incidental line -- *"tau sat between the 0.03 and 0.18 levels of F_a over the
+splits"* -- does not fit the Beta law at any positive count on the bank. Working backwards
+from the span of 13 draws, only a count in the tens reproduces it: 21,762 regions imply a
+span of 0.007, 3,157 imply 0.018, and the observed span is **0.15**, which needs an
+effective count near **45**.
+
+**I then wrote this up as a discovery, and it is not one.** The comment block above
+`ClusteredCoverage` in `reliability.py` already says it, in these words: *"Regions are not
+independent: on T2-A's CT bank, 16,400 calibration regions behave like roughly 35 units,
+because the unit is the subject."* It goes further than I did: it records that the region
+count gives a band of +/-0.011 that **rejects a correctly calibrated bank** while the
+subject count gives +/-0.10 that **accepts almost anything**, concludes that *"neither is a
+measurement, so neither should be the gate"*, and names the cluster bootstrap as the gate.
+The module also already **measures** the thing per cell -- `ClusteredCoverage.design_effect`,
+`.effective_n`, and an `.independent_sd` carrying both variance terms -- and `as_row()`
+emits all three.
+
+I was editing that file and did not read it. The order of operations was: find a striking
+number, verify the number, write it up, then discover the module had it. This is **not**
+another instance of the project's statistic-shaped failure mode and should not be added to
+that tally -- the number was real and my arithmetic was right. It is a different and more
+ordinary failure: not reading the module being edited. Worth recording separately because
+the remedy is different. A frozen constant cannot prevent it; reading can. The correction is
+not subtle: **nothing in this section is a new finding about clustering.**
+
+**And one of my two estimates was wrong by the error that file documents.** I estimated a
+second effective count of 174 from the width of Track 2's la 90 interval, comparing it
+against `sqrt(p(1-p)/n_cal)` -- a *one-term* reference. `independent_sd`'s docstring exists
+precisely to say that the reference must be
+`sqrt(Var_Beta(n_cal) + p(1-p)/n_test)`, because comparing against the Beta term alone
+"makes genuinely independent regions look clustered by a factor of about sqrt(2)", which is
+how an earlier `design_effect` came out at 2.6 on a fixture with no clustering. **The 174 is
+withdrawn.** Redone with both terms it is not stable enough to quote, and it should not be
+quoted at all: the number is computed per cell from the bootstrap and should be read from
+`t1a`'s output, not estimated from a published interval width. No bracket is frozen.
+
+**What survives, and it is narrow.** Two things.
+
+First, a cheap cross-check that is new as a *method* rather than a finding: **tau's own
+motion across splits recovers the effective count without a bootstrap**, giving ~45 against
+the module's ~35 from resampling. A threshold level and a coverage interval are unrelated
+quantities and they agree within 30%, which is worth having because the tau version costs
+one column and no replicates.
+
+Second, the actual defect, which is mine from yesterday and local:
+`TransferBetaReference.interval` and `.contains` shipped with **no label**, while every
+other use of the Beta in this codebase carries one -- `make_figures` draws it as the band
+"split conformal follows if every *region* were independent" and calls the distance to the
+clustered band "the clustering"; `t1a_safety_rule` emits it as "the independence-assumed
+idealisation, with the design effect beside it". Mine read as a certificate. Amendment 11
+makes them refuse unless a unit is named, documents them as the rescaled idealisation, and
+states that **a band at the subject count is not a gate either** -- the property is
+`rescalable`, not `certifiable`, because nothing here certifies anything. The dimensionless
+results, `slope` and `sd_ratio`, stay available, since they do not depend on the unit.
+
+#### 4. Why rho +0.977 certified nothing, and the form of the failure mode that is new
+
+The prediction in amendment 9 was frozen before the number existed, is a true consequence of
+D92's law, and passed at rho +0.977 with 100% of pairs within 2x. It was also **blind to a
+unit error of order 100 standing immediately beside it**, because the predicted quantity is
+a *ratio of two spreads* and the reference's `n` appears in numerator and denominator and
+divides out. Verified in code: changing `n_independent` from 10,762 to 41 leaves `sd_ratio`
+and `slope` bit-identical while the quoted band widens 16x. This holds whatever the right
+effective count turns out to be, which is why it is the part of Section 3 that is actually a
+finding: the blindness is a property of the *statistic*, not of the number it was fed.
+
+Every previous instance of this project's recurring failure was a statistic that came out
+well because it had been chosen, framed, or inverted after the fact. This one is a different
+and worse shape: **the statistic was correct, frozen in advance, and still uninformative
+about the error next to it.** A dimensionless agreement certifies a law's *shape* and says
+nothing about its *scale*. Amendment 12 freezes `DIMENSIONLESS_PASS_WARNING`, which requires
+one dimensioned check beside any such agreement -- here, the matched cell's own across-split
+spread against its Beta sd at the independent count, which does not divide out.
+
+**Eleventh instance, and a new form.** The running tally: seven up to the
+bootstrap-interval defect, D91's eighth, and three in this entry -- Section 1's false floor,
+Section 2's fixture-confirmed correction, and this one. Four of the first seven were mine,
+the eighth partly so, and all three here are mine: **eight of the eleven**. Section 3's
+overclaim is a fourth error in this entry and is deliberately **not** counted, because it is
+a different failure and folding it in would blur the pattern the tally exists to show.
+
+#### 5. What is NOT explained, stated as such
+
+Track 2 reports the extreme pair la 90 -> sv 180 at **3.83 measured against 2.38
+predicted**, a factor of 1.61, while the median over 72 pairs is 0.97. My first hypothesis
+was curvature: tau wanders over a 0.15-wide band of `F_a` while `slope` is a central
+difference at half-width 0.02, so the linearisation is being asked to summarise a band it
+was not built for.
+
+**I tested it and it is not the explanation.** On gamma populations the exact pushforward
+(`sd_ratio`, the sd of `1 - G(U)` over the full Beta) and the linearisation (`slope`) agree
+to 0.6-0.8%, and they still agree to ~1% when the Beta is given n = 41 instead of n = 21,762.
+Curvature accounts for about one part in a hundred of a 61% discrepancy.
+
+So the compression at the extremes is **open**. The leading remaining candidate is that the
+measured spread carries test-set noise whose effective unit is also the subject, not the
+region, which would inflate the measured side worst where the deployment count is smallest --
+and sv 180 is the smallest count on the bank, which is the pair in question. That is a
+hypothesis with a mechanism and no number behind it, so it is recorded as one and not
+frozen as a prediction. No amendment is taken for it.
+
+#### 6. Both questions answered, and D86's mechanism closes
+
+**One cohort: yes.** Side is `split_for(subject id, salt)`; the operator does not enter. The
+same 41 calibration subjects at all nine operators, in all 13 splits, checked on the bank.
+
+This closes the gap D92 left. D92 proved that within one calibration row every cell is a
+monotone function of the same scalar `U`, so a row's cells are exactly comonotone -- but
+nine rows are nine draws, and nine *independent* rows would land on the same side with
+probability 0.0039. One shared cohort gives 1.00000. The cohort is shared, so the 72-of-72
+one-directional displacement is **the mechanism, measured**, and not a coincidence at
+p = 0.004. **D86's argument is now a theorem plus a verified premise rather than an
+argument**, and the retraction in D91 stands unchanged: the *gap-sign* count was never the
+evidence; the common-mode correlation is, at +0.788 against a floor of 0.738.
+
+**The two rho sets: same arm, different definition.** T1-A used nominal-minus-transfer,
+T1-B matched-minus-transfer. A sensitivity, neither wrong, and all four arm x definition
+columns are tabulated. The discrepancy I flagged in D91 is resolved and no one was wrong.
+
+#### 7. The direction rule's determinacy test was not sufficient -- Track 2 found the hole
+
+On the CT bank the rule's pooled `rho(d, tau_b - tau_a)` is **+0.05** while every family
+cell is **+0.55 to +1.00**, and the determinacy test passed anyway, because it checked
+tau's *range* against tau's noise (12.5x, well clear of the frozen floor of 3.0) and never
+asked whether the correlation it actually reads was resolved. A rule one bootstrap resample
+away from returning the opposite direction was being called determinate.
+
+**The cause is Simpson's.** The two families' tau levels are offset -- every limited-angle
+threshold sits above every sparse-view one -- so pooling the 72 pairs mixes a between-family
+level difference into a within-family trend and can cancel it exactly. On a fixture built to
+reproduce the bank's pattern (pooled -0.01, cells +0.79 to +0.94):
+
+| Reading | sign flips under bootstrap resampling |
+|---|---|
+| Pooled rho | **52.4%** |
+| Within-cell unanimity | **0.1%** |
+
+A coin flip against a stable verdict. Amendment 10 adds
+`GAP_DIRECTION_DETERMINACY_SCOPE = "within_family_cell"` and
+`GAP_DIRECTION_POOLED_RHO_BARRED`: the rule reads the four family cells, their signs must
+agree, and the pooled value may be shown but may not set the direction. `meta` is now
+required for a reportable call, and `DirectionCall.reportable` needs all three of
+determinacy, unanimity, and an unbarred bank.
+
+**This narrows what may be claimed.** It adds a condition, and both banks pass it -- CT at
++0.55 to +1.00 and face at -0.89 to -0.99, each unanimous. Amendment 7 remains the only
+entry in the tuple that widens.
+
+I am not taking Track 2's offered default ("nothing changes, the bank is barred anyway").
+The bar on CT is about gaps already seen; it does nothing about a rule that would hand the
+next bank a direction drawn from noise. A defect found in a rule is fixed in the rule.
+
+#### 8. Two frozen predictions passed, and one of them is the direction rule working
+
+**`GAP_FACE_BANK_PREDICTION` holds.** Frozen at fingerprint `ce668b3e9b98`, long before the
+face bank's pairs were completed. `rho(distance, tau_b - tau_a) = -0.94` over all 72 pairs,
+-0.89 to -0.99 within cells, with Track 2 computing the 19 missing pairs from the bank's own
+256^2 distances. tau follows the knob exactly there (+1.00 in both families); on CT it is
+-0.83 and -1.00.
+
+So the direction rule, which takes thresholds and distances and no outcome, returns
+**non-decreasing** on the face bank and **non-increasing** on CT -- the correct direction on
+each, and the face bank was genuinely out of sample. That is the amendment-7 widening
+earning its fence.
+
+**The T1-A gate passes 9 of 9 without `--ignore-control`.** D91 predicted la 90 would move
+to roughly `[0.779, 0.912]`; measured `[0.779, 0.906]`. The lower end is exact and the upper
+is 0.006 wide.
+
+**The warning D91 attached to that prediction stands and matters more than the pass.** la
+90's point estimate is **0.847**, which is **5.3 points under nominal**. The cell passes
+because the interval is wide, not because the cell is calibrated. Passing a gate is not
+evidence of calibration and must not be reported as any.
+
+#### 9. The baseline set is smaller than it looks: null-dim is the view count
+
+Track 2 resolved sv 120's `null_space_dim` of 64,000: the column is ambient minus
+measurements, `102400 - 320 * views`. Every 120-view operator gets 64,000 and the operator
+is built like the other five.
+
+**So `null_space_dimension` is an affine function of `views` within the sparse-view family**
+-- `102400 - 320v` -- and therefore rank-identical to it. Any rank-based method sees one
+predictor, not two. This is why `views/arc` and `null_space_dim` returned near-identical MAE
+in T1-B and why both ordered baselines collapsed the same way: they were the same baseline.
+
+T1-B's four predictors are three: the distance, a constant, and the acquisition knob in two
+sets of units. `BASELINE_SCOPE` already confines `acquisition_parameter` to within-family,
+which is why this never produced a wrong number -- but the four-baseline framing overstated
+how much the distance was being asked to beat, and anything written as "beats three
+baselines" must be written as "beats a constant and the knob".
+
+#### 10. D90's "one adjacent transposition" is wrong; the anomalous operator is sv 180
+
+D90's testable prediction **holds**: `tau(sv 120) < tau(sv 180)`, 0.893 against 0.972, in
+13 of 13 splits. Its localisation does not. Track 2's full ordering is
+
+    sv 120 < sv 90 < sv 180 < sv 60 < sv 45 < sv 30 < la 150 < la 120 < la 90
+
+and sv 90 (0.933) is below sv 180 as well, so this is not one transposition. The knob order
+is sv 180 < sv 120 < sv 90 < sv 60 < sv 45 < sv 30; the rest of the family is perfectly
+ordered, and the single displacement that explains the data is **sv 180 sitting two
+positions too high**. D90 named sv 120 as the anomaly; the parsimonious reading is that sv
+180's threshold is too high, not that sv 120's and sv 90's are both too low.
+`rho(views, tau) = -0.83` within sparse view, not -1.00.
+
+The heading of D90 is left in place with this correction recorded against it, on the
+standing principle that a corrected record has to show what it corrected.
+
+#### 11. The dichotomy: a deployment screen that needs no deployment data
+
+Track 2's `gap_sign_from_thresholds` check: 72/72 on the registry, 934/934 decidable over 13
+splits, 72/72 on the face bank. That is D89's identity, so it had to pass; it is a check on
+the bank, not a finding.
+
+What is worth taking is the split they report beside it. Of D90's 36 pairs with
+`tau_a < tau_b`, **none is below nominal** (lowest 0.904); the other 36 are **all** below.
+A perfect dichotomy, and by the identity it must be: `tau_a < tau_b` forces
+`F_b(tau_a) <= F_b(tau_b)`, hence `coverage(a->b) >= coverage(b->b)`.
+
+The consequence is operational. **Which direction a transfer will fail is readable from the
+two calibration thresholds alone, before any deployment data exists.** Not the magnitude --
+the magnitude needs the density ratio and that is what Section 5 leaves open -- but the
+sign, exactly, with no scores, no labels, and no deployment set. For a coverage claim that
+is the part a user needs first, and it is the strongest thing T1-B has that does not depend
+on a fit.
+
+#### 12. Rulings on Track 2's three items
+
+**(1) The cos-theta guard. I am not taking the default, and I am not setting a tolerance
+either.** T2-A6 shows the excess above 1 does not track the additivity defect
+(rho -0.44 to +0.07, n = 9), and that a region must already be near `cos = 1` to cross. So
+the excess is not a proxy for solver quality and may not be cited as one -- which also means
+no tolerance read off the T2-A6 table would mean anything.
+
+The structural point: `P_N` is linear, so `P_N(x_hat - x) = P_N(x_hat) - P_N(x)` *exactly*,
+and with `e` formed that way the law of cosines gives `|cos| <= 1` by Cauchy-Schwarz
+identically. The excess the bank shows is therefore entirely the three solves failing to be
+linear with each other. Hence:
+
+- The **reported** `cos` is formed from two solves, where it obeys Cauchy-Schwarz by
+  construction. The 1e-3 guard applies there, where it is a real numerical check.
+- The three-solve excess becomes a **logged diagnostic with no gate**, per operator. It is
+  the only thing that measures the solver's linearity defect, so it is kept -- but
+  `err_free` must not *replace* it, because that would make the guard vacuous and hide the
+  defect rather than fix it.
+
+Adopt on the next bank, with both channels emitted. This is consistent with D91's point that
+Cauchy-Schwarz is projector-independent and so T2-A5 cannot set the tolerance.
+
+**(2) The determinacy test.** Not the default. Fixed in the rule -- Section 7, amendment 10.
+
+**(3) T2-E.** Default taken for figures 6-9, and fig 9 stays untouched. Figure 10 should
+gain a second series only after Section 5's open question is settled, not before: a figure
+that shows predicted against measured with a 1.61x miss at the extreme and no account of it
+is a figure that invites the account to be invented. One figure is worth adding and costs
+nothing: coverage against `tau_a - tau_b`, 72 points, with the nominal line and zero line
+making four quadrants of which two are empty by theorem. It is Section 11 drawn, and because
+it cannot fail it is a figure about the mechanism, not evidence for it.
+
+#### 13. Where T1-B stands, and the face bank's reportability
+
+T1-B on the face bank is **reportable as a coverage-transfer result and not as a
+hallucination-detection result.** The face bank's label defect bars T1-A there -- a
+false-safe rate is a detection claim and inherits the label's defects whole. The coverage
+gap is a coverage quantity, and the project's standing scope is that coverage claims survive
+the label's defects while detection claims do not. `GAP_FACE_BANK_PREDICTION` was frozen
+specifically so that bank would be the out-of-sample test, and it is.
+
+Under the frozen criterion the result is **1 of 4**, not a win: the distance beats the
+constant in all four cells and is never beaten, but does not separate from views/arc
+(+0.006 `[-0.001, +0.016]` and +0.011 `[-0.000, +0.024]`). `GAP_PREDICTION_BASELINES`
+requires beating both, so three cells do not report, and that criterion is not relitigated
+here.
+
+Section 9 explains why the ceiling is where it is: on nine operators in two families the
+distance and the knob are nearly collinear, and the knob was two of the four baselines. The
+honest headline for T1-B across both banks is **the signed distance carries information
+about the coverage gap beyond a constant, and none beyond the acquisition knob** -- 1 of 4
+on the face bank, 0 of 4 on CT, with the direction rule accounting for the difference
+between the two.
+
+| Claim | Status |
+|---|---|
+| Transfer coverage law `1 - G_ab(U)` (D92) | Holds, exact, unaffected |
+| Spread ratio `= f_b/f_a` (amendment 9) | Holds, rho +0.977 -- and certifies shape only |
+| Matched Beta band at a transfer cell | Wrong twice: by `G'`, and by the unit |
+| Matched Beta band as a certificate | **Withdrawn**; not a gate at any count |
+| "Regions are not the unit" as a new finding | **Withdrawn** -- already in `reliability.py` |
+| Effective count = 174 from the bootstrap width | **Withdrawn** -- one-term reference |
+| Common-mode correlation >= 0.93 | **Retracted**; `>= 0.738`, measured +0.788 |
+| D86's mechanism | **Closed** -- shared cohort verified |
+| Direction rule on both banks | Holds, face bank out of sample |
+| Transfer *sign* from thresholds alone | Holds as a theorem; a screen needing no deployment data |
+| Extreme-pair compression (1.61x) | **Open**, and not curvature |
+
+Fingerprint `f3b3f1b6aed8` -> `289b0f72f828`. Suite 1,096 passed, 7 skipped.
+
+---
+
+### D94 - The 1.61x triaged: two mechanisms die by sign, and the dimensioned check was already in Track 2's message [T1-D, local, no new bank data; amendment 13]
+
+D93 Sec. 5 left one thing open -- Track 2's extreme pair la 90 -> sv 180 at **3.83 measured
+against 2.38 predicted** -- and recorded one hypothesis for it. This entry closes two of the
+three candidates, both by the same argument, and finds that the number needed to settle the
+other open item had been sitting in Track 2's message all along.
+
+#### 1. The dimensioned check amendment 12 demanded: run, passed, and already reported
+
+Amendment 12 required one dimensioned check beside any dimensionless agreement, and named
+it: the matched cell's across-split spread against its Beta sd at the independent count.
+That check needs no new run. Track 2 had already reported the number, as an aside:
+
+> tau sat between the 0.03 and 0.18 levels of F_a over the splits, wider than your +/-0.02.
+
+`U := F_a(tau_a)` is `Beta(k, n + 1 - k)` **exactly**, for `n` independent calibration
+scores. So the across-split range of `U` carries `n`, which is precisely what the predicted
+spread *ratio* divides out. Thirteen draws, by simulation:
+
+| Reference count | `Beta(k, n+1-k)` | median min | median max | against observed [0.03, 0.18] |
+|---|---|---|---|---|
+| 41 subjects | Beta(4, 38) | **0.034** | **0.177** | matches |
+| 3,157 positives (sv 180) | Beta(315, 2843) | 0.090 | 0.110 | excluded |
+| 21,762 positives (la 90) | Beta(2176, 19587) | 0.097 | 0.103 | excluded |
+
+The check **passes at the subject count and excludes the region count by a factor of order
+300**. The dimensioned companion to a dimensionless pass is therefore no longer pending on
+Track 2's disk; it was in the sentence that flagged the problem.
+
+**And D93 Sec. 3's own reading of it was over-precise.** That section inverted the same span
+to "an effective count near **45**". The statistic does not carry a point estimate.
+`count_from_level_range` compares the observed range against the simulated range of the same
+number of Beta draws and keeps the counts whose central 90% contains it:
+
+```
+observed width 0.15 over 13 splits  ->  bracket (10, 70), no holes
+  consistent: 10 15 20 25 30 35 41 50 60 70
+  excluded:   85 and above, through 50,000
+```
+
+So the honest statement is **a bracket of 10 to 70**. It cannot separate 35 from 50 -- the
+module's figure from the bootstrap and the cohort size are both inside it, and nothing here
+chooses between them -- and it rules out the region count overwhelmingly. The method is
+frozen as `prereg.COUNT_FROM_LEVEL_RANGE`, which fixes that it yields a bracket and never a
+count, before it is applied to the face bank. Two properties of the statistic are recorded
+with it: it is calibration-side only, so it carries no test-set term, which is what makes it
+clean and also what stops it being a coverage certificate; and `k = floor(alpha*(n+1))`
+steps in integers, so the likelihood is not monotone in `n` and the consistent set can have
+holes, which `LevelRangeCount.has_holes` reports rather than hides.
+
+#### 2. Curvature: the conclusion survives, the reasoning did not
+
+D93 Sec. 5 ruled curvature out on gamma populations, at "0.6-0.8%, and still ~1% at n = 41".
+Track 2's remark was a direct criticism of the premise -- `slope` is a central difference at
+half-width 0.02 and tau roams a 0.15-wide band -- so the check was re-run over `U`'s **true**
+Beta spread at 41 units, and across seven score-distribution families rather than one.
+
+| Pair | `slope` | exact at n=41 | exact at n=21,762 | inflation at 41 |
+|---|---|---|---|---|
+| gamma k=2, scale 1.0 -> 0.35 | 3.149 | 3.014 | 3.099 | **0.957** |
+| normal -> bimodal mixture | 2.684 | 2.478 | 2.563 | **0.923** |
+| lognormal s=0.6 -> 1.4 | 0.877 | 0.883 | 0.814 | 1.007 |
+| uniform -> beta(0.5,0.5), crossing | 1.100 | 1.089 | 1.069 | 0.990 |
+| t(3) -> normal, heavy tail | 1.014 | 1.001 | 1.030 | 0.986 |
+| gamma k=2 -> k=6 | 0.246 | 0.375 | 0.275 | 1.525 |
+| lognormal s=1.4 -> 0.6 | 0.053 | 0.176 | 0.054 | **3.315** |
+
+**Curvature has the wrong sign where it would be needed.** In the large-slope regime -- the
+regime the 2.38 pair is in -- it *deflates*, 0.92 to 0.96 across families. It inflates only
+where `|G'|` is far below 1, and such a cell has a spread well under the matched cell's and
+is harmless. A power-law reading says the same thing without a family at all: in the lower
+tails `G(u) = c*u^p`, `c` cancels from every ratio, and the inflation is a function of `p`
+alone -- 0.99 to 1.01 over the whole admissible range `p < 1`, which is the range a pair
+with coverage under nominal must be in.
+
+So the D93 conclusion stands and the number behind it did not generalise: 1% was one family,
+not a bound. This is the third time in two days that a claim of mine was right for a weaker
+reason than I gave, and it is the kind of correction worth making loudly, because a
+right-for-the-wrong-reason claim survives exactly until someone checks it in a different
+family.
+
+#### 3. Amendment 13(a): the spread ratio is not exactly dimensionless
+
+The table above also narrows **amendment 12 itself**, which asserted that "the reference's
+`n` divides out of both sides" without qualification. It does not, quite. `sd_ratio` is
+`sd[1 - G(U)] / sd[U]`; `n` divides out only while `G` is linear across `U`'s range, and
+`U`'s range is itself `sd[U]`, which is set by `n`. Measured: agreement to about 3% where
+`|G'| >= 1`, disagreement up to **3.3x** where `|G'| << 1`.
+
+The remedy amendment 12 froze is unaffected, and the regime it holds in is the regime that
+matters -- the cells where the ratio exceeds 1 are the cells `matched_band_is_too_narrow`
+exists for. `DIMENSIONLESS_PASS_REGIME` records the condition and bars quoting a ratio far
+below 1 without its unit.
+
+**Also checked, because it would have been a real defect:** whether the reference count can
+flip `matched_band_is_too_narrow`, the flag documented as "the case a deployment certificate
+must not get wrong". Over a 49-pair lognormal grid the only flips are the seven diagonal
+cells, where `G` is the identity, the true ratio is exactly 1, and the flag is a tie rather
+than an answer. **No off-diagonal pair flips.** The flag is safe at either count.
+
+#### 4. Test-side noise: refuted by sign, and it makes the gap worse
+
+D93 Sec. 5's "leading remaining candidate" was that the measured spread carries test-set
+noise whose unit is the subject, inflating the measured side worst where the deployment count
+is smallest -- and sv 180 is the smallest count on the bank. **It is wrong, and wrong in the
+direction that matters.** Using the two-term variance `ClusteredCoverage.independent_sd`
+already uses, with `V_U` at 41 subjects and `G' = 2.38`:
+
+| `n_test` | transfer sd | matched sd | predicted ratio | measured / predicted |
+|---|---|---|---|---|
+| 35 | 0.1357 | 0.0676 | **1.995** | 1.92 |
+| 100 | 0.1176 | 0.0539 | **2.182** | 1.76 |
+| 500 | 0.1088 | 0.0467 | 2.329 | 1.64 |
+| infinite | 0.1065 | 0.0448 | 2.380 | 1.61 |
+
+Test noise moves the predicted ratio **down** from 2.38 at every finite test size, so it
+widens the discrepancy from 1.61x to as much as **1.92x** rather than closing it. The reason
+I got the direction wrong is legible: I reasoned about the numerator and forgot the
+denominator gets a test term too, and relative to its own much smaller signal -- `V_U`
+against `G'^2 * V_U` -- the matched cell's term is the **larger** fractional addition. Any
+noise common to both cells pulls a ratio toward 1, and this ratio is above 1.
+
+#### 5. What survives, with its own shape problem stated
+
+One mechanism has the right sign, and it is structural rather than fitted.
+`coverage(a->a) = 1 - F_a(tau_a)` is a **rank statistic of a's own scores**, so it is exactly
+Beta however a refit moves that operator's score distribution. `coverage(a->b) = 1 - F_b(tau_a)`
+is not: it depends on where a's quantile lands in b's distribution, and a per-split refit
+moves the two independently. **That variance enters transfer cells only** -- the matched
+reference is immune by construction, so the ratio's denominator cannot absorb it.
+
+Simulated, with each operator's score scale given an independent per-split wobble:
+
+| refit sigma | measured / predicted |
+|---|---|
+| 0.00 | 0.92 |
+| 0.05 | 0.95 |
+| 0.10 | 1.04 |
+| 0.20 | 1.34 |
+| 0.35 | **1.92** |
+
+It reaches the required size. **But it has the wrong shape.** Track 2's discrepancy is
+concentrated at the extremes -- median 0.97 over 72 pairs, 1.61 at the most distant one --
+and in simulation this mechanism is nearly distance-independent (1.14 at matched scales,
+1.02 to 1.05 across increasing dissimilarity). So it is recorded as **necessary but not
+sufficient**: it is the only candidate left with the right sign, it cannot by itself produce
+a discrepancy that grows with distance, and **no amendment is taken for it**.
+
+The test is cheap and runs on output Track 2 already has: re-estimate `G_ab` from each
+split's own scores and read the across-split spread of `G_ab(u0)`. If that spread grows with
+pair distance, this closes; if it is flat, something fourth is at work.
+
+#### 6. Status
+
+| Claim | Status |
+|---|---|
+| Dimensioned check beside the dimensionless pass | **Run and passed** -- at the subject count, from Track 2's own aside |
+| Effective count "near 45" (D93 Sec. 3) | **Replaced** by a bracket of 10 to 70 |
+| Region count as the Beta's unit | **Excluded** by a factor of order 300 |
+| Curvature as the 1.61x | **Ruled out**, now by sign and across seven families |
+| "1% curvature error" as a general bound | **Withdrawn** -- one family; range is 0.92 to 3.3 |
+| Amendment 12's unqualified "n divides out" | **Narrowed** to `|G'| >= 1` |
+| `matched_band_is_too_narrow` across counts | Safe -- only identity ties flip |
+| Test-side noise as the 1.61x | **Refuted by sign**; it widens the gap to 1.92x |
+| Per-split refit wobble in `G_ab` | Right sign, right size, **wrong shape** -- open |
+| Extreme-pair compression | **Still open**, with one candidate and a stated test |
+
+No new trap is counted here. The tally stands at eleven, eight of them mine: Sec. 2 and
+Sec. 3 are overstatements narrowed by measurement a day later, not statistics chosen to come
+out well, and folding them in would blur the pattern the tally exists to show. The stale
+"five of eight" in `prereg.py`'s own docstring is corrected to eight of eleven in this round,
+along with the claim that every instance was a choice made after seeing a number -- the
+eleventh was not, which is the entire reason amendment 12 exists.
+
+Fingerprint `289b0f72f828` -> `a2ab9a1fdfe4`. Suite 1,106 passed, 7 skipped.

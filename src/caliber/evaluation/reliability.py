@@ -245,6 +245,7 @@ class TransferBetaReference:
     matched: BetaReference
     samples: np.ndarray
     slope: float
+    n_independent: int | None = None
 
     @property
     def mean(self) -> float:
@@ -266,21 +267,72 @@ class TransferBetaReference:
 
     @property
     def reportable(self) -> bool:
+        """The SHAPE results -- :attr:`slope` and :attr:`sd_ratio` -- may be reported.
+
+        Both are dimensionless, so neither depends on which unit built the Beta. This is
+        exactly why they are not enough: see :attr:`certifiable`.
+        """
         return self.matched.reportable and self.samples.size > 0
 
+    @property
+    def rescalable(self) -> bool:
+        """**Whether a band may be emitted at a stated unit.** Not whether it certifies.
+
+        ``n_independent`` has no default. Every caller of :func:`beta_reference` passes a
+        count of REGIONS, and regions inside one subject are not independent --
+        :data:`prereg.CLUSTER_UNIT` has said so since D83, and the comment block above
+        :class:`ClusteredCoverage` already records that 16,400 CT regions behave like
+        roughly 35 units. None of that is new.
+
+        What this property fixes is narrow and local. ``make_figures`` draws the
+        region-count band explicitly as "if every *region* were independent" and
+        ``t1a_safety_rule`` emits it as the idealisation; this class shipped with no such
+        label and read as a certificate. So an interval now requires the unit to be named.
+
+        **A band at the subject count is still not a gate.** The project's position is that
+        neither count is a measurement -- the region count rejects a correctly calibrated
+        bank, the subject count accepts almost anything -- and the certificate path is the
+        cluster bootstrap with :data:`prereg.REFIT_THRESHOLD_PER_REPLICATE`. See
+        :data:`prereg.BETA_REGION_COUNT_USE`.
+        """
+        if not self.reportable or self.n_independent is None:
+            return False
+        return int(self.n_independent) >= MIN_POSITIVES_FOR_REFERENCE
+
     def interval(self, level: float = 0.98) -> tuple[float, float]:
+        """The independence-assumed idealisation, rescaled to a stated unit. **Not a gate.**
+
+        Raises unless :attr:`rescalable`. The samples are drawn at the matched cell's n,
+        so the band they span is narrow by ``sqrt(n_positives / n_independent)``; the
+        rescaling below stretches it about its own mean by exactly that factor. The shape
+        of the pushed-through distribution is kept -- only its scale is corrected.
+        """
+        if not self.rescalable:
+            raise ValueError(
+                "no interval without n_independent: a Beta band on the region count is "
+                "the independent-regions idealisation, not a certificate; and at any "
+                "count the gate is the cluster bootstrap "
+                "(prereg.BETA_REGION_COUNT_USE)"
+            )
         tail = (1.0 - level) / 2.0
-        return (float(np.quantile(self.samples, tail)),
-                float(np.quantile(self.samples, 1.0 - tail)))
+        lo = float(np.quantile(self.samples, tail))
+        hi = float(np.quantile(self.samples, 1.0 - tail))
+        centre = float(np.mean(self.samples))
+        stretch = float(np.sqrt(self.matched.n_positives / float(self.n_independent)))
+        # Coverage is a proportion, so the stretched band is clipped rather than left to
+        # run past 1 -- a certificate reading "up to 1.004" is not a stronger statement.
+        return (float(np.clip(centre + (lo - centre) * stretch, 0.0, 1.0)),
+                float(np.clip(centre + (hi - centre) * stretch, 0.0, 1.0)))
 
     def contains(self, coverage: float, level: float = 0.98) -> bool:
-        if not np.isfinite(coverage) or not self.reportable:
+        """Consistency with the rescaled idealisation. **Not a calibration verdict.**"""
+        if not np.isfinite(coverage) or not self.rescalable:
             return False
         lo, hi = self.interval(level)
         return lo <= coverage <= hi
 
     def as_row(self) -> dict[str, object]:
-        lo, hi = self.interval() if self.reportable else (float("nan"), float("nan"))
+        lo, hi = self.interval() if self.rescalable else (float("nan"), float("nan"))
         return {
             "n_positives": self.matched.n_positives,
             "k": self.matched.k,
@@ -294,6 +346,8 @@ class TransferBetaReference:
             "sd_ratio": self.sd_ratio,
             "matched_band_is_too_narrow": self.matched_band_is_too_narrow,
             "reportable": self.reportable,
+            "n_independent": self.n_independent,
+            "rescalable": self.rescalable,
         }
 
 
@@ -325,16 +379,25 @@ def transfer_beta_reference(
     alpha: float | None = None,
     n_draws: int = 40000,
     seed: int = 0,
+    n_independent: int | None = None,
 ) -> TransferBetaReference:
     """The coverage law at a transfer cell, from the two operators' positive scores.
 
     ``n_positives`` is the size of the *calibration* set, which is what the Beta law's
     shape depends on; the deployment sample only supplies ``G_ab``.
+
+    ``n_independent`` is the number of independent calibration units -- subjects, not
+    regions (:data:`prereg.BETA_REFERENCE_UNIT`). It is optional because the
+    dimensionless results do not need it: :attr:`TransferBetaReference.slope` and
+    :attr:`~TransferBetaReference.sd_ratio` are ratios and the reference's ``n`` divides
+    out of both. It is required for an interval, and there is no default, because the
+    value is a property of the bank and assuming one is how the region count got in.
     """
     matched = beta_reference(n_positives, alpha)
     rng = np.random.default_rng(seed)
     if matched.k < 1:
-        return TransferBetaReference(matched, np.empty(0), float("nan"))
+        return TransferBetaReference(matched, np.empty(0), float("nan"),
+                                     n_independent=n_independent)
     # U = F_a(tau_a) ~ Beta(k, n + 1 - k), the complement of the matched coverage law
     u = rng.beta(matched.b, matched.a, size=int(n_draws))
     samples = 1.0 - probability_map(calibration_scores, deployment_scores, u)
@@ -346,7 +409,8 @@ def transfer_beta_reference(
     else:
         g = probability_map(calibration_scores, deployment_scores, [u0 - h, u0 + h])
         slope = float((g[1] - g[0]) / (2.0 * h))
-    return TransferBetaReference(matched, samples, slope)
+    return TransferBetaReference(matched, samples, slope,
+                                 n_independent=n_independent)
 
 
 # -- worst-cell coverage -------------------------------------------------------
@@ -689,6 +753,135 @@ def split_spread_check(
         simulated_sd_ci=sim_ci,
         overlapping=shared > 0.0,
         mean_shared_fraction=shared,
+    )
+
+
+# -- the calibration unit, read off the threshold's own motion ------------------
+#
+# Added 22 November 2026 (D94), as the dimensioned check amendment 12 demanded.
+#
+# `ClusteredCoverage.effective_n` already recovers the independent count, from a cluster
+# bootstrap. This recovers it from a quantity every split records anyway -- where the
+# threshold sat inside the calibration scores -- and needs no resampling at all.
+#
+# U := F_a(tau_a) is Beta(k, n + 1 - k) with k = floor(alpha*(n+1)), exactly, for n
+# independent calibration scores. So U's across-split SPREAD reads n back, where the
+# predicted spread RATIO divides n out (prereg.DIMENSIONLESS_PASS_WARNING).
+#
+# It returns a bracket and never a count. On T2-A's 13 splits the statistic separates tens
+# from thousands by a factor of 300 and cannot separate 35 from 50; D93 Sec. 3 read a point
+# estimate of "near 45" off the same number, which was more precision than it carries.
+
+
+@dataclass(frozen=True)
+class LevelRangeCount:
+    """A bracket on the independent calibration count, from where tau sat across splits.
+
+    :attr:`consistent` can have holes, because ``k = floor(alpha*(n+1))`` steps in
+    integers and the likelihood is not monotone in ``n``. :attr:`bracket` is its span and
+    :attr:`has_holes` says whether to read the span as solid.
+    """
+
+    observed_width: float
+    n_splits: int
+    #: Candidate counts whose central band contains the observed width.
+    consistent: tuple[int, ...]
+    #: Candidates ruled out, as (count, central band) -- kept so the exclusion is legible.
+    excluded: tuple[tuple[int, tuple[float, float]], ...]
+    alpha: float
+    level: float
+
+    @property
+    def bracket(self) -> tuple[int, int] | None:
+        """Span of the consistent counts. ``None`` if nothing fits -- read no number then."""
+        if not self.consistent:
+            return None
+        return (int(min(self.consistent)), int(max(self.consistent)))
+
+    @property
+    def has_holes(self) -> bool:
+        if not self.consistent:
+            return False
+        lo, hi = self.bracket or (0, 0)
+        return any(lo < int(c) < hi for c, _ in self.excluded)
+
+    def excludes(self, n: int) -> bool:
+        """Whether this count is ruled out. False for a count that was never tried."""
+        return any(int(c) == int(n) for c, _ in self.excluded)
+
+    def as_row(self) -> dict[str, object]:
+        b = self.bracket
+        return {
+            "observed_width": self.observed_width,
+            "n_splits": self.n_splits,
+            "bracket_lo": b[0] if b else None,
+            "bracket_hi": b[1] if b else None,
+            "has_holes": self.has_holes,
+            "n_consistent": len(self.consistent),
+            "level": self.level,
+            "unit": prereg.BETA_REFERENCE_UNIT,
+        }
+
+
+#: Candidate counts spanning subject-scale to region-scale, so one call shows both.
+DEFAULT_LEVEL_RANGE_CANDIDATES: tuple[int, ...] = (
+    10, 15, 20, 25, 30, 35, 41, 50, 60, 70, 85, 100, 125, 150, 200, 300, 500,
+    1000, 2000, 5000, 10000, 20000, 50000,
+)
+
+
+def count_from_level_range(
+    levels: Sequence[float],
+    candidates: Sequence[int] | None = None,
+    alpha: float | None = None,
+    level: float = 0.90,
+    n_sim: int = 20000,
+    seed: int = 0,
+) -> LevelRangeCount:
+    """Bracket the independent calibration count from ``F_a(tau_a)`` across splits.
+
+    ``levels`` is one value per split: the fraction of that split's calibration positives
+    at or below its threshold. Pass the levels themselves, not the thresholds -- a
+    threshold is in score units and carries no ``n``.
+
+    The statistic is the range of ``levels``, compared against the range of the same
+    number of ``Beta(k, n + 1 - k)`` draws. A count is kept when the observed range falls
+    inside the central ``level`` of its simulated range.
+
+    See :data:`prereg.COUNT_FROM_LEVEL_RANGE`. **This is not a gate.**
+    """
+    a = float(prereg.ALPHA if alpha is None else alpha)
+    x = np.asarray(levels, dtype=float)
+    x = x[np.isfinite(x)]
+    if x.size < 2:
+        raise ValueError("count_from_level_range needs at least two split levels")
+    width = float(x.max() - x.min())
+    cands = tuple(int(c) for c in (
+        DEFAULT_LEVEL_RANGE_CANDIDATES if candidates is None else candidates))
+    rng = np.random.default_rng(seed)
+    tail = (1.0 - float(level)) / 2.0
+    keep: list[int] = []
+    drop: list[tuple[int, tuple[float, float]]] = []
+    for n in cands:
+        k = int(np.floor(a * (n + 1)))
+        if k < 1 or k > n:
+            drop.append((n, (float("nan"), float("nan"))))
+            continue
+        d = rng.beta(k, n + 1 - k, size=(int(n_sim), int(x.size)))
+        w = d.max(axis=1) - d.min(axis=1)
+        lo = float(np.quantile(w, tail))
+        hi = float(np.quantile(w, 1.0 - tail))
+        if lo <= width <= hi:
+            keep.append(n)
+        else:
+            drop.append((n, (lo, hi)))
+    return LevelRangeCount(
+        observed_width=width,
+        n_splits=int(x.size),
+        consistent=tuple(keep),
+        excluded=tuple(drop),
+        alpha=a,
+        level=float(level),
     )
 
 
