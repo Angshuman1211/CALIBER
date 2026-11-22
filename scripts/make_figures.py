@@ -632,6 +632,54 @@ def fig_gap_prediction(pairs: pd.DataFrame, accuracy: pd.DataFrame, out: Path) -
     return save(fig, out / "fig9_gap_prediction")
 
 
+def fig_spread_ratio(table: pd.DataFrame, similar: float, out: Path) -> Path:
+    """D92's frozen prediction: the spread of a transfer cell, predicted against measured.
+
+    One point per ordered pair. x is the density ratio ``f_b / f_a`` at the threshold, from
+    the two operators' positive scores; y is ``sd[coverage(a->b)] / sd[coverage(a->a)]`` over
+    the patient splits. Nothing is fitted, so the line is the identity. Filled points are
+    the pairs whose cells hold similar numbers of positives, where D92 says the ratio is
+    cleanest. Above 1 the matched cell's spread understates the transfer cell's.
+    """
+    family = lambda op: op.split(".")[1]  # noqa: E731
+    color = {"sparse_view": METHOD["group"][1], "limited_angle": METHOD["naive"][1]}
+    near = (table["positives_ratio"] > 1.0 / similar) & (table["positives_ratio"] < similar)
+    fig, ax = plt.subplots(figsize=(6.4, 5.6))
+    lo = float(min(table["predicted_ratio"].min(), table["measured_ratio"].min())) / 1.4
+    hi = float(max(table["predicted_ratio"].max(), table["measured_ratio"].max())) * 1.4
+    ax.plot([lo, hi], [lo, hi], color=INK_2, linewidth=1.1, zorder=1)
+    ax.axhline(1.0, color=AXIS, linewidth=0.9, zorder=1)
+    ax.axvline(1.0, color=AXIS, linewidth=0.9, zorder=1)
+    for (_, r), filled in zip(table.iterrows(), near, strict=True):
+        c = color[family(r["deployment"])]
+        ax.plot([r["predicted_ratio"]], [r["measured_ratio"]],
+                marker=CT_MARKER[family(r["calibration"])], markersize=6.5, linestyle="none",
+                markerfacecolor=c if filled else SURFACE, markeredgecolor=c,
+                markeredgewidth=1.1, zorder=3)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
+    ax.set_aspect("equal")
+    ax.set_xlabel("predicted: density ratio at the threshold, deployment over calibration")
+    ax.set_ylabel("measured: spread of the transfer cell over the matched cell")
+    ax.text(0.98, 0.03, "identity line; nothing fitted", transform=ax.transAxes, ha="right",
+            fontsize=8, color=INK_2)
+    handles = (
+        [Line2D([], [], marker="o", linestyle="none", markersize=7, markerfacecolor=c,
+                markeredgecolor=c, label=f"used at {f.replace('_', '-')}")
+         for f, c in color.items()]
+        + [Line2D([], [], marker=m, linestyle="none", markersize=6.5, markerfacecolor=INK_2,
+                  markeredgecolor=INK_2, label=f"calibrated at {f.replace('_', '-')}")
+           for f, m in CT_MARKER.items()]
+        + [Line2D([], [], marker="o", linestyle="none", markersize=6.5, markerfacecolor=SURFACE,
+                  markeredgecolor=INK_2, label=f"positive counts differ by more than {similar:g}x")])
+    ax.legend(handles=handles, loc="upper left", fontsize=7.5)
+    fig.suptitle(f"Spread of naive-transfer coverage over patient splits, CT ({LABELS['ct']})",
+                 x=0.01, ha="left", y=0.99, fontsize=10.5, color=INK)
+    return save(fig, out / "fig10_spread_ratio")
+
+
 def save(fig, stem: Path) -> Path:
     for ext in ("png", "pdf"):
         fig.savefig(stem.with_suffix(f".{ext}"), dpi=200, bbox_inches="tight")
@@ -656,6 +704,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--t1b-dir", default=None,
                     help="t1b_gap_prediction.py --out directory: adds Figure 9 "
                          "(needs --pair-dir and --t1a-dir)")
+    ap.add_argument("--spread-csv", default=None,
+                    help="transfer_spread_ratio.py output: adds Figure 10")
+    ap.add_argument("--spread-similar", type=float, default=1.5,
+                    help="Figure 10 fills the pairs whose positive counts are within this factor")
     ap.add_argument("--mri-label", default=LABELS["mri"],
                     help="substrate and test-set size for the MRI titles, comma-separated")
     ap.add_argument("--ct-label", default=LABELS["ct"],
@@ -697,6 +749,9 @@ def main(argv: list[str] | None = None) -> int:
         gaps = gap_table(pd.read_csv(Path(args.t1a_dir) / "ordered_pairs.csv"),
                          pd.read_csv(Path(args.pair_dir) / "pair_coverage_split_mean.csv"))
         path = fig_gap_prediction(gaps, pd.read_csv(Path(args.t1b_dir) / "t1b_accuracy.csv"), out)
+        print(f"[figures] wrote {path} (+ .pdf)")
+    if args.spread_csv:
+        path = fig_spread_ratio(pd.read_csv(args.spread_csv), args.spread_similar, out)
         print(f"[figures] wrote {path} (+ .pdf)")
     return 0
 

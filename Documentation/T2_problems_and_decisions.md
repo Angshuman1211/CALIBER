@@ -27,6 +27,20 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 **Open - decides:** Track 2 (the cause), Track 1 (the guard's tolerance) - **See:** D38, D74, T2.11 §1f, T2.6
 
+**Update, D89 and D91 (T2-A6).** Track 1 withdrew the question T2-A5 answered: a ratio
+formed from the same vectors in one solve cannot exceed 1 whatever the solver does, so the
+tolerance cannot be read off a residual. T2-A6 settles which case this is. `cos theta` is
+`(s_free^2 + free_content^2 - err_free^2) / (2 s_free free_content)`, and the three columns
+come from three separate null-space solves (`P_N(x_hat)`, `P_N(x)`, `P_N(x_hat - x)`), so
+the solver's non-additivity enters directly. Measured on the design subjects with a
+perturbed truth: with the error term taken as the difference of the two solves, no region
+exceeds 1 in any of 36 runs; in the bank's form 46 of 1,600 do at limited-angle 90 degrees
+at a 0.5% perturbation. On the bank the excess above 1 has medians of 0.003 to 0.043 by
+operator and reaches 0.31, and neither it nor the count follows the per-operator additivity
+defect, because a region must already sit near `cos theta = 1` to cross. The guard is
+unchanged. Open for Track 1: a tolerance from T2.11 Sec. 1j's table, or an `err_free`
+formed from the two solves, which would be a change to how the next bank is written.
+
 **Update, D87 (T2-A5).** Measured on the design subjects: CG uses all 20 iterations at
 every operator and stops at a relative residual of 0.7e-4 to 5.6e-4 against a tolerance of
 1e-6; the null projection is not idempotent (9-41%) and not additive (2-12%), because a
