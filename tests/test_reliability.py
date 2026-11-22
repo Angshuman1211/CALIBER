@@ -614,3 +614,139 @@ def test_a_short_run_is_marked_unreportable_rather_than_averaged_anyway():
     )
     assert not frame["reportable"].any()
     assert "below the frozen minimum" in frame["note"].iloc[0]
+
+
+# -- the Beta law at a transfer cell (D92) -------------------------------------
+
+
+def _gamma(scale: float, n: int = 60000, seed: int = 3) -> np.ndarray:
+    return np.random.default_rng(seed).gamma(2.0, scale, size=n)
+
+
+def test_the_matched_cell_recovers_the_classical_beta_law():
+    """G is the identity when both operators are the same, so nothing may change."""
+    a = _gamma(1.0)
+    ref = R.transfer_beta_reference(a, a, n_positives=120, alpha=0.1)
+    assert abs(ref.mean - ref.matched.mean) < 5e-3, (ref.mean, ref.matched.mean)
+    assert abs(ref.sd_ratio - 1.0) < 0.05, ref.sd_ratio
+    assert abs(ref.slope - 1.0) < 0.05, ref.slope
+
+
+def test_the_probability_map_is_the_identity_on_one_sample():
+    a = _gamma(1.0)
+    u = np.array([0.05, 0.1, 0.25, 0.5, 0.9])
+    got = R.probability_map(a, a, u)
+    assert np.max(np.abs(got - u)) < 2e-3, got
+
+
+def test_the_transfer_spread_is_the_matched_spread_times_the_density_ratio():
+    """The first-order claim, over a 7x range of spreads. Measured agreement is ~2%."""
+    a = _gamma(1.0)
+    seen = []
+    for scale in (0.7, 1.6, 2.4):
+        ref = R.transfer_beta_reference(a, _gamma(scale, seed=4), 120, alpha=0.1)
+        assert abs(ref.sd_ratio / ref.slope - 1.0) < 0.04, (scale, ref.as_row())
+        seen.append(ref.sd_ratio)
+    # the range has to be wide, or agreeing with it says nothing
+    assert max(seen) / min(seen) > 5.0, seen
+
+
+def test_the_matched_band_can_be_too_narrow_as_well_as_too_wide():
+    """A certificate quoting the matched Beta band is wrong in BOTH directions."""
+    a = _gamma(1.0)
+    wider = R.transfer_beta_reference(a, _gamma(0.7, seed=4), 120, alpha=0.1)
+    narrower = R.transfer_beta_reference(a, _gamma(2.4, seed=4), 120, alpha=0.1)
+    assert wider.sd_ratio > 1.0 and wider.matched_band_is_too_narrow
+    assert narrower.sd_ratio < 1.0 and not narrower.matched_band_is_too_narrow
+    assert wider.sd_ratio / narrower.sd_ratio > 3.0, (wider.sd_ratio,
+                                                      narrower.sd_ratio)
+
+
+def test_the_LESS_ill_posed_deployment_operator_is_the_one_that_loses_coverage():
+    """D89's counterintuitive direction, in the law rather than in the bank.
+
+    A deployment operator whose scores run *high* clears an inherited low threshold more
+    easily, so it OVER-covers; the operator that loses coverage is the easier one. This
+    is why an operator distance that tracks ill-posedness gets the sign of the gap
+    backwards, and it is the whole of why T1-A failed.
+    """
+    a = _gamma(1.0)
+    matched = R.transfer_beta_reference(a, a, 120, alpha=0.1).mean
+    harder = R.transfer_beta_reference(a, _gamma(2.4, seed=4), 120, alpha=0.1)
+    easier = R.transfer_beta_reference(a, _gamma(0.7, seed=4), 120, alpha=0.1)
+    assert harder.mean > matched > easier.mean, (harder.mean, matched, easier.mean)
+    # stated as the gap, which is the quantity T1-B predicts
+    assert matched - harder.mean < 0.0 < matched - easier.mean
+
+
+def test_one_calibration_draw_moves_every_cell_in_its_row_the_same_way():
+    """D86's mechanism, as a theorem: comonotone within a row, exactly.
+
+    One draw of ``U`` is pushed through several deployment operators' maps; because every
+    map is non-decreasing, the resulting coverages are a monotone function of that one
+    scalar, so their ranks across draws agree perfectly.
+    """
+    a = _gamma(1.0)
+    rng = np.random.default_rng(7)
+    ref = R.beta_reference(120, alpha=0.1)
+    u = rng.beta(ref.b, ref.a, size=4000)
+    rows = [1.0 - R.probability_map(a, _gamma(s, seed=4), u)
+            for s in (0.7, 1.0, 1.6, 2.4)]
+    for other in rows[1:]:
+        order_a = np.argsort(np.argsort(rows[0]))
+        order_b = np.argsort(np.argsort(other))
+        assert np.corrcoef(order_a, order_b)[0, 1] > 0.999
+
+
+def test_nine_independent_rows_would_not_give_a_one_directional_displacement():
+    """So 72-of-72 is evidence about the cohort, not about the within-row mechanism."""
+    rng = np.random.default_rng(11)
+    ref = R.beta_reference(120, alpha=0.1)
+    trials = 20000
+    u = rng.beta(ref.b, ref.a, size=(trials, 9))
+    side = np.sign(u - np.median(u, axis=0, keepdims=True))
+    same = float(np.mean(np.abs(side.sum(axis=1)) == 9))
+    assert same < 0.01, same
+    assert abs(same - 2 * 0.5 ** 9) < 0.004, same
+
+
+def test_a_cell_with_no_certifiable_threshold_yields_no_transfer_law():
+    a = _gamma(1.0)
+    ref = R.transfer_beta_reference(a, _gamma(1.6, seed=4), n_positives=3, alpha=0.1)
+    assert ref.matched.k < 1
+    assert ref.reportable is False
+    assert ref.samples.size == 0
+
+
+def test_the_transfer_spread_prediction_is_frozen_and_falsifiable():
+    text = " ".join(prereg.TRANSFER_SPREAD_PREDICTION)
+    assert "falsified" in text
+    assert "CALIBRATION operator" in text
+    assert any(a[0] == "2026-11-22" for a in prereg.AMENDMENTS)
+
+
+def test_either_matched_cell_gives_the_same_spread_ratio_at_equal_counts():
+    """Why the choice of reference cell is principled but not load-bearing here.
+
+    Only cell (a, a) shares the calibration draw, and it is the right reference when the
+    two operators' positive counts differ. But the SPREAD ratio divides out the Beta's
+    scale, so at equal counts the deployment operator's matched cell gives the same
+    number. Recorded because the frozen prediction first claimed otherwise.
+    """
+    a = _gamma(1.0)
+    b = _gamma(1.6, seed=4)
+    rng = np.random.default_rng(13)
+    ref = R.beta_reference(120, alpha=0.1)
+    u_a = rng.beta(ref.b, ref.a, size=20000)
+    u_b = rng.beta(ref.b, ref.a, size=20000)          # an INDEPENDENT draw
+    cov_ab = 1.0 - R.probability_map(a, b, u_a)
+    right = float(np.std(cov_ab) / np.std(1.0 - u_a))  # vs cell (a, a)
+    wrong = float(np.std(cov_ab) / np.std(1.0 - u_b))  # vs an independent draw
+    g = R.transfer_beta_reference(a, b, 120, alpha=0.1).slope
+    assert abs(right / g - 1.0) < 0.05, (right, g)
+    # the independent-draw version is not wrong by much here, which is the point:
+    # it agrees in SPREAD and is still the wrong comparison, because it throws away
+    # the pairing that makes the ratio a statement about one draw
+    assert abs(wrong / g - 1.0) < 0.05, (wrong, g)
+    assert np.corrcoef(cov_ab, 1.0 - u_a)[0, 1] > 0.99
+    assert abs(np.corrcoef(cov_ab, 1.0 - u_b)[0, 1]) < 0.05

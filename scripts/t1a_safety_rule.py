@@ -13,6 +13,9 @@ like -- ``Beta(n + 1 - k, k)``, with no free parameter -- so a cell outside its 
 interval means the bank is wrong, not that the method failed, and nothing downstream is
 worth reading. The work plan's Sec. 3 asks for this check before any result from the bank
 is interpreted; here it is a hard gate, and ``--ignore-control`` is the only way past it.
+The gate's level is **family-wise over the matched cells** (:data:`CONTROL_FAMILY_LEVEL`),
+Bonferroni-corrected per cell; before D89 the 98% was applied per cell to nine cells, which
+is a 17% chance of failing a sound bank. The uncorrected band is printed beside it.
 
 **Then the 72 ordered pairs.** Threshold fitted at the calibration operator, coverage
 measured at the deployment operator, on disjoint patients. Joined to the signed operator
@@ -63,6 +66,7 @@ from caliber.evaluation.reliability import (
     pair_coverage_from_splits,
     worst_operator_coverage,
 )  # noqa: F401  -- beta_reference is reported beside the bootstrap as the idealisation
+from caliber.evaluation.gap import gap_sign_from_thresholds
 from caliber.evaluation.safety import (
     label_source_sensitivity,
     safety_by_family,
@@ -80,6 +84,31 @@ SCALE_OPERATOR = "ct.sparse_view.v180.a180.dfull"
 #: gate on roughly nine cells at once, and a 95% band would fail one cell in twenty by
 #: construction and stop a correct bank.
 CONTROL_LEVEL = 0.98
+
+#: **The level the gate actually controls, over all matched cells at once.**
+#:
+#: Corrected 21 November 2026 (D89). :data:`CONTROL_LEVEL` was applied per cell to nine
+#: cells, which leaves a family-wise spurious-failure rate of 1 - 0.98**9 = 17%, not 2%.
+#: The docstring above it had already identified multiplicity as the thing to correct for
+#: ("a 95% band would fail one cell in twenty") and then under-solved it by a factor of
+#: nine. On T2-A's CT bank the gate duly failed one cell, limited-angle 90 deg, by 0.004 at
+#: the upper end of its interval -- which is what a 17% family-wise rate looks like when it
+#: fires.
+#:
+#: The per-cell level is now Bonferroni-derived from the number of checkable cells, so the
+#: stated level means what it says however many operators the bank has. The uncorrected
+#: interval stays in the output beside it: this correction makes the gate HARDER TO FAIL,
+#: which is the self-interested direction, so it must not also make the old number
+#: invisible. The cost is real and is the point of printing both -- a gate at 99.8% per
+#: cell has less power against a single genuinely broken operator than one at 98%.
+CONTROL_FAMILY_LEVEL = 0.98
+
+
+def control_cell_level(n_cells: int, family_level: float = CONTROL_FAMILY_LEVEL) -> float:
+    """Bonferroni per-cell level for a gate that tests ``n_cells`` cells simultaneously."""
+    if n_cells < 1:
+        return family_level
+    return 1.0 - (1.0 - family_level) / float(n_cells)
 
 #: Fewest clusters per side before the control's bootstrap interval is believed.
 MIN_CLUSTERS_FOR_CONTROL = 8
@@ -156,6 +185,8 @@ def _matched_control(
     ratio between them is the interesting number and hiding it was how the mistake
     happened. See D85.
     """
+    n_cells = int(df["operator_id"].nunique())
+    cell_level = control_cell_level(n_cells)
     rows = []
     for op, part in df.groupby("operator_id", observed=True):
         calib = part[(part["split"] == "calib") & part["label"]]
@@ -167,6 +198,9 @@ def _matched_control(
             "n_caught": 0,
             "coverage": float("nan"),
             "status": "not_checkable",
+            "status_uncorrected": "not_checkable",
+            "n_cells_gated": n_cells,
+            "cell_level": cell_level,
             "note": "",
         }
         row.update(beta_reference(len(calib), alpha).as_row())
@@ -182,10 +216,17 @@ def _matched_control(
         by = lambda frame: [  # noqa: E731
             g["score"].to_numpy(dtype=float) for _, g in frame.groupby(cluster_col, observed=True)
         ]
+        # Two intervals from the same replicates (same seed): the gate's corrected one,
+        # and the uncorrected per-cell one that the gate used to read, kept visible.
         clustered = clustered_coverage(
+            by(calib), by(test), alpha=alpha, n_boot=n_boot, level=cell_level, seed=0
+        )
+        per_cell = clustered_coverage(
             by(calib), by(test), alpha=alpha, n_boot=n_boot, level=CONTROL_LEVEL, seed=0
         )
         row.update(clustered.as_row())
+        row["coverage_lo_uncorrected"] = per_cell.lo
+        row["coverage_hi_uncorrected"] = per_cell.hi
         n_clusters = min(clustered.n_clusters_calib, clustered.n_clusters_test)
 
         if not np.isfinite(clustered.lo):
@@ -201,11 +242,21 @@ def _matched_control(
             )
         else:
             row["status"] = "pass" if clustered.contains_nominal else "fail"
+            row["status_uncorrected"] = (
+                "pass" if per_cell.contains_nominal else "fail"
+            )
             if not clustered.contains_nominal:
                 row["note"] = (
-                    f"cluster-bootstrap {CONTROL_LEVEL:.0%} interval "
+                    f"cluster-bootstrap {cell_level:.2%} interval "
                     f"[{clustered.lo:.3f}, {clustered.hi:.3f}] excludes {prereg.NOMINAL:.2f} "
                     f"(design effect {clustered.design_effect:.0f} regions per unit)"
+                )
+            elif not per_cell.contains_nominal:
+                row["note"] = (
+                    f"passes the gate at its {CONTROL_FAMILY_LEVEL:.0%} family-wise level "
+                    f"but not the uncorrected {CONTROL_LEVEL:.0%} per-cell one "
+                    f"[{per_cell.lo:.3f}, {per_cell.hi:.3f}]; with {n_cells} cells the "
+                    "uncorrected band fires on a sound bank about 17% of the time"
                 )
         rows.append(row)
     return pd.DataFrame(rows)
@@ -278,6 +329,62 @@ def _ordered_pairs(
                 "design_effect": interval.design_effect,
             })
     return pd.DataFrame(rows)
+
+
+def _threshold_identity(
+    pairs: pd.DataFrame, control: pd.DataFrame
+) -> pd.DataFrame | None:
+    """D89's identity, run as a check on the bank rather than reported as a result.
+
+    ``gap = F_b(tau_a) - F_b(tau_b)`` with ``F_b`` non-decreasing, so the gap's sign is the
+    threshold difference's sign at every ordered pair, exactly and by theorem. A pair that
+    disagrees therefore means the recorded thresholds and coverages did not come from the
+    same scores -- a defect no coverage number survives, caught for the price of a groupby,
+    and strictly stronger than the matched control, which only asks about the diagonal.
+
+    It is a check and never a predictor: ``tau_a - tau_b`` is in
+    :data:`prereg.GAP_BARRED_PREDICTORS` because it would beat the distance and every
+    baseline by arithmetic.
+    """
+    # The matched coverage comes from the CONTROL table, which is the only place the
+    # diagonal exists: _ordered_pairs skips self-pairs. Taking it from the pair table
+    # instead reads an arbitrary transfer cell as the matched one, which the 2-operator
+    # fixture quietly turned into a table of zero gaps rather than an error.
+    if "operator_id" not in control.columns or "coverage" not in control.columns:
+        print("[t1a] threshold identity not checkable: the control carries no diagonal")
+        return None
+    matched = control.set_index(control["operator_id"].astype(str))["coverage"]
+    matched = matched[~matched.index.duplicated()]
+    frame = pairs.assign(
+        gap=pairs["deployment"].astype(str).map(matched).to_numpy(dtype=float)
+        - pairs["coverage"].to_numpy(dtype=float)
+    )
+    unmatched = int(np.isnan(frame["gap"].to_numpy(dtype=float)).sum())
+    if unmatched:
+        print(f"[t1a] threshold identity: {unmatched} pair(s) have no matched cell to "
+              "difference against and are not checkable")
+    try:
+        check = gap_sign_from_thresholds(frame)
+    except (KeyError, ValueError) as exc:
+        print(f"[t1a] threshold identity not checkable: {exc}")
+        return None
+    live = check[check["decidable"]]
+    if live.empty:
+        print("[t1a] threshold identity: no decidable pair (every gap or difference is 0)")
+        return check
+    agree = int(live["agrees"].sum())
+    print(f"[t1a] threshold identity (D89): sign(gap) == sign(tau_a - tau_b) at "
+          f"{agree} of {len(live)} decidable pairs")
+    if agree < len(live):
+        worst = live[~live["agrees"]]
+        names = ", ".join(
+            str(a) + "->" + str(b)
+            for a, b in zip(worst["calibration"], worst["deployment"])
+        )
+        print("[t1a] WARNING: the identity is a theorem, so a disagreement means the bank "
+              "contradicts the definition of coverage, not that the method failed. "
+              "Offending pairs: " + names)
+    return check
 
 
 def _recut_splits(
@@ -504,10 +611,23 @@ def main(argv: list[str] | None = None) -> int:
           f"label={args.label}, scales frozen at {args.scale_operator}")
 
     control = _matched_control(df, alpha, cluster_col=args.cluster)
+    n_cells = int(df["operator_id"].nunique())
     _print_table(control, ["operator_id", "n_clusters_calib", "n_positives_calib", "coverage",
-                           "ci_lo", "ci_hi", "effective_n", "design_effect", "beta_sd",
-                           "status", "note"],
-                 "matched-operator control (runs first; gates everything below)")
+                           "ci_lo", "ci_hi", "coverage_lo_uncorrected",
+                           "coverage_hi_uncorrected", "effective_n", "design_effect",
+                           "beta_sd", "status", "status_uncorrected", "note"],
+                 f"matched-operator control at {CONTROL_FAMILY_LEVEL:.0%} family-wise over "
+                 f"{n_cells} cells (per cell {control_cell_level(n_cells):.3%}); "
+                 "runs first and gates everything below")
+    split = control[control["status"] != control["status_uncorrected"]]
+    if len(split):
+        print(f"[t1a] {len(split)} cell(s) differ between the gate's corrected level and "
+              f"the uncorrected {CONTROL_LEVEL:.0%} per-cell band: "
+              f"{', '.join(split['operator_id'])}. The correction makes the gate harder "
+              "to fail, so both are printed; see D89.")
+        print("[t1a] The gate decides whether the rule's output is labelled diagnostic. "
+              "It does not enter the false-safe rate, Youden's J, or the permutation p, "
+              "all of which are computed from the pair table alone.")
     failed = control[control["status"] == "fail"]
     unchecked = control[control["status"] == "not_checkable"]
     if len(failed):
@@ -536,6 +656,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(pairs):
         print(f"[t1a] per-pair coverage sd: median {pairs['coverage_sd'].median():.4f}, "
               f"design effect: median {pairs['design_effect'].median():.0f} regions per unit")
+        _threshold_identity(pairs, control)
 
     # D86: the label's estimand is coverage marginal over the calibration draw. One draw
     # displaces every pair the same way, so a single-split label is biased, not just noisy.

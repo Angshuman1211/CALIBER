@@ -205,6 +205,150 @@ def beta_reference(n_positives: int, alpha: float | None = None) -> BetaReferenc
     return BetaReference(n, a_level, k, a=float(n + 1 - k), b=float(max(k, 0)))
 
 
+# -- the Beta law at a transfer cell -------------------------------------------
+#
+# The Beta law above is the MATCHED cell. D89's identity says what happens when the
+# threshold comes from somewhere else. Writing F_a, F_b for the positive-score CDFs at
+# the calibration and deployment operators:
+#
+#     tau_a = S_(k) of n draws from F_a      U := F_a(tau_a) ~ Beta(k, n + 1 - k)
+#     coverage(a -> b) = 1 - F_b(tau_a) = 1 - G_ab(U),   G_ab := F_b o F_a^{-1}
+#
+# So a transfer cell's coverage is **the same Beta variable pushed through the operator
+# pair's probability-probability map**, and the matched cell is the case G = identity.
+# Three consequences, all verified by simulation before this was written:
+#
+#   1. The law is exact, not asymptotic -- the identity above holds draw by draw.
+#   2. The SPREAD rescales by G'(u) = f_b/f_a at the threshold, in EITHER direction.
+#      Across a 6.6x range of density ratios the first-order prediction held to ~1%.
+#      A certificate that quotes the matched Beta band at a transfer cell is therefore
+#      wrong by that factor, and it can be wrong by being too NARROW.
+#   3. At a fixed calibration draw, every deployment operator in one row is a monotone
+#      function of the same scalar U, so the row's cells are exactly comonotone. That is
+#      D86's "one draw displaces every cell together", as a theorem rather than an
+#      observation -- but only WITHIN a row. Nine independent rows would land on the same
+#      side with probability 2 * (1/2)^9 = 0.4%, so a one-directional displacement at all
+#      72 pairs is evidence that the nine operators share a calibration cohort, which is a
+#      property of how the bank was built and should be stated rather than assumed.
+
+
+@dataclass(frozen=True)
+class TransferBetaReference:
+    """The coverage law at a transfer cell: the matched Beta pushed through ``G_ab``.
+
+    Built by sampling ``U`` from the exact Beta and evaluating the *empirical* ``G_ab``,
+    so no density is estimated anywhere and no asymptotics are used. :attr:`slope` is
+    ``G'`` at the nominal level by a central difference on ``G`` -- which is the density
+    ratio ``f_b/f_a`` at the threshold, obtained without estimating either density.
+    """
+
+    matched: BetaReference
+    samples: np.ndarray
+    slope: float
+
+    @property
+    def mean(self) -> float:
+        return float(np.mean(self.samples))
+
+    @property
+    def sd(self) -> float:
+        return float(np.std(self.samples, ddof=1))
+
+    @property
+    def sd_ratio(self) -> float:
+        """Observed spread against the matched cell's. 1.0 iff ``G`` is the identity."""
+        return self.sd / self.matched.sd if self.matched.sd > 0 else float("nan")
+
+    @property
+    def matched_band_is_too_narrow(self) -> bool:
+        """**The case a deployment certificate must not get wrong.**"""
+        return self.sd_ratio > 1.0
+
+    @property
+    def reportable(self) -> bool:
+        return self.matched.reportable and self.samples.size > 0
+
+    def interval(self, level: float = 0.98) -> tuple[float, float]:
+        tail = (1.0 - level) / 2.0
+        return (float(np.quantile(self.samples, tail)),
+                float(np.quantile(self.samples, 1.0 - tail)))
+
+    def contains(self, coverage: float, level: float = 0.98) -> bool:
+        if not np.isfinite(coverage) or not self.reportable:
+            return False
+        lo, hi = self.interval(level)
+        return lo <= coverage <= hi
+
+    def as_row(self) -> dict[str, object]:
+        lo, hi = self.interval() if self.reportable else (float("nan"), float("nan"))
+        return {
+            "n_positives": self.matched.n_positives,
+            "k": self.matched.k,
+            "matched_mean": self.matched.mean,
+            "matched_sd": self.matched.sd,
+            "transfer_mean": self.mean,
+            "transfer_sd": self.sd,
+            "transfer_lo": lo,
+            "transfer_hi": hi,
+            "density_ratio_at_threshold": self.slope,
+            "sd_ratio": self.sd_ratio,
+            "matched_band_is_too_narrow": self.matched_band_is_too_narrow,
+            "reportable": self.reportable,
+        }
+
+
+def probability_map(
+    calibration_scores: Sequence[float],
+    deployment_scores: Sequence[float],
+    u: Sequence[float] | float,
+) -> np.ndarray:
+    """``G_ab(u) = F_b(F_a^{-1}(u))``, the operator pair's probability-probability map.
+
+    Identity when the two samples come from the same distribution, which is the whole
+    content of "the matched cell is the classical case".
+    """
+    cal = np.sort(np.asarray(calibration_scores, dtype=float))
+    dep = np.sort(np.asarray(deployment_scores, dtype=float))
+    cal = cal[np.isfinite(cal)]
+    dep = dep[np.isfinite(dep)]
+    if cal.size == 0 or dep.size == 0:
+        raise ValueError("both score samples must be non-empty")
+    levels = np.atleast_1d(np.asarray(u, dtype=float))
+    x = np.quantile(cal, np.clip(levels, 0.0, 1.0))
+    return np.searchsorted(dep, x, side="right") / float(dep.size)
+
+
+def transfer_beta_reference(
+    calibration_scores: Sequence[float],
+    deployment_scores: Sequence[float],
+    n_positives: int,
+    alpha: float | None = None,
+    n_draws: int = 40000,
+    seed: int = 0,
+) -> TransferBetaReference:
+    """The coverage law at a transfer cell, from the two operators' positive scores.
+
+    ``n_positives`` is the size of the *calibration* set, which is what the Beta law's
+    shape depends on; the deployment sample only supplies ``G_ab``.
+    """
+    matched = beta_reference(n_positives, alpha)
+    rng = np.random.default_rng(seed)
+    if matched.k < 1:
+        return TransferBetaReference(matched, np.empty(0), float("nan"))
+    # U = F_a(tau_a) ~ Beta(k, n + 1 - k), the complement of the matched coverage law
+    u = rng.beta(matched.b, matched.a, size=int(n_draws))
+    samples = 1.0 - probability_map(calibration_scores, deployment_scores, u)
+
+    u0 = float(matched.b / (matched.a + matched.b))
+    h = min(0.02, 0.5 * min(u0, 1.0 - u0))
+    if h <= 0:
+        slope = float("nan")
+    else:
+        g = probability_map(calibration_scores, deployment_scores, [u0 - h, u0 + h])
+        slope = float((g[1] - g[0]) / (2.0 * h))
+    return TransferBetaReference(matched, samples, slope)
+
+
 # -- worst-cell coverage -------------------------------------------------------
 
 

@@ -326,3 +326,387 @@ def test_the_real_ct_grid_has_the_degeneracy_d84_claims():
         for b in meta:
             if meta[b]["family"] == "sparse_view":
                 assert np.isnan(G.acquisition_parameter(a, b, meta))
+
+
+# -- the direction, and why a reversal must be visible ---------------------------------
+#
+# The frozen form is a NON-DECREASING fit. Fitted to a decreasing truth it returns the
+# training mean, so before D89 a perfectly reversed relation and no relation at all
+# produced the same output. These tests pin the difference and pin that showing the
+# reversal cannot change a verdict.
+
+
+def test_the_frozen_direction_reports_a_perfect_reversal_as_no_information():
+    x = [1.0, 2.0, 3.0, 4.0]
+    y = [4.0, 3.0, 2.0, 1.0]
+    frozen = G.isotonic(x, y)
+    assert frozen.direction == prereg.GAP_PREDICTION_DIRECTION == "increasing"
+    # every knot equal to the mean: indistinguishable from fitting pure noise
+    assert np.allclose(frozen.y, np.mean(y))
+    assert np.isclose(G.rank_correlation(x, y), -1.0)
+
+
+def test_the_opposite_direction_recovers_what_the_frozen_one_flattens():
+    x = [1.0, 2.0, 3.0, 4.0]
+    y = [4.0, 3.0, 2.0, 1.0]
+    flipped = G.isotonic(x, y, "decreasing")
+    assert np.allclose(flipped.y, y)
+    assert np.all(np.diff(flipped.y) <= 0)
+
+
+def test_the_opposite_direction_is_the_l2_optimal_non_increasing_fit():
+    rng = np.random.default_rng(3)
+    x = np.arange(12, dtype=float)
+    y = -0.4 * x + rng.normal(scale=0.3, size=12)
+    flipped = G.isotonic(x, y, "decreasing")
+    assert np.all(np.diff(flipped.y) <= 1e-12)
+    # no non-increasing step function on this grid beats it in squared error
+    best = float(np.sum((flipped.predict(x) - y) ** 2))
+    for _ in range(200):
+        cand = np.sort(rng.permutation(flipped.y))[::-1]
+        assert float(np.sum((cand - y) ** 2)) >= best - 1e-9
+
+
+def test_an_unnamed_direction_is_refused():
+    with pytest.raises(ValueError, match="not a frozen direction"):
+        G.isotonic([1.0, 2.0], [1.0, 2.0], "u_shaped")
+
+
+def test_the_reversal_frame_names_the_reversal_without_touching_the_verdict():
+    pairs = _pairs(include_diagonal=True)
+    # a world where the gap FALLS with the distance: the CT bank's shape
+    pairs["coverage"] = 0.90 + 0.05 * pairs["signed_distance"]
+    pairs["gap"] = G.gap_column(pairs)
+    out = G.gap_prediction(pairs, META, n_boot=200, seed=0)
+
+    rev = out["reversal"]
+    assert not rev.empty
+    assert (rev["rho_distance_gap"] < 0).all()
+    assert rev["opposite_fits_better"].any()
+
+    # the verdict is built from the frozen direction alone
+    assert not out["verdict"]["reportable"].any()
+    flipped_rows = out["accuracy"][~out["accuracy"]["pre_registered"]]
+    assert not flipped_rows.empty
+    assert (flipped_rows["direction"] == "decreasing").all()
+    assert set(out["comparisons"]["scope"]) <= {"within_family", "cross_family"}
+
+
+def test_showing_the_reversal_cannot_turn_a_withheld_claim_into_a_reported_one():
+    pairs = _pairs(include_diagonal=True)
+    pairs["coverage"] = 0.90 + 0.05 * pairs["signed_distance"]
+    pairs["gap"] = G.gap_column(pairs)
+    out = G.gap_prediction(pairs, META, n_boot=200, seed=0)
+    verdict = out["verdict"].set_index(["protocol", "scope"])["reportable"]
+    # the opposite-direction fit is near-perfect here, and changes no verdict
+    assert not verdict.any()
+
+
+# -- the threshold identity: a check on the bank, never a predictor --------------------
+
+
+def _threshold_bank(n: int = 4000, reverse: bool = False) -> pd.DataFrame:
+    """Pairs whose coverages are *computed from* thresholds, as a real bank's are.
+
+    The score scale grows with ill-posedness, so tau does too -- which is the whole of
+    D89's account of the sign reversal.
+    """
+    rng = np.random.default_rng(11)
+    order = list(META)
+    scales = np.linspace(1.0, 3.0, len(order))
+    if reverse:
+        scales = scales[::-1]
+    scores = {op: rng.gamma(2.0, s, size=n) for op, s in zip(order, scales)}
+    tau = {op: float(np.quantile(scores[op], prereg.ALPHA)) for op in order}
+    # the distance always points the same way: positive when b is further down the grid
+    index = {op: float(i) for i, op in enumerate(order)}
+    rows = []
+    for a in order:
+        for b in order:
+            rows.append({
+                "calibration": a,
+                "deployment": b,
+                "signed_distance": index[b] - index[a],
+                "threshold": tau[a],
+                "coverage": float((scores[b] >= tau[a]).mean()),
+            })
+    pairs = pd.DataFrame(rows)
+    pairs["gap"] = G.gap_column(pairs)
+    return pairs
+
+
+def test_the_gap_sign_is_the_threshold_difference_at_every_pair():
+    pairs = _threshold_bank()
+    check = G.gap_sign_from_thresholds(pairs)
+    live = check[check["decidable"]]
+    assert len(live) >= 18
+    assert live["agrees"].all(), "sign(gap) == sign(tau_a - tau_b) is a theorem"
+
+
+def test_the_identity_catches_a_bank_that_contradicts_its_own_coverage():
+    pairs = _threshold_bank()
+    # sv.a is the least ill-posed operator, so tau_a < tau_c and the identity forces
+    # gap < 0 at sv.a -> sv.c. Put the transfer cell BELOW its matched cell instead.
+    bad = (pairs["calibration"] == "sv.a") & (pairs["deployment"] == "sv.c")
+    matched = float(pairs.loc[
+        (pairs["calibration"] == "sv.c") & (pairs["deployment"] == "sv.c"), "coverage"
+    ].iloc[0])
+    pairs.loc[bad, "coverage"] = matched - 0.2
+    pairs["gap"] = G.gap_column(pairs)
+    assert float(pairs.loc[bad, "gap"].iloc[0]) > 0
+    check = G.gap_sign_from_thresholds(pairs)
+    row = check[(check["calibration"] == "sv.a") & (check["deployment"] == "sv.c")]
+    assert bool(row["decidable"].iloc[0])
+    assert not bool(row["agrees"].iloc[0])
+
+
+def test_a_calibration_operator_with_two_thresholds_raises():
+    pairs = _threshold_bank()
+    idx = pairs.index[pairs["calibration"] == "sv.a"][0]
+    pairs.loc[idx, "threshold"] = float(pairs.loc[idx, "threshold"]) * 1.5
+    with pytest.raises(ValueError, match="differing thresholds"):
+        G.gap_sign_from_thresholds(pairs)
+
+
+def test_the_identity_refuses_the_nominal_gap_definition():
+    pairs = _threshold_bank()
+    with pytest.raises(ValueError, match="matched_minus_transfer"):
+        G.gap_sign_from_thresholds(pairs, definition="nominal_minus_transfer")
+
+
+def test_the_identity_is_not_available_as_a_baseline():
+    # the bar exists so a tautology cannot be entered as a competitor
+    for barred in prereg.GAP_BARRED_PREDICTORS:
+        assert barred not in prereg.GAP_PREDICTION_BASELINES
+        assert barred not in G.PREDICTORS
+
+
+def test_the_threshold_ordering_is_what_sets_the_sign_of_the_relation():
+    """D89's account as a test, and the reasoning behind the face-bank prediction.
+
+    The identity fixes the gap's relation to *tau*; nothing in it fixes the gap's relation
+    to the *distance*. The sign of the measured relation is therefore set entirely by which
+    way tau runs along the grid -- so two banks can disagree on the sign while agreeing on
+    the mechanism, which is what :data:`prereg.GAP_FACE_BANK_PREDICTION` asserts.
+    """
+    rising = _threshold_bank(reverse=False)    # tau grows with ill-posedness, as on CT
+    falling = _threshold_bank(reverse=True)    # tau shrinks with it, as predicted on faces
+
+    def rhos(bank: pd.DataFrame) -> tuple[float, float]:
+        off = bank[bank["calibration"] != bank["deployment"]]
+        return (
+            G.rank_correlation(off["signed_distance"], off["threshold"]),
+            G.rank_correlation(off["signed_distance"], off["gap"]),
+        )
+
+    rho_tau_up, rho_gap_up = rhos(rising)
+    rho_tau_dn, rho_gap_dn = rhos(falling)
+
+    # A high tau_a goes with a calibration operator late in the grid, which is where the
+    # signed distance is most negative -- so the two correlations must share their sign.
+    assert rho_tau_up < 0 and rho_gap_up < 0, (rho_tau_up, rho_gap_up)
+    assert rho_tau_dn > 0 and rho_gap_dn > 0, (rho_tau_dn, rho_gap_dn)
+
+    # The mechanism is one mechanism; only the threshold ordering differs.
+    assert rho_gap_up < 0 < rho_gap_dn
+
+
+# -- the pre-registration record itself ------------------------------------------------
+
+
+def test_amendments_stay_in_chronological_order():
+    """They print as a provenance line, so an out-of-order entry is a visible defect."""
+    dates = [d for d, _ in prereg.AMENDMENTS]
+    assert dates == sorted(dates)
+
+
+def test_the_face_bank_prediction_is_recorded_before_the_number_exists():
+    assert len(prereg.GAP_FACE_BANK_PREDICTION) >= 3
+    assert any("falsified" in line for line in prereg.GAP_FACE_BANK_PREDICTION)
+
+
+# --------------------------------------------------------------------------- #
+# D91: the direction is read off the thresholds, and the arms' tables are tied
+# --------------------------------------------------------------------------- #
+
+
+def test_the_direction_rule_reads_ct_and_face_orderings_oppositely():
+    """One rule, two banks, two answers -- which is why a constant could not work."""
+    ct = G.direction_from_thresholds(_threshold_bank(), bank="synthetic_ct")
+    face = G.direction_from_thresholds(_threshold_bank(reverse=True),
+                                       bank="synthetic_face")
+    assert ct.direction == "decreasing"
+    assert face.direction == "increasing"
+    assert ct.rho > 0 > face.rho
+
+
+def test_the_direction_rule_agrees_with_the_sign_the_gaps_actually_have():
+    for reverse in (False, True):
+        pairs = _threshold_bank(reverse=reverse)
+        call = G.direction_from_thresholds(pairs)
+        moving = pairs[pairs["calibration"] != pairs["deployment"]]
+        rho_gap = G.rank_correlation(moving["signed_distance"], moving["gap"])
+        truth = "decreasing" if rho_gap < 0 else "increasing"
+        assert call.direction == truth, (reverse, call.rho, rho_gap)
+
+
+def test_the_direction_rule_never_touches_a_coverage_or_a_gap():
+    """Scramble both outcome columns; the call must not move."""
+    pairs = _threshold_bank()
+    before = G.direction_from_thresholds(pairs)
+    wrecked = pairs.copy()
+    wrecked["coverage"] = 0.5
+    wrecked["gap"] = -wrecked["gap"]
+    after = G.direction_from_thresholds(wrecked)
+    assert (after.direction, after.rho) == (before.direction, before.rho)
+
+
+def test_the_rule_is_not_reportable_on_a_bank_whose_gaps_were_already_seen():
+    pairs = _threshold_bank()
+    barred = prereg.GAP_DIRECTION_BANKS_BARRED[0]
+    seen = G.direction_from_thresholds(pairs, tau_noise=1e-6, bank=barred)
+    fresh = G.direction_from_thresholds(pairs, tau_noise=1e-6, bank="face_prior")
+    assert seen.determinate is True and seen.reportable is False
+    assert fresh.determinate is True and fresh.reportable is True
+
+
+def test_an_undetermined_tau_ordering_is_not_reportable_on_any_bank():
+    pairs = _threshold_bank()
+    span = pairs["threshold"].max() - pairs["threshold"].min()
+    loud = G.direction_from_thresholds(pairs, tau_noise=float(span), bank="face_prior")
+    assert loud.determinate is False
+    assert loud.reportable is False
+    assert loud.tau_range / span < prereg.GAP_DIRECTION_DETERMINACY_MIN_RATIO
+
+
+def test_the_determinacy_verdict_is_withheld_until_the_noise_is_measured():
+    call = G.direction_from_thresholds(_threshold_bank(), bank="face_prior")
+    assert call.tau_noise is None
+    assert call.determinate is None
+    assert call.reportable is False
+
+
+def _two_arms(warp: float, tau_shift: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Two label definitions over one operator grid, as registry/across-split are."""
+    rng = np.random.default_rng(5)
+    order = list(META)
+    index = {op: float(i) for i, op in enumerate(order)}
+    scales = np.linspace(1.0, 3.0, len(order))
+    base = {op: rng.gamma(2.0, s, size=4000) for op, s in zip(order, scales)}
+    out = []
+    for mult, shift in ((1.0, 0.0), (warp, tau_shift)):
+        scores = {op: base[op] * mult for op in order}
+        tau = {op: float(np.quantile(base[op], prereg.ALPHA)) * (1.0 + shift)
+               for op in order}
+        rows = []
+        for a in order:
+            for b in order:
+                rows.append({
+                    "calibration": a,
+                    "deployment": b,
+                    "signed_distance": index[b] - index[a],
+                    "threshold": tau[a],
+                    "coverage": float((scores[b] >= tau[a]).mean()),
+                })
+        frame = pd.DataFrame(rows)
+        frame["gap"] = G.gap_column(frame)
+        out.append(frame)
+    return out[0], out[1]
+
+
+def test_the_gap_difference_table_is_the_level_difference_table_minus_its_diagonal():
+    a, b = _two_arms(warp=1.3, tau_shift=0.02)
+    moving_a = a[a["calibration"] != a["deployment"]]
+    moving_b = b[b["calibration"] != b["deployment"]]
+    diag_a = a[a["calibration"] == a["deployment"]]
+    diag_b = b[b["calibration"] == b["deployment"]]
+    got = G.arm_difference_identity(moving_a, moving_b, diag_a, diag_b)
+    assert got["residual"] < 1e-12, got["residual"]
+
+
+def _identity(warp: float, tau_shift: float) -> dict[str, float]:
+    a, b = _two_arms(warp=warp, tau_shift=tau_shift)
+    return G.arm_difference_identity(
+        a[a["calibration"] != a["deployment"]],
+        b[b["calibration"] != b["deployment"]],
+        a[a["calibration"] == a["deployment"]],
+        b[b["calibration"] == b["deployment"]],
+    )
+
+
+def test_the_correlation_bound_holds_without_an_equal_variance_assumption():
+    """The bound must sit below the measured correlation on this fixture.
+
+    It is not a tight bound here *because* the fixture's two displacements have wildly
+    unequal spreads -- which is the whole reason the bound is used instead of inverting
+    the ratio directly.
+    """
+    got = _identity(warp=1.3, tau_shift=0.02)
+    assert got["common_mode_correlation_lower_bound"] <= got["common_mode_correlation"]
+
+
+def test_inverting_the_ratio_directly_would_overstate_the_correlation():
+    got = _identity(warp=1.3, tau_shift=0.02)
+    naive = 1.0 - got["sd_difference_ratio"] ** 2 / 2.0   # the equal-variance shortcut
+    assert naive > got["common_mode_correlation"] + 0.1, (naive, got)
+
+
+def test_the_bound_is_what_the_algebra_says_and_is_never_breached():
+    for s_ratio in (0.0, 0.2, 0.5, 0.75, 0.95, 1.0):
+        bound = np.sqrt(max(1.0 - min(s_ratio, 1.0) ** 2, 0.0))
+        # every (spread ratio, correlation) pair reaching this sd ratio has r >= bound
+        for s in np.linspace(0.01, 4.0, 60):
+            r = (s * s + 1.0 - s_ratio * s_ratio) / (2.0 * s)
+            if -1.0 <= r <= 1.0:
+                assert r >= bound - 1e-9, (s_ratio, s, r, bound)
+
+
+def test_at_zero_common_mode_the_gap_difference_is_no_smaller_than_the_level():
+    """The statistic D86 needs can fail; this is the value at which it does."""
+    got = _identity(warp=1.3, tau_shift=0.02)
+    assert got["ratio_at_zero_common_mode"] == 1.0
+    assert -1.0 <= got["common_mode_correlation"] <= 1.0
+
+
+def test_gap_sign_agreement_between_arms_survives_total_non_cancellation():
+    """Why the 72-of-72 count is barred from D86's support set.
+
+    The two arms here share a threshold vector exactly and differ only in the score
+    scale, so every gap difference is large and nothing cancels -- yet the sign agrees
+    everywhere, because by D89 both signs are ``sign(tau_a - tau_b)``.
+    """
+    a, b = _two_arms(warp=4.0, tau_shift=0.0)
+    moving_a = a[a["calibration"] != a["deployment"]].reset_index(drop=True)
+    moving_b = b[b["calibration"] != b["deployment"]].reset_index(drop=True)
+    agree = int(np.sum(np.sign(moving_a["gap"]) == np.sign(moving_b["gap"])))
+    assert agree == len(moving_a)
+    got = G.arm_difference_identity(moving_a, moving_b)
+    assert got["mean_abs_gap_difference"] > 0.05, got
+
+
+def test_gap_sign_agreement_breaks_under_perfect_cancellation_if_tau_transposes():
+    """The other half: the count falls when nothing at all fails to cancel."""
+    pairs = _threshold_bank()
+    moving = pairs[pairs["calibration"] != pairs["deployment"]].reset_index(drop=True)
+    order = list(META)
+    tau = {op: float(pairs[pairs["calibration"] == op]["threshold"].iloc[0])
+           for op in order}
+    swapped = dict(tau)
+    swapped[order[3]], swapped[order[4]] = tau[order[4]], tau[order[3]]
+    sign_a = np.sign(moving["calibration"].map(tau).to_numpy()
+                     - moving["deployment"].map(tau).to_numpy())
+    sign_b = np.sign(moving["calibration"].map(swapped).to_numpy()
+                     - moving["deployment"].map(swapped).to_numpy())
+    assert int(np.sum(sign_a == sign_b)) < len(moving)
+
+
+def test_the_arm_sign_agreement_bar_names_its_replacement():
+    text = " ".join(prereg.GAP_ARM_SIGN_AGREEMENT_BARRED)
+    assert "D86" in text
+    assert "level_difference" in text
+
+
+def test_amendment_seven_admits_that_it_widens_what_may_be_claimed():
+    widening = [a for a in prereg.AMENDMENTS if "WIDENS" in a[1]]
+    assert len(widening) == 1
+    assert "GAP_DIRECTION_BANKS_BARRED" in widening[0][1]

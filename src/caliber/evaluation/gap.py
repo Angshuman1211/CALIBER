@@ -98,10 +98,17 @@ class IsotonicFit:
     Prediction is linear between knots and clamped outside them. Clamping is what makes
     :attr:`GapPrediction.extrapolated` worth reporting -- outside the training range every
     monotone predictor returns the same number, which is a constant predictor in disguise.
+
+    ``direction`` is ``increasing`` for the frozen form. A ``decreasing`` fit is available
+    only so that a reversed relation is *visible*: a non-decreasing fit to a decreasing
+    truth collapses to very nearly the training mean, so the frozen form reports a real
+    reversal as "no information", which is the wrong answer for the wrong reason. Showing
+    both separates "the distance says nothing" from "the distance says the opposite".
     """
 
     x: np.ndarray
     y: np.ndarray
+    direction: str = "increasing"
 
     @property
     def lo(self) -> float:
@@ -121,24 +128,38 @@ class IsotonicFit:
         return np.where(np.isfinite(q), out, float("nan"))
 
 
-def isotonic(x: Sequence[float], y: Sequence[float]) -> IsotonicFit:
+def isotonic(
+    x: Sequence[float], y: Sequence[float], direction: str | None = None
+) -> IsotonicFit:
     """Fit the frozen form. Ties in ``x`` are averaged into one knot, then weighted.
 
     Averaging ties rather than ordering them arbitrarily matters here: the null-space
     baseline ties four of the nine operators, so its ``x`` has heavy ties by construction
     and an arbitrary tie-break would let the fit read structure out of input order.
+
+    ``direction`` defaults to :data:`prereg.GAP_PREDICTION_DIRECTION`. The decreasing fit
+    is the same algorithm on a negated response, which is exactly the L2-optimal
+    non-increasing fit -- not a second method with its own tuning.
     """
+    direction = prereg.GAP_PREDICTION_DIRECTION if direction is None else direction
+    if direction not in prereg.GAP_PREDICTION_DIRECTIONS:
+        raise ValueError(
+            f"{direction!r} is not a frozen direction; "
+            f"have {list(prereg.GAP_PREDICTION_DIRECTIONS)}"
+        )
+    sign = 1.0 if direction == "increasing" else -1.0
     xs = np.asarray(x, dtype=float)
     ys = np.asarray(y, dtype=float)
     keep = np.isfinite(xs) & np.isfinite(ys)
     xs, ys = xs[keep], ys[keep]
     if xs.size == 0:
-        return IsotonicFit(np.empty(0), np.empty(0))
+        return IsotonicFit(np.empty(0), np.empty(0), direction)
     order = np.argsort(xs, kind="stable")
     xs, ys = xs[order], ys[order]
     uniq, inverse, counts = np.unique(xs, return_inverse=True, return_counts=True)
     means = np.bincount(inverse, weights=ys) / counts
-    return IsotonicFit(uniq, _pava(means, counts.astype(float)))
+    fitted = sign * _pava(sign * means, counts.astype(float))
+    return IsotonicFit(uniq, fitted, direction)
 
 
 # -- the operator grid and the predictors built on it ---------------------------------
@@ -338,7 +359,11 @@ def folds(
 
 
 def _fit_predict(
-    x_train: np.ndarray, y_train: np.ndarray, x_test: np.ndarray, predictor: str
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    predictor: str,
+    direction: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Held-out predictions and an "outside the training range" flag.
 
@@ -350,7 +375,7 @@ def _fit_predict(
         ok = np.isfinite(y_train)
         value = float(y_train[ok].mean()) if ok.any() else float("nan")
         return np.full(x_test.shape, value), np.zeros(x_test.shape, dtype=bool)
-    fit = isotonic(x_train, y_train)
+    fit = isotonic(x_train, y_train, direction)
     pred = fit.predict(x_test)
     outside = np.isfinite(x_test) & ((x_test < fit.lo) | (x_test > fit.hi))
     return pred, outside
@@ -364,6 +389,7 @@ def held_out(
     predictor: str,
     meta: Mapping[str, Mapping],
     keys: Sequence[str] = ("calibration", "deployment"),
+    direction: str | None = None,
 ) -> pd.DataFrame:
     """One row per (fold, tested pair): prediction, truth, and the diagnostics.
 
@@ -376,7 +402,9 @@ def held_out(
     ys = np.asarray(gap, dtype=float)
     rows = []
     for name, train, test in folds(pairs, protocol, meta, keys):
-        pred, outside = _fit_predict(xs[train], ys[train], xs[test], predictor)
+        pred, outside = _fit_predict(
+            xs[train], ys[train], xs[test], predictor, direction
+        )
         idx = np.flatnonzero(test)
         rows.append(pd.DataFrame({
             "fold": name,
@@ -387,11 +415,14 @@ def held_out(
             "prediction": pred,
             "extrapolated": outside,
             "n_train": int(np.isfinite(xs[train] + ys[train]).sum()),
+            "direction": (
+                prereg.GAP_PREDICTION_DIRECTION if direction is None else direction
+            ),
         }))
     if not rows:
         return pd.DataFrame(
             columns=["fold", "calibration", "deployment", "x", "gap", "prediction",
-                     "extrapolated", "n_train"]
+                     "extrapolated", "n_train", "direction"]
         )
     return pd.concat(rows, ignore_index=True)
 
@@ -441,6 +472,12 @@ class GapPrediction:
     extrapolated: float
     gap_sd: float
     defined: bool
+    direction: str = prereg.GAP_PREDICTION_DIRECTION
+
+    @property
+    def pre_registered(self) -> bool:
+        """Only the frozen direction may reach a verdict. See D89."""
+        return self.direction == prereg.GAP_PREDICTION_DIRECTION
 
     @property
     def skill(self) -> float:
@@ -459,6 +496,8 @@ class GapPrediction:
             "mae_over_gap_sd": self.skill,
             "extrapolated": self.extrapolated,
             "defined": self.defined,
+            "direction": self.direction,
+            "pre_registered": self.pre_registered,
         }
 
 
@@ -511,7 +550,12 @@ class BaselineComparison:
 
 
 def summarise(
-    scored: pd.DataFrame, protocol: str, predictor: str, scope: str, gap_sd: float
+    scored: pd.DataFrame,
+    protocol: str,
+    predictor: str,
+    scope: str,
+    gap_sd: float,
+    direction: str | None = None,
 ) -> GapPrediction:
     """Collapse one predictor's held-out rows into its reported accuracy."""
     usable = scored[np.isfinite(scored["prediction"]) & np.isfinite(scored["gap"])]
@@ -530,6 +574,9 @@ def summarise(
         ),
         gap_sd=float(gap_sd),
         defined=bool(len(usable) > 0),
+        direction=(
+            prereg.GAP_PREDICTION_DIRECTION if direction is None else direction
+        ),
     )
 
 
@@ -622,6 +669,288 @@ def predictor_column(
     )
 
 
+def rank_correlation(x: Sequence[float], y: Sequence[float]) -> float:
+    """Spearman's rho, written out because scipy is not usable in this project.
+
+    Ties get their average rank, which is what makes this comparable to the isotonic fit:
+    both treat a tie in ``x`` as one position rather than inventing an order for it.
+    """
+    xs = np.asarray(x, dtype=float)
+    ys = np.asarray(y, dtype=float)
+    keep = np.isfinite(xs) & np.isfinite(ys)
+    xs, ys = xs[keep], ys[keep]
+    if xs.size < 3:
+        return float("nan")
+
+    def ranks(v: np.ndarray) -> np.ndarray:
+        order = np.argsort(v, kind="stable")
+        out = np.empty(v.size, dtype=float)
+        sorted_v = v[order]
+        i = 0
+        while i < v.size:
+            j = i
+            while j + 1 < v.size and sorted_v[j + 1] == sorted_v[i]:
+                j += 1
+            out[order[i:j + 1]] = 0.5 * (i + j) + 1.0
+            i = j + 1
+        return out
+
+    rx, ry = ranks(xs), ranks(ys)
+    sx, sy = rx.std(), ry.std()
+    if sx == 0 or sy == 0:
+        return float("nan")
+    return float(((rx - rx.mean()) * (ry - ry.mean())).mean() / (sx * sy))
+
+
+def gap_sign_from_thresholds(
+    pairs: pd.DataFrame,
+    threshold_col: str = "threshold",
+    gap_col: str = "gap",
+    definition: str | None = None,
+    keys: Sequence[str] = ("calibration", "deployment"),
+) -> pd.DataFrame:
+    """**A check on the bank, never a predictor.** See :data:`prereg.GAP_BARRED_PREDICTORS`.
+
+    Coverage of the positives at ``b`` is the fraction whose score clears the threshold it
+    was given, so with ``F_b`` the CDF of those scores::
+
+        coverage(a->b) = 1 - F_b(tau_a)      coverage(b->b) = 1 - F_b(tau_b)
+        gap            = F_b(tau_a) - F_b(tau_b)
+
+    ``F_b`` is non-decreasing, so ``sign(gap) == sign(tau_a - tau_b)`` **exactly, at every
+    ordered pair, as a theorem**. That is why ``tau_a - tau_b`` is barred from the baseline
+    set: it would beat the distance and every baseline, and the win would be arithmetic.
+
+    What the identity is good for is the other direction. Agreement below 100% cannot
+    happen if the recorded thresholds and coverages came from the same scores, so a
+    disagreeing pair means the bank contradicts the definition of coverage -- a defect that
+    no coverage result survives, found for the price of one groupby. A check that can only
+    find faults cannot flatter the hypothesis.
+
+    This holds for ``matched_minus_transfer`` only; against a fixed nominal there is no
+    ``tau_b`` in the expression and the identity says nothing.
+    """
+    definition = prereg.GAP_DEFINITION if definition is None else definition
+    if definition != "matched_minus_transfer":
+        raise ValueError(
+            "the threshold identity is only defined for matched_minus_transfer; "
+            f"got {definition!r}"
+        )
+    cal, dep = keys
+    for col in (threshold_col, gap_col, cal, dep):
+        if col not in pairs.columns:
+            raise KeyError(f"no {col!r} column; need it for the threshold identity")
+
+    tau: dict[str, float] = {}
+    for op, part in pairs.groupby(pairs[cal].astype(str), sort=True):
+        values = part[threshold_col].to_numpy(dtype=float)
+        values = values[np.isfinite(values)]
+        if values.size == 0:
+            continue
+        spread = float(values.max() - values.min())
+        scale = max(abs(float(values.mean())), 1e-12)
+        if spread / scale > 1e-9:
+            raise ValueError(
+                f"operator {op!r} carries {values.size} differing thresholds "
+                f"(spread {spread:.3g}); tau_a must be one number per calibration "
+                "operator or the identity has no left-hand side"
+            )
+        tau[str(op)] = float(values[0])
+
+    tau_a = pairs[cal].astype(str).map(tau).to_numpy(dtype=float)
+    tau_b = pairs[dep].astype(str).map(tau).to_numpy(dtype=float)
+    gaps = pairs[gap_col].to_numpy(dtype=float)
+    diff = tau_a - tau_b
+    checkable = np.isfinite(diff) & np.isfinite(gaps)
+    # A zero on either side is consistent with any sign on the other: F_b can be flat.
+    decidable = checkable & (diff != 0.0) & (gaps != 0.0)
+    agrees = np.where(decidable, np.sign(diff) == np.sign(gaps), False)
+    return pd.DataFrame({
+        cal: pairs[cal].astype(str).to_numpy(),
+        dep: pairs[dep].astype(str).to_numpy(),
+        "tau_calibration": tau_a,
+        "tau_deployment": tau_b,
+        "tau_difference": diff,
+        "gap": gaps,
+        "decidable": decidable,
+        "agrees": agrees,
+    })
+
+
+@dataclass(frozen=True)
+class DirectionCall:
+    """What the threshold ordering says the direction of the fit must be.
+
+    :attr:`determinate` is ``None`` until a measured per-operator threshold spread is
+    supplied. It is not defaulted, because the alternative to measuring it is assuming the
+    tau range is real -- and T2-A4 exists precisely because a conformal threshold is a
+    single order statistic whose spread can be entirely sampling noise.
+    """
+
+    direction: str
+    rho: float
+    tau_range: float
+    tau_noise: float | None = None
+    determinate: bool | None = None
+    source: str = prereg.GAP_DIRECTION_SOURCE
+    bank: str | None = None
+
+    @property
+    def reportable(self) -> bool:
+        """False on any bank whose per-pair gaps were already seen (amendment seven)."""
+        if self.determinate is not True:
+            return False
+        return str(self.bank) not in set(prereg.GAP_DIRECTION_BANKS_BARRED)
+
+
+def direction_from_thresholds(
+    pairs: pd.DataFrame,
+    threshold_col: str = "threshold",
+    distance_col: str = "signed_distance",
+    keys: Sequence[str] = ("calibration", "deployment"),
+    tau_noise: float | None = None,
+    bank: str | None = None,
+) -> DirectionCall:
+    """Read the direction of the gap-distance relation off the thresholds (D91).
+
+    Takes the recorded thresholds and the signed distance and **nothing else**: no
+    coverage, no gap, no fitted value. By D89 ``sign(gap) == sign(tau_a - tau_b)``, so a
+    distance that orders the thresholds one way must order the gaps the other, and which
+    way is a property of the bank. See :data:`prereg.GAP_DIRECTION_RULE`.
+
+    This is deliberately *not* a predictor: it yields one bit, the same bit for all 72
+    pairs of a bank, where :data:`prereg.GAP_BARRED_PREDICTORS` forbids the 72 per-pair
+    values. The bit is still a bit, which is why :attr:`DirectionCall.reportable` is False
+    on every bank in :data:`prereg.GAP_DIRECTION_BANKS_BARRED`.
+    """
+    cal, dep = keys
+    for col in (threshold_col, distance_col, cal, dep):
+        if col not in pairs.columns:
+            raise KeyError(f"no {col!r} column; need it to read the direction")
+    tau: dict[str, float] = {}
+    for op, part in pairs.groupby(pairs[cal].astype(str), sort=True):
+        values = part[threshold_col].to_numpy(dtype=float)
+        values = values[np.isfinite(values)]
+        if values.size:
+            tau[str(op)] = float(values[0])
+    if len(tau) < 3:
+        raise ValueError(
+            f"only {len(tau)} calibration operators carry a threshold; the ordering "
+            "is not readable from fewer than three"
+        )
+
+    tau_a = pairs[cal].astype(str).map(tau).to_numpy(dtype=float)
+    tau_b = pairs[dep].astype(str).map(tau).to_numpy(dtype=float)
+    dist = pairs[distance_col].to_numpy(dtype=float)
+    rho = rank_correlation(dist, tau_b - tau_a)
+    # tau rises with the distance  =>  tau_b > tau_a at positive distance  =>  gap falls.
+    direction = "decreasing" if rho > 0 else "increasing"
+
+    values = np.array(sorted(tau.values()), dtype=float)
+    tau_range = float(values[-1] - values[0])
+    determinate: bool | None = None
+    if tau_noise is not None and np.isfinite(tau_noise):
+        if tau_noise <= 0:
+            determinate = True
+        else:
+            ratio = tau_range / float(tau_noise)
+            determinate = bool(ratio >= prereg.GAP_DIRECTION_DETERMINACY_MIN_RATIO)
+    if not np.isfinite(rho):
+        determinate = False
+    return DirectionCall(
+        direction=direction,
+        rho=float(rho),
+        tau_range=tau_range,
+        tau_noise=None if tau_noise is None else float(tau_noise),
+        determinate=determinate,
+        bank=bank,
+    )
+
+
+def arm_difference_identity(
+    arm_a: pd.DataFrame,
+    arm_b: pd.DataFrame,
+    matched_a: pd.DataFrame | None = None,
+    matched_b: pd.DataFrame | None = None,
+    coverage_col: str = "coverage",
+    gap_col: str = "gap",
+    keys: Sequence[str] = ("calibration", "deployment"),
+) -> dict[str, float]:
+    """**The two label arms' difference tables are not independent.** (D91)
+
+    With ``level(a,b) = coverage(a->b)`` and ``gap(a,b) = level(b,b) - level(a,b)``, the
+    difference between two label arms obeys, as algebra and not as an approximation::
+
+        gap_diff(a,b) == level_diff(b,b) - level_diff(a,b)
+
+    So the gap-difference table is the level-difference table minus its own diagonal, and
+    the honest reading of "the gap agrees better than the level" is **the displacement at
+    the matched cell is strongly correlated with the displacement at the transfer cell**.
+    ``common_mode_correlation`` is that correlation, which is what D86's argument rests
+    on. At zero correlation the gap difference is *no smaller* than the level difference,
+    so this statistic can fail, and loudly.
+
+    ``common_mode_correlation_lower_bound`` is the useful number, because it needs no
+    assumption about the two displacements' relative spread: writing ``s`` for that ratio,
+    ``sd(gap)/sd(level) = sqrt(s*s - 2*r*s + 1)``, which over all ``s`` bottoms out at
+    ``sqrt(1 - r*r)``. An observed ratio of 0.36 therefore forces ``r >= 0.93`` however the
+    spreads fall out. Inferring ``r`` from the ratio directly would instead assume equal
+    spreads, and that assumption is false by a factor of 17 on this module's own fixture.
+
+    ``residual`` is the identity's own violation and must be at machine precision. Anything
+    larger means the two arms' tables disagree about their own diagonal.
+    """
+    cal, dep = keys
+    left = arm_a.set_index([arm_a[cal].astype(str), arm_a[dep].astype(str)])
+    right = arm_b.set_index([arm_b[cal].astype(str), arm_b[dep].astype(str)])
+    shared = [k for k in left.index if k in set(right.index)]
+    if len(shared) < 3:
+        raise ValueError(
+            f"the two arms share only {len(shared)} pairs; nothing to check"
+        )
+    lvl = np.array([float(left.loc[k, coverage_col]) for k in shared])
+    lvl -= np.array([float(right.loc[k, coverage_col]) for k in shared])
+    gap = np.array([float(left.loc[k, gap_col]) for k in shared])
+    gap -= np.array([float(right.loc[k, gap_col]) for k in shared])
+
+    out: dict[str, float] = {
+        "n_pairs": float(len(shared)),
+        "mean_abs_level_difference": float(np.abs(lvl).mean()),
+        "mean_abs_gap_difference": float(np.abs(gap).mean()),
+        "median_level_difference": float(np.median(lvl)),
+        "median_gap_difference": float(np.median(gap)),
+    }
+    ratio = out["mean_abs_gap_difference"] / max(out["mean_abs_level_difference"], 1e-15)
+    out["abs_difference_ratio"] = float(ratio)
+    out["ratio_at_zero_common_mode"] = 1.0
+    out["sd_level_difference"] = float(np.std(lvl))
+    out["sd_gap_difference"] = float(np.std(gap))
+    sd_ratio = out["sd_gap_difference"] / max(out["sd_level_difference"], 1e-15)
+    out["sd_difference_ratio"] = float(sd_ratio)
+    # With s = sd(matched)/sd(level) and r the correlation between the two
+    # displacements, sd(gap)/sd(level) = sqrt(s^2 - 2 r s + 1), which is minimised at
+    # s = r and takes the value sqrt(1 - r^2) there. So the observed ratio bounds r
+    # from below WHATEVER the ratio of spreads turns out to be -- no equal-variance
+    # assumption, which is the step that would otherwise be smuggled in here.
+    out["common_mode_correlation_lower_bound"] = (
+        float(np.sqrt(max(1.0 - min(sd_ratio, 1.0) ** 2, 0.0)))
+    )
+    out["spreads_ratio_at_which_the_bound_is_tight"] = (
+        out["common_mode_correlation_lower_bound"]
+    )
+
+    if matched_a is not None and matched_b is not None:
+        ma = matched_a.set_index(matched_a[dep].astype(str))[coverage_col]
+        mb = matched_b.set_index(matched_b[dep].astype(str))[coverage_col]
+        diag = np.array([float(ma.loc[k[1]]) - float(mb.loc[k[1]]) for k in shared])
+        out["residual"] = float(np.abs(gap - (diag - lvl)).max())
+        sd_l, sd_d = float(np.std(lvl)), float(np.std(diag))
+        if sd_l > 0 and sd_d > 0:
+            centred = (lvl - lvl.mean()) * (diag - diag.mean())
+            out["common_mode_correlation"] = float(centred.mean() / (sd_l * sd_d))
+    return out
+
+
 def gap_prediction(
     pairs: pd.DataFrame,
     meta: Mapping[str, Mapping],
@@ -636,7 +965,12 @@ def gap_prediction(
 ) -> dict[str, pd.DataFrame]:
     """T1-B end to end: accuracy, baseline comparisons, and the reporting verdict.
 
-    Returns ``accuracy``, ``comparisons`` and ``verdict`` frames. Protocols and baselines
+    Returns ``accuracy``, ``accuracy_by_fold``, ``comparisons``, ``verdict`` and
+    ``reversal`` frames. ``reversal`` is the one to read first on the CT bank: the frozen
+    direction is increasing, the measured relation within every family cell is decreasing,
+    and a non-decreasing fit to a decreasing truth returns the training mean -- so without
+    that frame the output would say "no information" where the truth is "the opposite
+    information". It is a diagnostic and never reaches ``verdict``. Protocols and baselines
     default to the frozen tuples, and within-family and cross-family pairs are always both
     reported (:data:`prereg.GAP_PREDICTION_REPORT_BY_FAMILY_SCOPE`) because pooling them
     would let 36 pairs with a strong baseline average against 36 where it does not exist.
@@ -656,7 +990,7 @@ def gap_prediction(
         name: predictor_column(pairs, name, meta, distance_col, keys)
         for name in ("signed_distance", *bases)
     }
-    acc, comps, per_fold = [], [], []
+    acc, comps, per_fold, reversal = [], [], [], []
     for protocol in protos:
         scored = {
             name: held_out(pairs, x, gaps, protocol, name, meta, keys)
@@ -692,10 +1026,54 @@ def gap_prediction(
                         n_boot=n_boot, level=level, seed=seed,
                     ).as_row()
                 )
+            # The reversal diagnostic. Held out the same way, scored the same way, and
+            # kept out of the verdict: a direction chosen after seeing the direction is
+            # one free bit, and one free bit on nine operators is not a result (D89).
+            other = next(
+                d for d in prereg.GAP_PREDICTION_DIRECTIONS
+                if d != prereg.GAP_PREDICTION_DIRECTION
+            )
+            flipped = held_out(
+                pairs, columns["signed_distance"], gaps, protocol,
+                "signed_distance", meta, keys, direction=other,
+            )
+            fmask = [
+                (str(a), str(b)) in keep
+                for a, b in zip(flipped["calibration"], flipped["deployment"])
+            ]
+            flipped = flipped[np.asarray(fmask, dtype=bool)]
+            frozen_fit = summarise(
+                sliced["signed_distance"], protocol, "signed_distance", which, sd
+            )
+            other_fit = summarise(
+                flipped, protocol, "signed_distance", which, sd, direction=other
+            )
+            acc.append(other_fit.as_row())
+            in_scope = (scope == which).to_numpy()
+            reversal.append({
+                "protocol": protocol,
+                "scope": which,
+                "rho_distance_gap": rank_correlation(
+                    columns["signed_distance"][in_scope], gaps[in_scope]
+                ),
+                "mae_frozen_direction": frozen_fit.mae,
+                "mae_opposite_direction": other_fit.mae,
+                "gap_sd": sd,
+                "opposite_fits_better": bool(
+                    np.isfinite(other_fit.mae)
+                    and np.isfinite(frozen_fit.mae)
+                    and other_fit.mae < frozen_fit.mae
+                ),
+                "frozen_direction_is_informative": bool(
+                    np.isfinite(frozen_fit.mae) and sd > 0 and frozen_fit.mae < sd
+                ),
+            })
     accuracy = pd.DataFrame(acc)
     comparisons = pd.DataFrame(comps)
     rows = []
     for (protocol, which), part in comparisons.groupby(["protocol", "scope"], sort=True):
+        # comparisons are built from the frozen-direction fit only; the opposite-direction
+        # rows live in "accuracy" (flagged pre_registered=False) and "reversal".
         live = part[part["verdict"] != "undefined_here"]
         unbeaten = sorted(live.loc[~live["beaten"], "baseline"])
         rows.append({
@@ -715,4 +1093,5 @@ def gap_prediction(
         "accuracy_by_fold": by_fold,
         "comparisons": comparisons,
         "verdict": pd.DataFrame(rows),
+        "reversal": pd.DataFrame(reversal),
     }
