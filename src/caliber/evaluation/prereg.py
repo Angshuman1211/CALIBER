@@ -1,11 +1,15 @@
 """The Phase 4 pre-registration, as constants rather than prose (T1-A..E, D-070 Sec. 2).
 
-Five of this project's eight statistics traps were Track 1's own, and every one of them
-was a choice made *after* seeing a number: a bandwidth picked once the gaps were known, a
+Eight of this project's eleven statistics traps were Track 1's own, and all but the last
+were a choice made *after* seeing a number: a bandwidth picked once the gaps were known, a
 label orientation settled once the AUC had a sign, a pooled statistic reported because the
-per-cell ones disagreed. The work plan's Sec. 2 asks for those choices to be frozen before
-the CT bank finishes. A table in a Markdown file is not a freeze -- nothing stops it being
-edited in the same commit as the result it governs.
+per-cell ones disagreed. The eleventh (D93) is the exception that this module cannot
+prevent on its own -- a statistic frozen here, correct, and still blind to the error beside
+it -- which is why DIMENSIONLESS_PASS_WARNING asks for a dimensioned check as well.
+
+The work plan's Sec. 2 asks for those choices to be frozen before the CT bank finishes.
+A table in a Markdown file is not a freeze -- nothing stops it being edited in the same
+commit as the result it governs.
 
 So the choices live here, as module constants with no setters, and the analyses import them
 instead of accepting them as arguments. Changing one is a diff against a file whose git
@@ -86,8 +90,8 @@ AMENDMENTS = (
         "GAP_DIRECTION_SOURCE added: the direction of the fit stops being a frozen "
         "constant and becomes a function of the CALIBRATION THRESHOLDS, which every "
         "bank's ordered_pairs.csv already records and which take no coverage value as "
-        "input. THIS AMENDMENT WIDENS WHAT MAY BE CLAIMED -- the first of the seven "
-        "that does -- so it carries its own fence. GAP_DIRECTION_BANKS_BARRED names "
+        "input. THIS AMENDMENT WIDENS WHAT MAY BE CLAIMED -- the only entry in this "
+        "tuple that does, which is why it carries its own fence. GAP_DIRECTION_BANKS_BARRED names "
         "every bank whose per-pair gaps have already been seen; on those the rule may "
         "be shown and may not be reported, and the CT bank is named there. The motive "
         "is not the CT refutation but what D89's identity implies: the direction is a "
@@ -115,6 +119,68 @@ AMENDMENTS = (
         "positive-score distributions, with no free parameter. Track 2's 13-split table "
         "can falsify it. This narrows what may be claimed: without the entry the ratio "
         "could be fitted after the fact and reported as agreement.",
+    ),
+    (
+        "2026-11-22",
+        "GAP_DIRECTION_DETERMINACY_SCOPE and GAP_DIRECTION_POOLED_RHO_BARRED added. "
+        "Track 2 found the defect: on the CT bank the rule's pooled rho is +0.05 while "
+        "every family cell is +0.55 to +1.00, and the determinacy test passed anyway "
+        "because it checked tau's RANGE against tau's noise and never asked whether the "
+        "correlation it reads was resolved. Pooling two families whose tau levels are "
+        "offset washes out a unanimous within-cell signal; on a fixture reproducing the "
+        "bank's pattern the pooled sign flipped in 52% of bootstrap resamples while "
+        "within-cell unanimity broke in 0.1%. The rule now reads within-family cells and "
+        "requires their signs to agree. THIS AMENDMENT NARROWS WHAT MAY BE CLAIMED: it "
+        "adds a condition the rule must pass, and both banks pass it.",
+    ),
+    (
+        "2026-11-22",
+        "BETA_REFERENCE_UNIT added and TRANSFER_SPREAD_PREDICTION's equal-count clause "
+        "retracted. Two corrections, both mine. (a) The clause asserted the bank has "
+        "~10,760 positives per operator and that the reference cell is therefore not "
+        "load-bearing; the counts are 3,157 to 21,762 and 10,760 is their MEAN, so the "
+        "choice is load-bearing and Track 2 measured it: the calibration operator's "
+        "matched cell gives rho +0.977 and slope 1.08, the deployment operator's +0.88 "
+        "and 0.66. The original instinct was right and the correction that softened it "
+        "was the error. (b) The n fed to the Beta is the positive count, but CLUSTER_UNIT "
+        "has said 'patient' since D83, D73 recorded that the threshold is an order "
+        "statistic of 'a few dozen' positives, and the comment block above "
+        "ClusteredCoverage already states that 16,400 CT regions behave like roughly 35 "
+        "units and that NEITHER count should be the gate. None of that is new here and it "
+        "is not written up as new. What is new is narrow: TransferBetaReference.interval "
+        "and .contains, added yesterday, shipped without the label every other use of the "
+        "Beta in this codebase carries, and read as a certificate. They now refuse unless "
+        "a unit is passed in and are documented as the rescaled idealisation, not a gate. "
+        "NARROWS: it removes a certificate that should never have been one.",
+    ),
+    (
+        "2026-11-22",
+        "DIMENSIONLESS_PASS_WARNING added, before the follow-up number exists. "
+        "TRANSFER_SPREAD_PREDICTION passed at rho +0.977 while the reference it was "
+        "computed from had an n wrong by a factor of order 100 -- because the predicted "
+        "quantity is a RATIO of two spreads and n divides out of both sides. A "
+        "dimensionless prediction passing is therefore not evidence that the reference it "
+        "was built from is sound, and this is the form of the failure mode the project had "
+        "not yet seen: not a statistic chosen after the fact, but a true statistic that is "
+        "blind to the error beside it.",
+    ),
+    (
+        "2026-11-22",
+        "DIMENSIONLESS_PASS_REGIME and COUNT_FROM_LEVEL_RANGE added; both narrow. "
+        "(a) Amendment 12 said the reference's n divides out of the predicted ratio. "
+        "Measured over seven score-distribution families, that holds to about 3% only "
+        "where |G'| is of order 1 or larger; where |G'| is far below 1 the ratio at 41 "
+        "units and at 21,762 differ by up to 3.3x, because the pushforward is n-free only "
+        "while G is linear across U\'s range and that range is set by n. The remedy "
+        "amendment 12 froze stands; its premise now carries the regime it holds in, which "
+        "is the regime the dangerous cells live in. (b) The dimensioned check that "
+        "amendment 12 demanded has been run, on a number Track 2 had already reported "
+        "without either of us noticing what it measured: tau sat between the 0.03 and 0.18 "
+        "levels of F_a over 13 splits, and 13 draws of Beta(4, 38) have median min 0.034 "
+        "and median max 0.177, while the region count gives [0.097, 0.103]. The check "
+        "passes at the subject count and excludes the region count by a factor of order "
+        "300. COUNT_FROM_LEVEL_RANGE names the method and fixes that it yields a BRACKET; "
+        "it is frozen here before the face bank, where it has not been applied.",
     ),
 )
 
@@ -303,6 +369,32 @@ GAP_DIRECTION_BANKS_BARRED = ("lidc_ct",)
 #: recorded as undetermined and no fit is reported under this source at all.
 GAP_DIRECTION_DETERMINACY_MIN_RATIO = 3.0
 
+#: **The scope the rule's correlation is read at, as of the tenth amendment.** Track 2
+#: found that the ratio above is not sufficient: on the CT bank tau's range clears its
+#: noise by 12.5x, so the determinacy test passed, while the pooled correlation the rule
+#: actually reads was +0.05 -- indistinguishable from zero, and about to hand back a
+#: direction drawn from noise. Every family cell was +0.55 to +1.00.
+#:
+#: The cause is Simpson's: the two families' tau levels are offset, so pooling the 72
+#: pairs mixes a between-family level difference into a within-family trend and the trend
+#: is washed out. On a fixture built to reproduce the bank's pattern the pooled sign
+#: flipped in 52% of bootstrap resamples; within-cell unanimity broke in 0.1%.
+#:
+#: So the rule reads the four within-family cells, not the pool, and the cells must agree.
+GAP_DIRECTION_DETERMINACY_SCOPE = "within_family_cell"
+
+#: **The pooled correlation is barred from setting the direction**, for the reason above.
+#: It may be shown; a rule that reads it is not this rule.
+GAP_DIRECTION_POOLED_RHO_BARRED = (
+    "the pooled rho(d, tau_b - tau_a) over all ordered pairs may not set the direction",
+    "the two families' tau levels are offset, so the pool mixes a between-family level"
+    " difference into a within-family trend and can wash it out entirely",
+    "measured on the CT bank: pooled +0.05 against family cells +0.55 to +1.00",
+    "the direction is determinate only when every family cell's rho has the same sign",
+    "a near-zero pooled rho alongside unanimous cells is not a contradiction and not a"
+    " reason to withhold the direction; it is a reason not to read the pool",
+)
+
 #: **A statistic barred from the support set, with the reason it cannot work.**
 GAP_ARM_SIGN_AGREEMENT_BARRED = (
     "gap-sign agreement between label arms may not be cited as evidence for D86",
@@ -363,13 +455,132 @@ TRANSFER_SPREAD_PREDICTION = (
     " threshold, for every ordered pair",
     "the reference cell is the matched cell of the CALIBRATION operator, because that"
     " is the one sharing the calibration draw",
-    "at equal positive counts the deployment operator's matched cell gives the same"
-    " ratio, so this choice is not load-bearing on a bank with ~10,760 per operator;"
-    " it is the right reference when the counts differ",
+    "RETRACTED 2026-11-22, and the retraction left visible because the clause licensed"
+    " the wrong reference: this entry used to say the choice is not load-bearing on a"
+    " bank with ~10,760 positives per operator. The CT bank's counts are 3,157 to 21,762"
+    " and 10,760 is their MEAN, so the premise was false and the choice IS load-bearing."
+    " Measured by Track 2: the calibration operator's matched cell gives rho +0.977 and"
+    " log-log slope 1.08, the deployment operator's +0.88 and 0.66. Use the calibration"
+    " operator's, for the reason in the line above and not for the retracted one",
     "falsified if the measured ratios do not track the predicted ones across the 72"
     " pairs, once cells with materially different positive counts are dropped",
     "a ratio above 1 means the matched Beta band is too NARROW at that cell, which is"
     " the direction a deployment certificate must not get wrong",
+    "this prediction is a RATIO, so it is blind to the n of the reference it is built"
+    " from -- see DIMENSIONLESS_PASS_WARNING and BETA_REFERENCE_UNIT. It passed at rho"
+    " +0.977 on a reference whose n was wrong by a factor of order 100",
+)
+
+
+# -- the Beta reference's sample size -----------------------------------------
+
+#: **What counts as one independent observation in the Beta law.** Not the region.
+#:
+#: **This is not a new finding and must not be written up as one.** The comment block above
+#: :class:`~caliber.evaluation.reliability.ClusteredCoverage` already records it: *"Regions
+#: are not independent: on T2-A's CT bank, 16,400 calibration regions behave like roughly 35
+#: units, because the unit is the subject."* That module also already measures it per cell --
+#: ``ClusteredCoverage.design_effect``, ``.effective_n``, and an ``.independent_sd`` that
+#: carries **both** variance terms -- and states the project's position outright: handed the
+#: region count the Beta band is +/-0.011 and rejects a correctly calibrated bank, handed the
+#: subject count it is +/-0.10 and accepts almost anything, so **neither is a measurement and
+#: neither should be the gate**. The gate is the cluster bootstrap.
+#:
+#: So this constant does not introduce a unit. It records that one class shipped without the
+#: label every other use of the Beta in this codebase carries, and closes that gap.
+#:
+#: **The effective count is not frozen here**, because a constant would be a number invented
+#: for the convenience of having one when the code already computes it per cell from the
+#: bootstrap. Read it from ``ClusteredCoverage.effective_n``.
+#:
+#: One cheap cross-check is worth recording, because it needs no bootstrap and no resampling
+#: at all: **tau's own motion across splits implies the same order of magnitude.** Track 2
+#: reports tau sitting between the 0.03 and 0.18 levels of ``F_a`` over 13 splits, and
+#: :func:`~caliber.evaluation.reliability.count_from_level_range` brackets that span at
+#: **10 to 70** -- which contains both the cohort size and the module's ~35 from the
+#: bootstrap, and excludes the region count by a factor of order 300.
+#:
+#: **Read it as a bracket and not a count.** D93's first draft put a point estimate of
+#: "near 45" on it and claimed agreement within 30%; the statistic does not resolve 35 from
+#: 50 and :data:`COUNT_FROM_LEVEL_RANGE` now says so (D94). An earlier estimate of 174 came
+#: from comparing the bootstrap width against a ONE-term reference, which is exactly the
+#: error ``independent_sd``'s docstring documents; it is withdrawn.
+BETA_REFERENCE_UNIT = "calibration_subject"
+
+#: **No Beta band is a certificate, at either count.** The project's existing position,
+#: restated here because one class was written as though it were.
+BETA_REGION_COUNT_USE = (
+    "a Beta reference on the region count may be SHOWN as the independent-regions"
+    " idealisation, and must be labelled as one wherever it appears",
+    "rescaling it to the subject count does not make it a certificate either: that band"
+    " accepts almost anything, which is the other way to be wrong",
+    "no Beta band may set a gate; the clustered bootstrap with"
+    " REFIT_THRESHOLD_PER_REPLICATE is the only certificate path",
+    "a rescaled band requires the unit to be passed in and stated, with no default,"
+    " because the value is a property of the bank and assuming one is how regions got in",
+)
+
+#: **The form of the failure mode this project had not yet seen.** Frozen before the
+#: follow-up number exists, because the warning is worth nothing after it does.
+#:
+#: Every previous instance was a statistic that came out well because it had been chosen,
+#: framed or inverted after the fact. This one is different and worse: the statistic is
+#: correct, the prediction was frozen before the number existed, the number came back at
+#: rho +0.977 -- and it was blind to an error of order 100 standing right next to it,
+#: because a ratio of two spreads has the reference's ``n`` in both numerator and
+#: denominator and divides it out.
+#:
+#: A dimensionless quantity agreeing therefore certifies the SHAPE of a law and says
+#: nothing about its SCALE. Any such agreement must be reported with the statement that
+#: it does not validate the reference it was computed from, and with one dimensioned
+#: check beside it.
+DIMENSIONLESS_PASS_WARNING = (
+    "a dimensionless prediction passing does not certify the reference it was built from",
+    "TRANSFER_SPREAD_PREDICTION is a ratio of two spreads, so the reference's n divides"
+    " out and an n wrong by a factor of 100 leaves the predicted ratio unchanged",
+    "report every dimensionless agreement with one dimensioned check beside it",
+    "for this prediction the dimensioned check is the matched cell's own across-split"
+    " spread against its Beta sd at the independent count, which does not divide out",
+    "the second clause above holds only in a regime, measured after the fact and stated"
+    " in DIMENSIONLESS_PASS_REGIME: n divides out while G is linear over U's range, and"
+    " U's range is itself set by n",
+)
+
+#: **When the spread ratio may be read without a unit.** Measured 22 November, after
+#: amendment 12 asserted the stronger thing.
+#:
+#: ``sd_ratio`` is ``sd[1 - G(U)] / sd[U]``. If ``G`` were linear this is ``|G'|`` and no
+#: ``n`` survives. ``G`` is not linear, and the width of the window it is sampled over is
+#: ``sd[U]``, which *is* set by ``n`` -- so the ratio is not exactly dimensionless. The
+#: departure was measured over seven score-distribution families (gamma, lognormal,
+#: bimodal, crossing, heavy-tailed) at n = 41 against n = 21,762.
+DIMENSIONLESS_PASS_REGIME = (
+    "the ratio is n-free only while G is linear across U's range, and U's range is itself"
+    " set by n, so sd_ratio is not exactly dimensionless",
+    "where |G'| is of order 1 or larger the ratio at the two counts agrees to about 3%",
+    "where |G'| is far below 1 the two counts disagree by up to 3.3x, because a narrow"
+    " U window also makes the empirical G's own sampling noise the dominant term",
+    "so the ratio may be reported without a unit only for cells where it is near 1 or"
+    " above -- which are exactly the cells matched_band_is_too_narrow is about",
+    "a cell whose ratio is far below 1 is harmless and its ratio is not quotable",
+)
+
+#: **The dimensioned check, named before it is applied to the second bank.**
+#:
+#: ``U := F_a(tau_a)`` is ``Beta(k, n + 1 - k)`` exactly, for ``n`` independent
+#: calibration scores. Its across-split SPREAD therefore carries ``n``, where the
+#: predicted spread *ratio* divides it out. Every split already records where its
+#: threshold sat, so this costs no new run and no bootstrap.
+COUNT_FROM_LEVEL_RANGE = (
+    "the across-split range of F_a(tau_a) is a dimensioned read of the Beta's effective"
+    " n, and is the check DIMENSIONLESS_PASS_WARNING requires beside the spread ratio",
+    "it returns a bracket, never a count: it separates tens from thousands decisively"
+    " and cannot separate 35 from 50",
+    "k = floor(alpha*(n+1)) steps in integers, so the likelihood is not monotone in n and"
+    " the consistent set can have holes; the bracket is its span and is reported as such",
+    "it is calibration-side only, so it carries no test-set term -- which is what makes it"
+    " a clean read, and also what stops it from being a coverage certificate",
+    "no bracket from it may set a gate; the gate remains the clustered bootstrap",
 )
 
 #: The distance must beat **both** of these or T1-B is not reported as a result.
@@ -559,6 +770,8 @@ def as_dict() -> dict[str, object]:
         "gap_direction_rule": list(GAP_DIRECTION_RULE),
         "gap_direction_banks_barred": list(GAP_DIRECTION_BANKS_BARRED),
         "gap_direction_determinacy_min_ratio": GAP_DIRECTION_DETERMINACY_MIN_RATIO,
+        "gap_direction_determinacy_scope": GAP_DIRECTION_DETERMINACY_SCOPE,
+        "gap_direction_pooled_rho_barred": list(GAP_DIRECTION_POOLED_RHO_BARRED),
         "gap_arm_sign_agreement_barred": list(GAP_ARM_SIGN_AGREEMENT_BARRED),
         "transfer_spread_prediction": list(TRANSFER_SPREAD_PREDICTION),
         "gap_barred_predictors": list(GAP_BARRED_PREDICTORS),
@@ -577,6 +790,11 @@ def as_dict() -> dict[str, object]:
         "tool2_require_both_valid": TOOL2_REQUIRE_BOTH_VALID,
         "refit_threshold_per_replicate": REFIT_THRESHOLD_PER_REPLICATE,
         "cluster_unit": CLUSTER_UNIT,
+        "beta_reference_unit": BETA_REFERENCE_UNIT,
+        "beta_region_count_use": list(BETA_REGION_COUNT_USE),
+        "dimensionless_pass_warning": list(DIMENSIONLESS_PASS_WARNING),
+        "dimensionless_pass_regime": list(DIMENSIONLESS_PASS_REGIME),
+        "count_from_level_range": list(COUNT_FROM_LEVEL_RANGE),
         "circularity_control": CIRCULARITY_CONTROL,
     }
 

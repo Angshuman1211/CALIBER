@@ -564,8 +564,10 @@ def test_the_direction_rule_never_touches_a_coverage_or_a_gap():
 def test_the_rule_is_not_reportable_on_a_bank_whose_gaps_were_already_seen():
     pairs = _threshold_bank()
     barred = prereg.GAP_DIRECTION_BANKS_BARRED[0]
-    seen = G.direction_from_thresholds(pairs, tau_noise=1e-6, bank=barred)
-    fresh = G.direction_from_thresholds(pairs, tau_noise=1e-6, bank="face_prior")
+    seen = G.direction_from_thresholds(
+        pairs, tau_noise=1e-6, bank=barred, meta=META)
+    fresh = G.direction_from_thresholds(
+        pairs, tau_noise=1e-6, bank="face_prior", meta=META)
     assert seen.determinate is True and seen.reportable is False
     assert fresh.determinate is True and fresh.reportable is True
 
@@ -710,3 +712,91 @@ def test_amendment_seven_admits_that_it_widens_what_may_be_claimed():
     widening = [a for a in prereg.AMENDMENTS if "WIDENS" in a[1]]
     assert len(widening) == 1
     assert "GAP_DIRECTION_BANKS_BARRED" in widening[0][1]
+
+
+# -- amendment ten: the direction is read within family cells, not pooled ------
+
+
+def _simpson_bank() -> tuple[pd.DataFrame, dict]:
+    """A bank whose pooled rho is ~0 while every family cell agrees -- the CT pattern.
+
+    Six sparse-view operators and three limited-angle, with the limited-angle thresholds
+    offset upward as they are on the real bank. Within each family tau rises with the
+    distance; pooled, the between-family level difference swamps it.
+    """
+    sv = [f"sv.{i}" for i in range(6)]
+    la = [f"la.{i}" for i in range(3)]
+    order = sv + la
+    meta = {op: {"family": "sparse_view" if op.startswith("sv") else "limited_angle",
+                 "views": 180 - 15 * i, "arc_deg": 180, "null_space_dim": 10 + i}
+            for i, op in enumerate(order)}
+    tau = dict(zip(order, [0.00, -0.08, -0.04, 0.03, 0.06, 0.09, 0.40, 0.45, 0.50]))
+    dist = dict(zip(order, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.15, 0.25, 0.35]))
+    rows = [{"calibration": a, "deployment": b,
+             "signed_distance": dist[b] - dist[a], "threshold": tau[a]}
+            for a in order for b in order if a != b]
+    return pd.DataFrame(rows), meta
+
+
+def test_a_washed_out_pooled_rho_does_not_block_a_unanimous_cell_verdict():
+    """Amendment ten. Track 2 found pooled +0.05 against cells +0.55 to +1.00."""
+    pairs, meta = _simpson_bank()
+    call = G.direction_from_thresholds(
+        pairs, tau_noise=1e-6, bank="face_prior", meta=meta)
+    assert abs(call.pooled_rho) < 0.25, (
+        "fixture must reproduce the washed-out pool, got %.3f" % call.pooled_rho)
+    cells = [r for _, r in call.cell_rho]
+    assert len(cells) >= 3
+    assert all(r > 0.4 for r in cells), cells
+    assert call.cells_unanimous is True
+    assert call.reportable is True, "unanimous cells must survive a washed-out pool"
+    assert call.direction == "decreasing", "cells are positive, so the gap falls"
+
+
+def test_the_pooled_rho_would_have_returned_the_other_direction():
+    """The point of the amendment: the pool and the cells disagree on this fixture."""
+    pairs, meta = _simpson_bank()
+    pooled = G.direction_from_thresholds(pairs, tau_noise=1e-6, bank="face_prior")
+    celled = G.direction_from_thresholds(
+        pairs, tau_noise=1e-6, bank="face_prior", meta=meta)
+    assert pooled.direction != celled.direction, (
+        "fixture no longer discriminates the two readings")
+    assert pooled.reportable is False, "a pooled-only call may never be reported"
+
+
+def test_the_direction_rule_is_not_reportable_without_the_family_cells():
+    pairs = _threshold_bank()
+    call = G.direction_from_thresholds(pairs, tau_noise=1e-6, bank="face_prior")
+    assert call.determinate is True, "tau's range still clears its noise"
+    assert call.cells_unanimous is None, "no meta, so unanimity is unknown"
+    assert call.reportable is False, "unknown is not the same as satisfied"
+
+
+def test_cells_that_disagree_withhold_the_direction():
+    pairs, meta = _simpson_bank()
+    flipped = pairs.copy()
+    sel = flipped["calibration"].str.startswith("la")
+    flipped.loc[sel, "signed_distance"] = -flipped.loc[sel, "signed_distance"]
+    call = G.direction_from_thresholds(
+        flipped, tau_noise=1e-6, bank="face_prior", meta=meta)
+    assert call.cells_unanimous is False
+    assert call.reportable is False
+
+
+def test_the_determinacy_ratio_alone_was_not_sufficient():
+    """Both banks clear the ratio; the CT bank cleared it with an unresolved rho."""
+    pairs, meta = _simpson_bank()
+    call = G.direction_from_thresholds(
+        pairs, tau_noise=1e-6, bank="face_prior", meta=meta)
+    assert call.tau_range / 1e-6 > prereg.GAP_DIRECTION_DETERMINACY_MIN_RATIO
+    assert call.determinate is True
+    assert prereg.GAP_DIRECTION_DETERMINACY_SCOPE == "within_family_cell"
+
+
+def test_amendment_ten_narrows_rather_than_widens():
+    entry = [t for d, t in prereg.AMENDMENTS if "GAP_DIRECTION_DETERMINACY_SCOPE" in t]
+    assert len(entry) == 1
+    assert "NARROWS WHAT MAY BE CLAIMED" in entry[0]
+    assert "both banks pass it" in entry[0]
+    widening = [t for _, t in prereg.AMENDMENTS if "WIDENS WHAT MAY BE CLAIMED" in t]
+    assert len(widening) == 1, "only amendment seven may widen"

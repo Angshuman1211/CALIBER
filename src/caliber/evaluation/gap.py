@@ -794,11 +794,31 @@ class DirectionCall:
     determinate: bool | None = None
     source: str = prereg.GAP_DIRECTION_SOURCE
     bank: str | None = None
+    cell_rho: tuple[tuple[str, float], ...] = ()
+    cells_unanimous: bool | None = None
+    scope: str = prereg.GAP_DIRECTION_DETERMINACY_SCOPE
+
+    @property
+    def pooled_rho(self) -> float:
+        """The pooled correlation, kept visible and barred from setting the direction.
+
+        On the CT bank this is +0.05 while every family cell is +0.55 to +1.00. See
+        :data:`prereg.GAP_DIRECTION_POOLED_RHO_BARRED`.
+        """
+        return self.rho
 
     @property
     def reportable(self) -> bool:
-        """False on any bank whose per-pair gaps were already seen (amendment seven)."""
+        """What has to hold before the direction may be reported as a result.
+
+        Three conditions, each from a different amendment: tau's range must clear its
+        measured noise (:attr:`determinate`, amendment seven's fence), the family cells
+        must agree on the sign (:attr:`cells_unanimous`, amendment ten), and the bank's
+        per-pair gaps must not already have been seen.
+        """
         if self.determinate is not True:
+            return False
+        if self.cells_unanimous is not True:
             return False
         return str(self.bank) not in set(prereg.GAP_DIRECTION_BANKS_BARRED)
 
@@ -810,6 +830,8 @@ def direction_from_thresholds(
     keys: Sequence[str] = ("calibration", "deployment"),
     tau_noise: float | None = None,
     bank: str | None = None,
+    meta: Mapping[str, Mapping] | None = None,
+    min_cell_pairs: int = 3,
 ) -> DirectionCall:
     """Read the direction of the gap-distance relation off the thresholds (D91).
 
@@ -822,6 +844,15 @@ def direction_from_thresholds(
     pairs of a bank, where :data:`prereg.GAP_BARRED_PREDICTORS` forbids the 72 per-pair
     values. The bit is still a bit, which is why :attr:`DirectionCall.reportable` is False
     on every bank in :data:`prereg.GAP_DIRECTION_BANKS_BARRED`.
+
+    **The correlation is read within family cells, not pooled** -- amendment ten, after
+    Track 2 found the pooled value on the CT bank to be +0.05 against family cells of
+    +0.55 to +1.00. The two families' tau levels are offset, so the pool mixes a
+    between-family level difference into a within-family trend. ``meta`` is therefore
+    required for a reportable call: without it the cells cannot be formed and
+    :attr:`DirectionCall.cells_unanimous` stays ``None``, which makes
+    :attr:`DirectionCall.reportable` False. See
+    :data:`prereg.GAP_DIRECTION_POOLED_RHO_BARRED`.
     """
     cal, dep = keys
     for col in (threshold_col, distance_col, cal, dep):
@@ -842,9 +873,35 @@ def direction_from_thresholds(
     tau_a = pairs[cal].astype(str).map(tau).to_numpy(dtype=float)
     tau_b = pairs[dep].astype(str).map(tau).to_numpy(dtype=float)
     dist = pairs[distance_col].to_numpy(dtype=float)
-    rho = rank_correlation(dist, tau_b - tau_a)
+    dtau = tau_b - tau_a
+    rho = rank_correlation(dist, dtau)
+
+    # The direction comes from the family cells. The pooled rho above is kept for the
+    # record and is barred from setting it (prereg.GAP_DIRECTION_POOLED_RHO_BARRED).
+    cell_rho: list[tuple[str, float]] = []
+    cells_unanimous: bool | None = None
+    if meta is not None:
+        fa, fb = _families(pairs, meta, keys)
+        cell = (fa.astype(str) + "->" + fb.astype(str)).to_numpy()
+        signs: set[float] = set()
+        for name in sorted(set(cell.tolist())):
+            m = cell == name
+            if int(m.sum()) < int(min_cell_pairs):
+                continue
+            r = rank_correlation(dist[m], dtau[m])
+            cell_rho.append((str(name), float(r)))
+            if np.isfinite(r) and r != 0.0:
+                signs.add(float(np.sign(r)))
+        cells_unanimous = bool(len(signs) == 1) if cell_rho else False
+        if cells_unanimous:
+            cell_sign = signs.pop()
+        else:
+            cell_sign = float(np.sign(rho)) if np.isfinite(rho) else 0.0
+    else:
+        cell_sign = float(np.sign(rho)) if np.isfinite(rho) else 0.0
+
     # tau rises with the distance  =>  tau_b > tau_a at positive distance  =>  gap falls.
-    direction = "decreasing" if rho > 0 else "increasing"
+    direction = "decreasing" if cell_sign > 0 else "increasing"
 
     values = np.array(sorted(tau.values()), dtype=float)
     tau_range = float(values[-1] - values[0])
@@ -864,6 +921,8 @@ def direction_from_thresholds(
         tau_noise=None if tau_noise is None else float(tau_noise),
         determinate=determinate,
         bank=bank,
+        cell_rho=tuple(cell_rho),
+        cells_unanimous=cells_unanimous,
     )
 
 

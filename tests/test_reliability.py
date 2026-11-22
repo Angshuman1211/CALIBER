@@ -11,6 +11,8 @@ magnitudes that were measured.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 
@@ -750,3 +752,214 @@ def test_either_matched_cell_gives_the_same_spread_ratio_at_equal_counts():
     assert abs(wrong / g - 1.0) < 0.05, (wrong, g)
     assert np.corrcoef(cov_ab, 1.0 - u_a)[0, 1] > 0.99
     assert abs(np.corrcoef(cov_ab, 1.0 - u_b)[0, 1]) < 0.05
+
+
+# -- amendments eleven and twelve: the Beta's sample size ----------------------
+
+
+def test_a_transfer_band_is_refused_without_the_independent_count():
+    """Amendment eleven. The interval I shipped on 22 Nov carried no unit."""
+    a = _gamma(1.0)
+    ref = R.transfer_beta_reference(a, _gamma(1.6, seed=4), 10762, alpha=0.1)
+    assert ref.reportable is True, "the dimensionless results are still available"
+    assert ref.rescalable is False, "but an interval is not"
+    try:
+        ref.interval()
+    except ValueError as exc:
+        assert "n_independent" in str(exc)
+    else:
+        raise AssertionError("interval() must refuse without the independent count")
+    assert ref.contains(0.9) is False, "containment is a certificate too"
+
+
+def test_the_independent_count_widens_the_band_by_the_design_effect():
+    a = _gamma(1.0)
+    b = _gamma(1.6, seed=4)
+    n_pos, n_ind = 10762, 41
+    ref = R.transfer_beta_reference(a, b, n_pos, alpha=0.1, n_independent=n_ind)
+    assert ref.rescalable is True
+    lo, hi = ref.interval()
+    raw = np.quantile(ref.samples, [0.01, 0.99])
+    widened = (hi - lo) / float(raw[1] - raw[0])
+    expected = math.sqrt(n_pos / n_ind)
+    assert widened > 5.0, "a design effect of order 100 is not a rounding correction"
+    # clipping at 1.0 can only shorten the band, never lengthen it
+    assert widened <= expected * 1.02, (widened, expected)
+    assert 0.0 <= lo <= hi <= 1.0, "coverage is a proportion"
+
+
+def test_the_spread_ratio_is_blind_to_the_reference_count():
+    """Amendment twelve, as a test. This is why rho +0.977 certified nothing."""
+    a = _gamma(1.0)
+    b = _gamma(1.6, seed=4)
+    wrong = R.transfer_beta_reference(a, b, 10762, alpha=0.1, n_independent=10762)
+    right = R.transfer_beta_reference(a, b, 10762, alpha=0.1, n_independent=41)
+    assert wrong.sd_ratio == right.sd_ratio, (
+        "the predicted ratio cannot see the unit error standing next to it")
+    assert wrong.slope == right.slope
+    assert wrong.interval() != right.interval(), (
+        "while the quantity a certificate quotes moves by the design effect")
+
+
+def test_no_beta_band_is_a_gate_at_either_count():
+    text = " ".join(prereg.BETA_REGION_COUNT_USE)
+    assert "idealisation" in text
+    assert "no default" in text
+    assert "cluster" in text and "bootstrap" in text, (
+        "the rule has to name the path that IS the certificate")
+    assert "accepts almost anything" in text, (
+        "the subject count must be barred as a gate too, not just the region count")
+    assert prereg.BETA_REFERENCE_UNIT == "calibration_subject"
+
+
+def test_amendment_eleven_does_not_claim_the_unit_finding_as_new():
+    entry = [t for _, t in prereg.AMENDMENTS if "BETA_REFERENCE_UNIT" in t]
+    assert len(entry) == 1
+    assert "not written up as new" in entry[0]
+    assert "ClusteredCoverage" in entry[0], (
+        "the amendment must point at the place that already recorded it")
+
+
+def test_the_independent_count_is_never_defaulted_from_the_positive_count():
+    """The defect was a silent default, so the absence of one is the thing to pin."""
+    a = _gamma(1.0)
+    ref = R.transfer_beta_reference(a, _gamma(1.6, seed=4), 10762, alpha=0.1)
+    assert ref.n_independent is None, (
+        "filling this in from n_positives is exactly the error being fixed")
+    assert ref.as_row()["n_independent"] is None
+    assert ref.as_row()["rescalable"] is False
+    assert np.isnan(ref.as_row()["beta_lo"] if "beta_lo" in ref.as_row()
+                    else ref.as_row()["transfer_lo"]), (
+        "a row emitted without the unit must carry no band")
+
+
+def test_no_effective_count_is_frozen_because_the_code_measures_it():
+    """The count belongs to the bank, and ClusteredCoverage already computes it per cell."""
+    assert not hasattr(prereg, "BETA_REFERENCE_EFFECTIVE_COUNT_BRACKET"), (
+        "a frozen effective count would be a number invented for convenience")
+    for name in ("design_effect", "effective_n", "independent_sd"):
+        assert hasattr(R.ClusteredCoverage, name), (
+            "the measured path must exist before the Beta path is allowed to refuse")
+
+
+def test_the_equal_count_clause_is_retracted_visibly():
+    text = " ".join(prereg.TRANSFER_SPREAD_PREDICTION)
+    assert "RETRACTED" in text, "a silently rewritten freeze is not a freeze"
+    assert "10,760 is their MEAN" in text
+    assert "3,157 to 21,762" in text
+    assert "+0.977" in text and "+0.88" in text, "both references' measured values"
+
+
+def test_the_dimensionless_warning_was_frozen_with_a_dimensioned_remedy():
+    text = " ".join(prereg.DIMENSIONLESS_PASS_WARNING)
+    assert "does not certify the reference" in text
+    assert "divides out" in text
+    assert "dimensioned check" in text, (
+        "a warning with no remedy beside it is a note, not a rule")
+
+
+# -- D94: the dimensioned check, and the regime the ratio is n-free in ---------
+
+
+def test_the_level_range_brackets_the_count_it_was_drawn_from():
+    """The whole point: U's spread carries n, where the spread RATIO divides n out."""
+    for n in (41, 200, 5000):
+        k = int(np.floor(0.1 * (n + 1)))
+        levels = np.random.default_rng(n).beta(k, n + 1 - k, 13)
+        got = R.count_from_level_range(levels, seed=2)
+        lo, hi = got.bracket
+        assert lo <= n <= hi, f"bracket {got.bracket} missed the true count {n}"
+
+
+def test_the_level_range_excludes_the_region_count_on_the_banks_own_number():
+    """Track 2 reported tau between the 0.03 and 0.18 levels of F_a over 13 splits."""
+    levels = [0.03, 0.05, 0.07, 0.08, 0.09, 0.09, 0.10,
+              0.11, 0.12, 0.13, 0.15, 0.16, 0.18]
+    got = R.count_from_level_range(levels, seed=1)
+    lo, hi = got.bracket
+    assert lo <= 41 <= hi, "the subject count must survive"
+    assert hi < 1000, f"a count in the thousands must be excluded, bracket was {got.bracket}"
+    assert got.excludes(20000), "the region count is the one this check exists to reject"
+
+
+def test_the_level_range_yields_a_bracket_and_refuses_to_resolve_more():
+    """D93 Sec. 3 read 'near 45' off this statistic. It does not carry a point estimate."""
+    levels = [0.03, 0.05, 0.07, 0.08, 0.09, 0.09, 0.10,
+              0.11, 0.12, 0.13, 0.15, 0.16, 0.18]
+    got = R.count_from_level_range(levels, seed=1)
+    assert 35 in got.consistent and 50 in got.consistent, (
+        "a statistic that cannot separate 35 from 50 must report both as consistent")
+    assert len(got.consistent) > 1, "a single surviving candidate would read as a count"
+
+
+def test_no_count_is_read_off_the_level_range_when_nothing_fits():
+    narrow = np.full(13, 0.10) + np.linspace(0.0, 1e-5, 13)
+    got = R.count_from_level_range(narrow, seed=1)
+    assert got.consistent == ()
+    assert got.bracket is None, "a failed fit must return no number at all"
+
+
+def test_the_level_range_needs_levels_and_more_than_one_split():
+    with pytest.raises(ValueError):
+        R.count_from_level_range([0.1])
+
+
+def test_the_level_range_bracket_carries_no_verdict():
+    """Not a gate: prereg.COUNT_FROM_LEVEL_RANGE says so and the row must not imply one."""
+    levels = np.random.default_rng(0).beta(4, 38, 13)
+    row = R.count_from_level_range(levels, seed=1).as_row()
+    assert not any(str(k).startswith(("pass", "certif", "gate", "contains")) for k in row), (
+        f"a bracket must not emit a verdict field: {sorted(row)}")
+    assert row["unit"] == prereg.BETA_REFERENCE_UNIT, "the unit travels with the number"
+
+
+def test_the_spread_ratio_is_n_free_only_where_the_slope_is_not_tiny():
+    """Amendment 13's measurement. Amendment 12 claimed this held unconditionally."""
+    out = {}
+    for name, scale_b in (("big", 0.35), ("small", 3.0)):
+        a, b = _gamma(1.0), _gamma(scale_b, seed=9)
+        r41 = R.transfer_beta_reference(a, b, 41, alpha=0.1, n_draws=60000, seed=3)
+        r2k = R.transfer_beta_reference(a, b, 21762, alpha=0.1, n_draws=60000, seed=3)
+        out[name] = (abs(r41.slope), r41.sd_ratio, r2k.sd_ratio)
+
+    slope_big, big41, big2k = out["big"]
+    assert slope_big > 1.0, "this pair must sit in the large-slope regime"
+    assert abs(big41 / big2k - 1.0) < 0.10, (
+        f"where |G'| >= 1 the two counts agree: {big41:.4f} vs {big2k:.4f}")
+
+    slope_small, small41, small2k = out["small"]
+    assert slope_small < 0.3, "this pair must sit in the small-slope regime"
+    assert abs(small41 / small2k - 1.0) > 0.10, (
+        "where |G'| << 1 the ratio is NOT n-free, which is what amendment 12 missed: "
+        f"{small41:.4f} vs {small2k:.4f}")
+    assert max(small41, small2k) < 1.0, (
+        "and such a cell is harmless -- its spread is below the matched cell's either way")
+
+
+def test_the_dimensionless_warning_now_states_the_regime_it_holds_in():
+    text = " ".join(prereg.DIMENSIONLESS_PASS_WARNING)
+    assert "DIMENSIONLESS_PASS_REGIME" in text, (
+        "amendment 12's premise must point at the measurement that narrowed it")
+    regime = " ".join(prereg.DIMENSIONLESS_PASS_REGIME)
+    assert "linear" in regime and "U's range" in regime, (
+        "the stated reason the ratio is not exactly dimensionless")
+
+
+def test_the_level_range_method_was_frozen_before_the_second_bank():
+    text = " ".join(prereg.COUNT_FROM_LEVEL_RANGE)
+    assert "bracket, never a count" in text
+    assert "gate" in text, "the method must be frozen together with its refusal to gate"
+    assert "count_from_level_range" in prereg.as_dict(), "the freeze must be exported"
+    assert prereg.as_dict()["count_from_level_range"] == list(prereg.COUNT_FROM_LEVEL_RANGE)
+
+
+def test_amendment_thirteen_narrows_rather_than_widens():
+    dates = [d for d, _ in prereg.AMENDMENTS]
+    assert dates == sorted(dates), "the audit trail must read in order"
+    assert len(prereg.AMENDMENTS) == 13
+    widening = [t for _, t in prereg.AMENDMENTS if "LOWERS THE PRIMARY ENDPOINT" in t]
+    assert len(widening) == 1, (
+        "exactly one amendment has ever moved an endpoint; the rest only narrow")
+    last = prereg.AMENDMENTS[-1][1]
+    assert "both narrow" in last
+    assert "0.03 and 0.18" in last, "the number that did the work must be in the record"
