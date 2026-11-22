@@ -549,6 +549,137 @@ def fig_safety_rule(rule: pd.DataFrame, out: Path) -> Path:
     return save(fig, out / "fig8_safety_rule")
 
 
+def gap_table(pairs: pd.DataFrame, split_mean: pd.DataFrame) -> pd.DataFrame:
+    """T1-B's response for every ordered pair: matched minus transfer, across-split (D88).
+
+    ``pairs`` is T1-A's ordered-pair table (it carries the signed distance and the
+    across-split coverage); the matched cell at each deployment operator comes from the
+    diagonal of ``pair_coverage_split_mean.csv``.
+    """
+    diag = split_mean[split_mean["calibration"] == split_mean["deployment"]]
+    matched = diag.set_index("deployment")["split_mean"]
+    missing = sorted(set(pairs["deployment"]) - set(matched.index))
+    if missing:
+        raise KeyError(f"no matched cell for {missing}; the gap is undefined there")
+    return pairs.assign(gap=pairs["deployment"].map(matched) - pairs["coverage_across"])
+
+
+def fig_gap_prediction(pairs: pd.DataFrame, accuracy: pd.DataFrame, out: Path) -> Path:
+    """T1-B: the gap against the signed distance, and what each predictor leaves (D88).
+
+    Left: one point per ordered pair, with the frozen non-decreasing fit through all of
+    them. Right: held-out mean absolute error of each predictor, by protocol and scope.
+    """
+    from caliber.evaluation.gap import isotonic
+
+    color = {"sparse_view": METHOD["group"][1], "limited_angle": METHOD["naive"][1]}
+    fig, (a, b) = plt.subplots(1, 2, figsize=(11.5, 4.4), gridspec_kw={"width_ratios": [1.25, 1]})
+    for _, r in pairs.iterrows():
+        a.plot([r["signed_distance"]], [r["gap"]], marker=CT_MARKER[r["family_calibration"]],
+               markersize=6.5, linestyle="none", markerfacecolor=color[r["family_deployment"]],
+               markeredgecolor=SURFACE, markeredgewidth=0.8, zorder=3)
+    fit = isotonic(pairs["signed_distance"], pairs["gap"])
+    a.plot(fit.x, fit.y, color=INK, linewidth=1.6, zorder=2)
+    a.axhline(0.0, color=AXIS, linewidth=1.0, zorder=1)
+    a.axvline(0.0, color=AXIS, linewidth=1.0, zorder=1)
+    a.set_xlabel("signed operator distance, null_space_growth (calibration to deployment)")
+    a.set_ylabel("coverage gap: matched minus transfer")
+    a.set_title(f"The {len(pairs)} ordered pairs and the frozen non-decreasing fit", loc="left",
+                fontsize=9.5, pad=8)
+    handles = (
+        [Line2D([], [], marker="o", linestyle="none", markersize=7, markerfacecolor=c,
+                markeredgecolor=SURFACE, label=f"used at {f.replace('_', '-')}")
+         for f, c in color.items()]
+        + [Line2D([], [], marker=m, linestyle="none", markersize=6.5, markerfacecolor=INK_2,
+                  markeredgecolor=SURFACE, label=f"calibrated at {f.replace('_', '-')}")
+           for f, m in CT_MARKER.items()]
+        + [Line2D([], [], color=INK, linewidth=1.6, label="frozen fit")])
+    a.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=3,
+             fontsize=7.5)
+
+    names = {"signed_distance": "signed distance", "constant": "constant",
+             "acquisition_parameter": "views or arc", "null_space_dimension": "null-space dim."}
+    shade = {"signed_distance": METHOD["naive"][1], "constant": MUTED,
+             "acquisition_parameter": METHOD["group"][1], "null_space_dimension": INK_2}
+    groups = [(p, s) for p in ("cross_family", "leave_one_operator_out")
+              for s in ("within_family", "cross_family")]
+    width = 0.2
+    for g, (protocol, scope) in enumerate(groups):
+        rows = accuracy[(accuracy["protocol"] == protocol) & (accuracy["scope"] == scope)]
+        for k, name in enumerate(names):
+            row = rows[rows["predictor"] == name]
+            if row.empty or not bool(row["defined"].iloc[0]):
+                continue
+            x = g + (k - 1.5) * width
+            b.bar(x, row["mae"].iloc[0], width=width * 0.92, color=shade[name], zorder=3)
+            b.text(x, row["mae"].iloc[0] + 0.004, f"{row['mae'].iloc[0]:.3f}", ha="center",
+                   fontsize=6.5, color=INK, rotation=90, va="bottom")
+    b.set_xticks(range(len(groups)))
+    protocol_label = {"cross_family": "fit one family,\npredict the other",
+                      "leave_one_operator_out": "leave one\noperator out"}
+    b.set_xticklabels([f"{protocol_label[p]}\n{s.replace('_', '-')} pairs" for p, s in groups],
+                      fontsize=7.5)
+    b.set_ylim(0, float(accuracy["mae"].max()) * 1.28)
+    b.set_ylabel("held-out mean absolute error")
+    b.grid(axis="x", visible=False)
+    b.set_title("Held-out error by predictor", loc="left", fontsize=9.5, pad=8)
+    b.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=shade[n], label=lab)
+                      for n, lab in names.items()], loc="upper center",
+             bbox_to_anchor=(0.5, -0.2), fontsize=7.5, ncol=4)
+    fig.suptitle(f"Predicting the coverage gap from operator distance, CT ({LABELS['ct']})",
+                 x=0.01, ha="left", y=1.02, fontsize=10.5, color=INK)
+    fig.subplots_adjust(wspace=0.22)
+    return save(fig, out / "fig9_gap_prediction")
+
+
+def fig_spread_ratio(table: pd.DataFrame, similar: float, out: Path) -> Path:
+    """D92's frozen prediction: the spread of a transfer cell, predicted against measured.
+
+    One point per ordered pair. x is the density ratio ``f_b / f_a`` at the threshold, from
+    the two operators' positive scores; y is ``sd[coverage(a->b)] / sd[coverage(a->a)]`` over
+    the patient splits. Nothing is fitted, so the line is the identity. Filled points are
+    the pairs whose cells hold similar numbers of positives, where D92 says the ratio is
+    cleanest. Above 1 the matched cell's spread understates the transfer cell's.
+    """
+    family = lambda op: op.split(".")[1]  # noqa: E731
+    color = {"sparse_view": METHOD["group"][1], "limited_angle": METHOD["naive"][1]}
+    near = (table["positives_ratio"] > 1.0 / similar) & (table["positives_ratio"] < similar)
+    fig, ax = plt.subplots(figsize=(6.4, 5.6))
+    lo = float(min(table["predicted_ratio"].min(), table["measured_ratio"].min())) / 1.4
+    hi = float(max(table["predicted_ratio"].max(), table["measured_ratio"].max())) * 1.4
+    ax.plot([lo, hi], [lo, hi], color=INK_2, linewidth=1.1, zorder=1)
+    ax.axhline(1.0, color=AXIS, linewidth=0.9, zorder=1)
+    ax.axvline(1.0, color=AXIS, linewidth=0.9, zorder=1)
+    for (_, r), filled in zip(table.iterrows(), near, strict=True):
+        c = color[family(r["deployment"])]
+        ax.plot([r["predicted_ratio"]], [r["measured_ratio"]],
+                marker=CT_MARKER[family(r["calibration"])], markersize=6.5, linestyle="none",
+                markerfacecolor=c if filled else SURFACE, markeredgecolor=c,
+                markeredgewidth=1.1, zorder=3)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
+    ax.set_aspect("equal")
+    ax.set_xlabel("predicted: density ratio at the threshold, deployment over calibration")
+    ax.set_ylabel("measured: spread of the transfer cell over the matched cell")
+    ax.text(0.98, 0.03, "identity line; nothing fitted", transform=ax.transAxes, ha="right",
+            fontsize=8, color=INK_2)
+    handles = (
+        [Line2D([], [], marker="o", linestyle="none", markersize=7, markerfacecolor=c,
+                markeredgecolor=c, label=f"used at {f.replace('_', '-')}")
+         for f, c in color.items()]
+        + [Line2D([], [], marker=m, linestyle="none", markersize=6.5, markerfacecolor=INK_2,
+                  markeredgecolor=INK_2, label=f"calibrated at {f.replace('_', '-')}")
+           for f, m in CT_MARKER.items()]
+        + [Line2D([], [], marker="o", linestyle="none", markersize=6.5, markerfacecolor=SURFACE,
+                  markeredgecolor=INK_2, label=f"positive counts differ by more than {similar:g}x")])
+    ax.legend(handles=handles, loc="upper left", fontsize=7.5)
+    fig.suptitle(f"Spread of naive-transfer coverage over patient splits, CT ({LABELS['ct']})",
+                 x=0.01, ha="left", y=0.99, fontsize=10.5, color=INK)
+    return save(fig, out / "fig10_spread_ratio")
+
+
 def save(fig, stem: Path) -> Path:
     for ext in ("png", "pdf"):
         fig.savefig(stem.with_suffix(f".{ext}"), dpi=200, bbox_inches="tight")
@@ -570,6 +701,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="pair_coverage_by_split.py output directory: adds Figure 6")
     ap.add_argument("--t1a-dir", default=None,
                     help="t1a_safety_rule.py --out directory: adds Figures 7 and 8")
+    ap.add_argument("--t1b-dir", default=None,
+                    help="t1b_gap_prediction.py --out directory: adds Figure 9 "
+                         "(needs --pair-dir and --t1a-dir)")
+    ap.add_argument("--spread-csv", default=None,
+                    help="transfer_spread_ratio.py output: adds Figure 10")
+    ap.add_argument("--spread-similar", type=float, default=1.5,
+                    help="Figure 10 fills the pairs whose positive counts are within this factor")
     ap.add_argument("--mri-label", default=LABELS["mri"],
                     help="substrate and test-set size for the MRI titles, comma-separated")
     ap.add_argument("--ct-label", default=LABELS["ct"],
@@ -604,6 +742,16 @@ def main(argv: list[str] | None = None) -> int:
         path = fig_pairs_vs_distance(pd.read_csv(t1a / "ordered_pairs.csv"), nominal, out)
         print(f"[figures] wrote {path} (+ .pdf)")
         path = fig_safety_rule(pd.read_csv(t1a / "safety_rule.csv"), out)
+        print(f"[figures] wrote {path} (+ .pdf)")
+    if args.t1b_dir:
+        if not (args.pair_dir and args.t1a_dir):
+            ap.error("--t1b-dir needs --pair-dir and --t1a-dir")
+        gaps = gap_table(pd.read_csv(Path(args.t1a_dir) / "ordered_pairs.csv"),
+                         pd.read_csv(Path(args.pair_dir) / "pair_coverage_split_mean.csv"))
+        path = fig_gap_prediction(gaps, pd.read_csv(Path(args.t1b_dir) / "t1b_accuracy.csv"), out)
+        print(f"[figures] wrote {path} (+ .pdf)")
+    if args.spread_csv:
+        path = fig_spread_ratio(pd.read_csv(args.spread_csv), args.spread_similar, out)
         print(f"[figures] wrote {path} (+ .pdf)")
     return 0
 

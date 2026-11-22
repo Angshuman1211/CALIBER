@@ -54,3 +54,19 @@ def test_only_the_signed_measure_is_read(figures, tmp_path):
     half the points at negative distances that mean nothing."""
     csv = _table(tmp_path, [("v180", "v30", "null_space_projection", 0.38)])
     assert figures.ct_distances_from(csv) == {}
+
+
+def test_gap_is_matched_minus_transfer_at_the_deployment_operator(figures):
+    pairs = pd.DataFrame({"calibration": ["a", "b"], "deployment": ["b", "a"],
+                          "coverage_across": [0.70, 0.95]})
+    mean = pd.DataFrame({"calibration": ["a", "b", "a", "b"], "deployment": ["a", "b", "b", "a"],
+                         "split_mean": [0.90, 0.88, 0.70, 0.95]})
+    gaps = figures.gap_table(pairs, mean)
+    assert gaps["gap"].tolist() == pytest.approx([0.88 - 0.70, 0.90 - 0.95])
+
+
+def test_gap_refuses_a_pair_with_no_matched_cell(figures):
+    pairs = pd.DataFrame({"calibration": ["a"], "deployment": ["b"], "coverage_across": [0.7]})
+    mean = pd.DataFrame({"calibration": ["a"], "deployment": ["a"], "split_mean": [0.9]})
+    with pytest.raises(KeyError, match="no matched cell"):
+        figures.gap_table(pairs, mean)
