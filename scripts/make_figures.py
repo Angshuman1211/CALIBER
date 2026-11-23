@@ -632,6 +632,65 @@ def fig_gap_prediction(pairs: pd.DataFrame, accuracy: pd.DataFrame, out: Path) -
     return save(fig, out / "fig9_gap_prediction")
 
 
+def quadrant_table(registry: pd.DataFrame) -> pd.DataFrame:
+    """Per ordered pair on one split: ``tau_a - tau_b`` and the coverage lost to transfer.
+
+    ``coverage_change`` is ``coverage(a -> b) - coverage(b -> b)``, the negative of D88's
+    gap. By D89 its sign is the sign of ``tau_b - tau_a`` at every pair, so two of the four
+    quadrants of the plane hold nothing. That holds on one split, with the thresholds and
+    the coverages from the same scores; it is not a statement about an across-split mean.
+    """
+    tau = registry.groupby("calibration")["tau"].first()
+    diag = registry[registry["calibration"] == registry["deployment"]]
+    matched = diag.set_index("deployment")["coverage"]
+    off = registry[registry["calibration"] != registry["deployment"]].copy()
+    off["tau_difference"] = off["calibration"].map(tau) - off["deployment"].map(tau)
+    off["coverage_change"] = off["coverage"] - off["deployment"].map(matched)
+    return off[["calibration", "deployment", "tau_difference", "coverage_change"]]
+
+
+def fig_threshold_quadrants(registry: pd.DataFrame, out: Path) -> Path:
+    """D89's identity as a picture: transfer coverage against the threshold difference.
+
+    One point per ordered pair on the registry split. The two shaded quadrants are empty by
+    the identity ``coverage(a -> b) - coverage(b -> b) = F_b(tau_b) - F_b(tau_a)``.
+    """
+    t = quadrant_table(registry)
+    family = lambda op: op.split(".")[1]  # noqa: E731
+    color = {"sparse_view": METHOD["group"][1], "limited_angle": METHOD["naive"][1]}
+    fig, ax = plt.subplots(figsize=(7.4, 4.8))
+    xm = float(t["tau_difference"].abs().max()) * 1.08
+    ym = float(t["coverage_change"].abs().max()) * 1.12
+    ax.fill_between([0, xm], 0, ym, color=GRID, alpha=0.5, linewidth=0, zorder=0)
+    ax.fill_between([-xm, 0], -ym, 0, color=GRID, alpha=0.5, linewidth=0, zorder=0)
+    ax.axhline(0.0, color=AXIS, linewidth=1.0, zorder=1)
+    ax.axvline(0.0, color=AXIS, linewidth=1.0, zorder=1)
+    for _, r in t.iterrows():
+        c = color[family(r["deployment"])]
+        ax.plot([r["tau_difference"]], [r["coverage_change"]],
+                marker=CT_MARKER[family(r["calibration"])], markersize=6.5, linestyle="none",
+                markerfacecolor=c, markeredgecolor=SURFACE, markeredgewidth=0.8, zorder=3)
+    ax.set_xlim(-xm, xm)
+    ax.set_ylim(-ym, ym)
+    ax.text(0.98, 0.95, "empty by the identity", transform=ax.transAxes, ha="right", va="top",
+            fontsize=8, color=INK_2)
+    ax.text(0.02, 0.05, "empty by the identity", transform=ax.transAxes, ha="left", va="bottom",
+            fontsize=8, color=INK_2)
+    ax.set_xlabel("threshold at the calibration operator minus threshold at the deployment operator")
+    ax.set_ylabel("naive-transfer coverage minus the\ndeployment operator's matched coverage")
+    handles = (
+        [Line2D([], [], marker="o", linestyle="none", markersize=7, markerfacecolor=c,
+                markeredgecolor=SURFACE, label=f"used at {f.replace('_', '-')}")
+         for f, c in color.items()]
+        + [Line2D([], [], marker=m, linestyle="none", markersize=6.5, markerfacecolor=INK_2,
+                  markeredgecolor=SURFACE, label=f"calibrated at {f.replace('_', '-')}")
+           for f, m in CT_MARKER.items()])
+    fig.legend(handles=handles, loc="upper center", ncol=4, bbox_to_anchor=(0.5, 1.0), fontsize=7.5)
+    fig.suptitle(f"The {len(t)} ordered pairs on the registry split, CT ({LABELS['ct']})",
+                 x=0.01, ha="left", y=1.06, fontsize=10.5, color=INK)
+    return save(fig, out / "fig11_threshold_quadrants")
+
+
 def fig_spread_ratio(table: pd.DataFrame, similar: float, out: Path) -> Path:
     """D92's frozen prediction: the spread of a transfer cell, predicted against measured.
 
@@ -698,7 +757,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ct-distances", default=None,
                     help="ct_distances.py output, for Figure 5's CT x-axis")
     ap.add_argument("--pair-dir", default=None,
-                    help="pair_coverage_by_split.py output directory: adds Figure 6")
+                    help="pair_coverage_by_split.py output directory: adds Figures 6 and 11")
     ap.add_argument("--t1a-dir", default=None,
                     help="t1a_safety_rule.py --out directory: adds Figures 7 and 8")
     ap.add_argument("--t1b-dir", default=None,
@@ -736,6 +795,8 @@ def main(argv: list[str] | None = None) -> int:
         path = fig_split_reliability(pd.read_csv(pairs / "pair_coverage_by_split.csv"),
                                      pd.read_csv(pairs / "pair_coverage_registry.csv"),
                                      nominal, out)
+        print(f"[figures] wrote {path} (+ .pdf)")
+        path = fig_threshold_quadrants(pd.read_csv(pairs / "pair_coverage_registry.csv"), out)
         print(f"[figures] wrote {path} (+ .pdf)")
     if args.t1a_dir:
         t1a = Path(args.t1a_dir)
