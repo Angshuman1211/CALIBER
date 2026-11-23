@@ -60,7 +60,8 @@ from .stats import crossing_probability, joint_cdf_gap, ks_distance, w1_distance
 KEYS = ["sample_id", "slice_idx", "region_id"]
 
 #: Bin counts for row 6's histogram TV. Several, because a histogram TV is a function of the
-#: binning: too coarse and it falls toward ``d_K``, too fine and sampling noise inflates it.
+#: binning: too coarse and it falls toward (or below) ``d_K``, too fine and sampling noise
+#: inflates it. Bins are equal-mass (``histogram_tv``'s quantile edges).
 HIST_BINS = (10, 20, 50, 100)
 
 #: Default bootstrap replicates and interval level. 95% matches Track 2's cell tables
@@ -308,17 +309,33 @@ def coupled_w1_cond_bound(sa, la, sb, lb) -> float:
     return min(one_way(sa, la, sb, lb), one_way(sb, lb, sa, la))
 
 
-def histogram_tv(a, b, bins: int) -> float:
-    """``0.5 * sum |p_a - p_b|`` over ``bins`` equal-width bins of the pooled range."""
+def histogram_tv(a, b, bins: int, edges: str = "quantile") -> float:
+    """``0.5 * sum |p_a - p_b|`` over ``bins`` bins of the pooled sample.
+
+    ``edges="quantile"`` (the default) puts the bin edges at equally spaced quantiles of the
+    pooled sample, so every bin holds about the same mass. ``"uniform"`` is equal-width over
+    the pooled range, which the first version used: on the LIDC bank a few large scores
+    stretch that range so far that almost all the mass falls in one or two bins, and the
+    "TV" came out *below* ``d_K`` at 58-72 of 72 pairs, which no total variation can be.
+    Either way the value is TV over a partition, so by data processing it is at most the
+    score-level TV (and that at most the data-level TV in Barber et al.'s bound).
+    """
     a, b = np.asarray(a, float).ravel(), np.asarray(b, float).ravel()
     if a.size == 0 or b.size == 0:
         return float("nan")
     lo, hi = float(min(a.min(), b.min())), float(max(a.max(), b.max()))
     if hi <= lo:
         return 0.0
-    edges = np.linspace(lo, hi, int(bins) + 1)
-    pa = np.histogram(a, edges)[0] / a.size
-    pb = np.histogram(b, edges)[0] / b.size
+    if edges == "uniform":
+        cuts = np.linspace(lo, hi, int(bins) + 1)
+    elif edges == "quantile":
+        cuts = np.unique(np.quantile(np.concatenate([a, b]), np.linspace(0, 1, int(bins) + 1)))
+        if cuts.size < 2:
+            return 0.0
+    else:
+        raise ValueError(f"edges must be 'quantile' or 'uniform', got {edges!r}")
+    pa = np.histogram(a, cuts)[0] / a.size
+    pb = np.histogram(b, cuts)[0] / b.size
     return float(0.5 * np.abs(pa - pb).sum())
 
 

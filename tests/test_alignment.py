@@ -153,3 +153,37 @@ def test_pure_recovery_departs_exactly_as_the_truths_hidden_energy_does():
 def test_energy_departure_refuses_an_unknown_reference():
     with pytest.raises(KeyError, match="reference"):
         energy_departure(_bank(0.5, {"a": 1.0}, {"a": 1.0}), "zz")
+
+
+# -- T3-C: the exact positive branches ------------------------------------------------------
+
+
+def test_every_positive_is_in_exactly_one_branch():
+    from caliber.theory.alignment import _branches
+
+    s, c, e, cos = vectors(n=2000, seed=7)
+    eps = float(np.quantile(e, 0.6))
+    lab = e > eps
+    out = _branches(s, c, cos, eps, lab, lab)
+    assert out["branch_inconsistent"] == 0.0
+    total = out["marginal_score_free"] + out["marginal_lower_branch"] + out["marginal_upper_branch"]
+    assert total == pytest.approx(1.0)
+
+
+def test_the_two_corners_of_the_branch_split():
+    from caliber.theory.alignment import _branches
+
+    eps = 1.0
+    # orthogonal, hidden truth below eps, score just over the edge: upper branch, falling
+    edge = np.sqrt(eps**2 - 0.6**2)
+    up = _branches(np.array([edge + 0.01]), np.array([0.6]), np.array([0.0]), eps,
+                   np.array([True]), np.array([True]))
+    assert up["marginal_upper_branch"] == 1.0 and up["marginal_boundary_slope"] < 0
+    # aligned, large hidden truth, little recovered: lower branch, rising
+    low = _branches(np.array([0.5]), np.array([2.0]), np.array([0.95]), eps,
+                    np.array([True]), np.array([True]))
+    assert low["marginal_lower_branch"] == 1.0 and low["marginal_boundary_slope"] > 0
+    # orthogonal with c > eps: positive whatever the score
+    free = _branches(np.array([0.01]), np.array([1.5]), np.array([0.0]), eps,
+                     np.array([True]), np.array([True]))
+    assert free["marginal_score_free"] == 1.0
