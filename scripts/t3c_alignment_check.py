@@ -105,7 +105,8 @@ def main(argv=None) -> int:
             "aligned_median", "invented_median", "invented_energy_share",
             "orth_rel_err_median", "identity_spearman", "pi", "tau", "marginal_cos_median",
             "marginal_c_over_s", "marginal_edge_gap", "marginal_truth_driven", "below_edge",
-            "positive_score_truth_spearman"]
+            "positive_score_truth_spearman", "marginal_score_free", "marginal_lower_branch",
+            "marginal_upper_branch", "marginal_boundary_slope", "branch_inconsistent"]
     print()
     print(table[[c for c in show if c in table]].to_string(
         index=False, float_format=lambda v: f"{v:.3f}"))
@@ -128,6 +129,13 @@ def main(argv=None) -> int:
         print(f"[t3c] marginal positives against the orthogonal edge sqrt(eps^2 - c^2): median "
               f"(s - edge)/s = {np.nanmedian(table['marginal_edge_gap']):.3f} (0 = the "
               "threshold sits on the edge, set by the hidden truth alone)")
+    if "marginal_lower_branch" in table:
+        print(f"[t3c] marginal positives by exact branch (median over operators): score-free "
+              f"{np.nanmedian(table['marginal_score_free']):.2f}, lower (under-recovery) "
+              f"{np.nanmedian(table['marginal_lower_branch']):.2f}, upper (edge) "
+              f"{np.nanmedian(table['marginal_upper_branch']):.2f}; boundary slope d s / d c "
+              f"{np.nanmedian(table['marginal_boundary_slope']):+.2f}; inconsistent "
+              f"{np.nanmax(table['branch_inconsistent']):.1e}")
     print(f"[t3c] orthogonal-error approximation: median |hypot(s,c) - err| / err = "
           f"{np.nanmedian(table['orth_rel_err_median']):.3f}; identity Spearman "
           f"{np.nanmin(table['identity_spearman']):.2f}-"

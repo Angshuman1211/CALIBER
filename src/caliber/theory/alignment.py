@@ -96,8 +96,27 @@ def operator_alignment(
     the median of ``(s - edge) / s`` over the marginal positives (near 0: the threshold sits on
     the edge); ``below_edge`` is the share of all positives under it, which only
     ``cos(theta) < 0`` allows; ``marginal_truth_driven`` is the share of marginal positives
-    whose hidden truth alone exceeds ``eps`` (``c >= eps``: at ``cos(theta) = 0`` they are
-    positive whatever their score).
+    whose hidden truth exceeds ``eps`` (``c >= eps``). **That is "positive whatever the score"
+    only at ``cos(theta) = 0``**; in general it means the region *has* a low-score positive
+    branch (below).
+
+    **The exact branches.** Holding the region's ``c`` and ``theta`` fixed, the identity makes
+    it positive iff its ``s`` lies outside ``[s_lo, s_hi]``,
+    ``s_lo/hi = c cos(theta) -/+ sqrt(eps^2 - c^2 sin^2(theta))``. So every positive is in one
+    of three classes, reported as shares of the marginal positives:
+
+    * ``marginal_score_free``: ``c |sin(theta)| >= eps``, positive at every ``s``;
+    * ``marginal_lower_branch``: ``s <= s_lo``, which exists exactly when ``c > eps`` and
+      ``cos(theta) > 0`` -- the prior recovered too little of a large hidden truth;
+    * ``marginal_upper_branch``: ``s >= s_hi`` -- at ``cos(theta) = 0`` this is the orthogonal
+      edge.
+
+    ``marginal_boundary_slope`` is the median, over branch positives, of ``d s_lo / d c`` or
+    ``d s_hi / d c``: how the boundary the marginal positive sits on moves as the operator hides
+    more truth. ``d s_lo / d c = cos + c sin^2 / sqrt(eps^2 - c^2 sin^2) > 0`` always;
+    ``d s_hi / d c = cos - c sin^2 / sqrt(...)``, negative at ``cos = 0``. H-T3C (T3.6 Sec. 11)
+    reads the sign of the threshold's move off this. ``branch_inconsistent`` counts positives
+    the identity says cannot be positive (float error only, if the columns are consistent).
 
     ``positive_score_truth_spearman`` is Spearman(score, ``c``) over the positives: how far the
     score of a positive moves with the hidden truth that made it positive. Under orthogonal
@@ -151,10 +170,36 @@ def operator_alignment(
                     row["marginal_edge_gap"] = _median(rel[m])
                     row["below_edge"] = float((s[lab] < edge[lab] - 1e-12).mean())
                     row["marginal_truth_driven"] = float((c[m] >= eps).mean())
+                    row.update(_branches(s, c, dec["cos"].to_numpy(), eps, m, lab))
             if lab.sum() >= 3:
                 row["positive_score_truth_spearman"] = rank_correlation(sc[lab], c[lab])
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _branches(s, c, cos, eps: float, marginal, positive) -> dict[str, float]:
+    """Shares of the marginal positives in each exact branch, and the boundary slope."""
+    sin2 = np.clip(1.0 - cos**2, 0.0, 1.0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        root = np.sqrt(eps**2 - c**2 * sin2)  # NaN where c|sin| > eps: score-free
+        s_lo, s_hi = c * cos - root, c * cos + root
+        free = np.sqrt(sin2) * c >= eps
+        lower = ~free & np.isfinite(root) & (s <= s_lo + 1e-12)
+        upper = ~free & np.isfinite(root) & (s >= s_hi - 1e-12)
+        slope = np.where(lower, cos + c * sin2 / root,
+                         np.where(upper, cos - c * sin2 / root, np.nan))
+    defined = np.isfinite(cos)
+    m = marginal & defined
+    pos = positive & defined
+    inconsistent = pos & ~free & ~lower & ~upper
+    n = max(int(m.sum()), 1)
+    return {
+        "marginal_score_free": float((free & m).sum() / n),
+        "marginal_lower_branch": float((lower & m).sum() / n),
+        "marginal_upper_branch": float((upper & m).sum() / n),
+        "marginal_boundary_slope": _median(slope[m]),
+        "branch_inconsistent": float(inconsistent.sum() / max(int(pos.sum()), 1)),
+    }
 
 
 def log_slope(x, y) -> float:

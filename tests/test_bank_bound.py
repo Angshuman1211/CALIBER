@@ -29,7 +29,7 @@ from caliber.theory.bank_bound import (
     pair_frame,
     pair_report,
 )
-from caliber.theory.stats import w1_distance
+from caliber.theory.stats import ks_distance, w1_distance
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -289,3 +289,14 @@ def test_the_script_runs_end_to_end_on_a_harness_bank(capsys, tmp_path):
     assert table["holds_coupled"].all() and table["holds_coupled_cond"].all()
     assert {"gap_matched", "gap_matched_lo", "tightness", "w1_coupled"} <= set(table.columns)
     assert len(pd.read_csv(corr))
+
+
+def test_quantile_bins_survive_an_outlier_that_collapses_equal_width_bins():
+    rng = np.random.default_rng(5)
+    a, b = rng.normal(0, 1, 4000), rng.normal(0.8, 1, 4000)
+    b[0] = 1e4  # one far score stretches the pooled range
+    ks = ks_distance(a, b)
+    assert histogram_tv(a, b, 50, edges="uniform") < ks  # the defect the LIDC run showed
+    assert histogram_tv(a, b, 50) >= 0.9 * ks
+    with pytest.raises(ValueError):
+        histogram_tv(a, b, 10, edges="log")
