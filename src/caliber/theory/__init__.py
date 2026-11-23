@@ -8,7 +8,9 @@ derivations are stated in; ``harness`` holds the controlled score-generating set
 
 from .stats import (
     DistanceReport,
+    crossing_probability,
     distribution_distances,
+    joint_cdf_gap,
     kde_density_difference_sup,
     ks_distance,
     tv_distance,
@@ -16,6 +18,8 @@ from .stats import (
 )
 
 __all__ = [
+    "crossing_probability",
+    "joint_cdf_gap",
     "DistanceReport",
     "distribution_distances",
     "kde_density_difference_sup",
