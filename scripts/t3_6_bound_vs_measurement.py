@@ -99,9 +99,9 @@ def load_distances(path: str | Path) -> dict[str, dict[tuple[str, str], float]]:
     return out
 
 
-def synthetic(kind: str, solver: str, n_items: int, size: int = 128):
+def synthetic_operators(kind: str, solver: str, size: int = 128):
+    """The harness operators and config; cheap (no reconstruction runs)."""
     from caliber.theory.harness import HarnessConfig, make_ct, make_mri
-    from caliber.theory.synthetic_bank import build_bank
 
     if kind == "mri":
         cfg = HarnessConfig(solver=solver, center_fraction=0.04, image_shape=(size, size),
@@ -111,6 +111,13 @@ def synthetic(kind: str, solver: str, n_items: int, size: int = 128):
     else:
         cfg = HarnessConfig(image_shape=(32, 32), region_size=8, n_scale_items=20, solver=solver)
         ops = [make_ct(cfg, v) for v in (60, 30, 20, 12)]
+    return ops, cfg
+
+
+def synthetic(kind: str, solver: str, n_items: int, size: int = 128):
+    from caliber.theory.synthetic_bank import build_bank
+
+    ops, cfg = synthetic_operators(kind, solver, size)
     return build_bank(ops, cfg, n_items=n_items), {o.descriptor().operator_id: o for o in ops}
 
 
@@ -143,6 +150,9 @@ def main(argv=None) -> int:
     ap.add_argument("--solver", default="prior", choices=["noise", "prior"])
     ap.add_argument("--items", type=int, default=60, help="items per operator (synthetic)")
     ap.add_argument("--size", type=int, default=128, help="image side, MRI synthetic")
+    ap.add_argument("--synthetic-cache", default=None,
+                    help="parquet path: load the harness bank from here if it exists, else "
+                         "build it and save it here (the CT harness takes minutes to build)")
     ap.add_argument("--calibration-operator", default=None,
                     help="restrict to pairs with this operator as src (both directions if "
                          "--both-directions)")
@@ -167,7 +177,15 @@ def main(argv=None) -> int:
 
     prov: dict = {}
     if args.synthetic:
-        df, ops = synthetic(args.synthetic, args.solver, args.items, args.size)
+        cache = Path(args.synthetic_cache) if args.synthetic_cache else None
+        if cache is not None and cache.exists():
+            df = pd.read_parquet(cache)
+            ops = {o.descriptor().operator_id: o
+                   for o in synthetic_operators(args.synthetic, args.solver, args.size)[0]}
+        else:
+            df, ops = synthetic(args.synthetic, args.solver, args.items, args.size)
+            if cache is not None:
+                df.to_parquet(cache, index=False)
         source = f"synthetic {args.synthetic} harness bank ({args.solver} solver)"
     elif args.bank:
         bank = Path(args.bank)

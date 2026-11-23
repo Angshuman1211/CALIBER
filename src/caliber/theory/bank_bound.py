@@ -339,10 +339,10 @@ def _caught(per_cluster_sorted: list[np.ndarray], taus: np.ndarray) -> np.ndarra
     return out
 
 
-def _quantiles(x, level: float) -> tuple[float, float]:
+def _quantiles(x, level: float, min_n: int = 10) -> tuple[float, float]:
     x = np.asarray(x, float)
     x = x[np.isfinite(x)]
-    if x.size < 10:
+    if x.size < max(10, min_n):
         return float("nan"), float("nan")
     tail = (1.0 - level) / 2.0
     lo, hi = np.quantile(x, [tail, 1.0 - tail])
@@ -489,7 +489,8 @@ def pair_report(
 
     # --- the bootstrap: one patient resample per replicate, both sides, both thresholds --
     boot = _bootstrap(fit, read, laws, cluster, alpha, nominal, n_boot, seed, tau_a)
-    q = {k: _quantiles(r, level) for k, r in boot.items()}
+    # as reliability.clustered_coverage: fewer than a tenth of the replicates usable is no interval
+    q = {k: _quantiles(r, level, n_boot // 10) for k, r in boot.items()}
 
     return PairReport(
         src=src, dst=dst, d_op=float(d_op), signed_growth=float(signed_growth),
@@ -578,6 +579,10 @@ def _bootstrap(
     cov_fixed = _caught(tst_b, np.array([tau_fixed]))[0][ti].sum(axis=1) / den
     empty = tst_n[ti].sum(axis=1) == 0
     cov_ab[empty] = cov_bb[empty] = cov_fixed[empty] = np.nan
+    # a replicate whose calibration draw cannot certify alpha flags everything; like
+    # reliability.clustered_coverage, it is dropped rather than counted as full coverage
+    cov_ab[~np.isfinite(tau_a)] = np.nan
+    cov_bb[~np.isfinite(tau_b)] = np.nan
 
     ks_c = np.full(n_boot, np.nan)
     w1_c = np.full(n_boot, np.nan)
