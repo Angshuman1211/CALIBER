@@ -813,7 +813,9 @@ def test_no_beta_band_is_a_gate_at_either_count():
 
 
 def test_amendment_eleven_does_not_claim_the_unit_finding_as_new():
-    entry = [t for _, t in prereg.AMENDMENTS if "BETA_REFERENCE_UNIT" in t]
+    # Keyed on "BETA_REFERENCE_UNIT added", not on the bare constant name: later
+    # amendments may legitimately mention the constant, and D96's did.
+    entry = [t for _, t in prereg.AMENDMENTS if "BETA_REFERENCE_UNIT added" in t]
     assert len(entry) == 1
     assert "not written up as new" in entry[0]
     assert "ClusteredCoverage" in entry[0], (
@@ -862,7 +864,12 @@ def test_the_dimensionless_warning_was_frozen_with_a_dimensioned_remedy():
 
 
 def test_the_level_range_brackets_the_count_it_was_drawn_from():
-    """The whole point: U's spread carries n, where the spread RATIO divides n out."""
+    """Recovers n from a PURE calibration draw -- no test-side term.
+
+    This is the only regime the method is exact in, and D96 found it is not the
+    regime either bank is in: the computable level is test-side, which adds a
+    second variance term. Kept as the method's floor, not as a bank result.
+    """
     for n in (41, 200, 5000):
         k = int(np.floor(0.1 * (n + 1)))
         levels = np.random.default_rng(n).beta(k, n + 1 - k, 13)
@@ -871,15 +878,48 @@ def test_the_level_range_brackets_the_count_it_was_drawn_from():
         assert lo <= n <= hi, f"bracket {got.bracket} missed the true count {n}"
 
 
-def test_the_level_range_excludes_the_region_count_on_the_banks_own_number():
-    """Track 2 reported tau between the 0.03 and 0.18 levels of F_a over 13 splits."""
+def test_the_level_range_cannot_exclude_a_region_scale_calibration_side():
+    """The test D94 owed itself and did not run: does the check reject a truth?
+
+    D94 read Track 2's level range as excluding the region count "by a factor of
+    order 300" and took that for a pass. Build the world the check is supposed to
+    reject -- calibration side AT the region count -- and read it through the
+    test-side level, which is the only computable one. The check still excludes
+    the region count, because the subject-scale test term dominates the variance.
+    A check that returns the same verdict whatever the truth is not a check.
+    """
+    rng = np.random.default_rng(0)
+    n_cal, n_test, alpha = 5000, 50, 0.1
+    k = int(np.floor(alpha * (n_cal + 1)))
+    levels = [rng.binomial(n_test, np.sort(rng.random(n_cal))[k - 1]) / n_test
+              for _ in range(13)]
+    got = R.count_from_level_range(levels, alpha=alpha, candidates=(
+        *R.DEFAULT_LEVEL_RANGE_CANDIDATES, n_cal))
+    assert got.excludes(n_cal), (
+        "the point of the test: the region count IS the calibration side here, and "
+        f"the check rejects it anyway (bracket {got.bracket})")
+    lo, hi = got.bracket
+    assert hi < n_cal, f"and the bracket sits far below the truth, at {got.bracket}"
+
+
+def test_the_retraction_is_recorded_where_the_method_is_frozen():
+    """COUNT_FROM_LEVEL_RANGE must not read as a usable dimensioned check."""
+    text = " ".join(prereg.COUNT_FROM_LEVEL_RANGE)
+    assert "RETRACTED" in text, "the retraction belongs in the frozen tuple, not only prose"
+    assert "region count" in text, "what it may not be cited against must be named"
+    entry = [t for _, t in prereg.AMENDMENTS if "COUNT_FROM_LEVEL_RANGE RETRACTED" in t]
+    assert len(entry) == 1, "the retraction must appear exactly once in the audit trail"
+    assert "200 of 200" in entry[0], "the measurement that forced it must be in the record"
+
+
+def test_excludes_refuses_a_count_it_never_tried():
+    """A bank's region count is never a round number, so a silent False is a trap."""
     levels = [0.03, 0.05, 0.07, 0.08, 0.09, 0.09, 0.10,
               0.11, 0.12, 0.13, 0.15, 0.16, 0.18]
     got = R.count_from_level_range(levels, seed=1)
-    lo, hi = got.bracket
-    assert lo <= 41 <= hi, "the subject count must survive"
-    assert hi < 1000, f"a count in the thousands must be excluded, bracket was {got.bracket}"
-    assert got.excludes(20000), "the region count is the one this check exists to reject"
+    with pytest.raises(ValueError, match="not among the candidates"):
+        got.excludes(5021)
+    assert got.excludes(20000) is True, "an on-grid count still answers"
 
 
 def test_the_level_range_yields_a_bracket_and_refuses_to_resolve_more():
@@ -953,13 +993,62 @@ def test_the_level_range_method_was_frozen_before_the_second_bank():
     assert prereg.as_dict()["count_from_level_range"] == list(prereg.COUNT_FROM_LEVEL_RANGE)
 
 
+def test_the_beta_unit_no_longer_cites_the_retracted_cross_check():
+    """BETA_REFERENCE_UNIT leaned on the level range; that support is withdrawn."""
+    doc = R.count_from_level_range.__doc__ or ""
+    assert doc, "the function must keep documenting itself"
+    assert prereg.BETA_REFERENCE_UNIT == "calibration_subject", (
+        "the UNIT is unchanged by D96; it was never the thing in doubt")
+    text = " ".join(prereg.COUNT_FROM_LEVEL_RANGE)
+    assert "harmonic" in text or "min(n_calibration" in text, (
+        "the estimand it actually measures must be stated where it is frozen")
+
+
 def test_amendment_thirteen_narrows_rather_than_widens():
+    """Keyed on the entry's own text, not on its index -- the index moves every round."""
     dates = [d for d, _ in prereg.AMENDMENTS]
     assert dates == sorted(dates), "the audit trail must read in order"
-    assert len(prereg.AMENDMENTS) == 13
     widening = [t for _, t in prereg.AMENDMENTS if "LOWERS THE PRIMARY ENDPOINT" in t]
     assert len(widening) == 1, (
         "exactly one amendment has ever moved an endpoint; the rest only narrow")
-    last = prereg.AMENDMENTS[-1][1]
-    assert "both narrow" in last
-    assert "0.03 and 0.18" in last, "the number that did the work must be in the record"
+    entry = [t for _, t in prereg.AMENDMENTS if "DIMENSIONLESS_PASS_REGIME" in t]
+    assert len(entry) == 1, "amendment 13 must appear exactly once"
+    assert "both narrow" in entry[0]
+    assert "0.03 and 0.18" in entry[0], "the number that did the work must be in the record"
+
+
+# -- D97: what the grid leaves the comparison room to show ---------------------
+
+
+def test_the_knob_baseline_is_not_independent_of_the_distance_on_this_grid():
+    """T1-B's within-family margin is not identified, and the freeze must say so."""
+    text = " ".join(prereg.BASELINE_COLLINEARITY)
+    assert "+0.92" in text and "+0.97" in text, "the measured range must be in the record"
+    assert "cross-family" in text, (
+        "the freeze must name where T1-B's claim can still live")
+    assert "grid change and not an analysis change" in text, (
+        "the remedy must be stated, or this reads as a reason to re-fit")
+    assert prereg.BASELINE_SCOPE["acquisition_parameter"].startswith("within-family"), (
+        "the collinearity bites exactly where the baseline is defined")
+
+
+def test_a_one_sided_partial_correlation_may_not_settle_attribution():
+    """The pre-specification passed and the claim is still refused."""
+    text = " ".join(prereg.SPREAD_RESIDUAL_UNATTRIBUTABLE)
+    assert "+0.068" in text and "+0.128" in text, (
+        "both directions must be recorded, which is the whole point")
+    assert "NOT shown to be explained" in text
+    entry = [t for _, t in prereg.AMENDMENTS if "BASELINE_COLLINEARITY" in t]
+    assert len(entry) == 1
+    assert "pre-specification was defective" in entry[0], (
+        "the defect was in the test design, not the statistic, and must be legible")
+    assert "both NARROW" in entry[0]
+
+
+def test_the_sixteenth_amendment_keeps_the_single_widening_entry_unique():
+    dates = [d for d, _ in prereg.AMENDMENTS]
+    assert dates == sorted(dates), "the audit trail must read in order"
+    widening = [t for _, t in prereg.AMENDMENTS if "LOWERS THE PRIMARY ENDPOINT" in t]
+    assert len(widening) == 1, "still exactly one amendment has moved an endpoint"
+    for key in ("baseline_collinearity", "spread_residual_unattributable"):
+        assert key in prereg.as_dict(), f"{key} must be exported in the fingerprint"

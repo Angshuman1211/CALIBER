@@ -806,7 +806,21 @@ class LevelRangeCount:
         return any(lo < int(c) < hi for c, _ in self.excluded)
 
     def excludes(self, n: int) -> bool:
-        """Whether this count is ruled out. False for a count that was never tried."""
+        """Whether this count is ruled out.
+
+        Raises for a count that was never tried, rather than returning False.
+        The obvious call is ``excludes(bank_region_count)``, and a bank's region
+        count is almost never a round number on the candidate grid -- 5021, 3089
+        and 8983 on the CT bank -- so a silent False would answer "not excluded"
+        when it means "never tested", for every real call this method has.
+        """
+        tried = {int(c) for c in self.consistent}
+        tried |= {int(c) for c, _ in self.excluded}
+        if int(n) not in tried:
+            raise ValueError(
+                f"count {int(n)} was not among the candidates, so this result says"
+                " nothing about it; pass it in `candidates` to ask about it"
+            )
         return any(int(c) == int(n) for c, _ in self.excluded)
 
     def as_row(self) -> dict[str, object]:

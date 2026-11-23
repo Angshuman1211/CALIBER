@@ -745,6 +745,20 @@ def main(argv: list[str] | None = None) -> int:
         for frame in (control, pairs, table):
             frame["claim_stamp"] = claim_stamp
             frame["prereg"] = prereg.fingerprint()
+            # Two orthogonal senses of "reportable" meet in these files and D96
+            # found them disagreeing: the per-cell column is STATISTICAL (is the
+            # estimate well enough determined to quote), while claim_stamp is
+            # PROVENANCE (may a number from this bank be quoted at all). Every
+            # face-bank row came back reportable=True under a DEVELOPMENT ONLY
+            # stamp, so `df[df.reportable]` selected development numbers for the
+            # write-up. The column is conjoined here and the statistical bit kept
+            # beside it, which makes any existing filter conservative rather than
+            # wrong: on a development bank it now selects nothing.
+            if "reportable" in frame.columns:
+                frame["reportable_statistical"] = frame["reportable"]
+                frame["reportable"] = frame["reportable"].astype(bool) & (
+                    claim_stamp == "reportable"
+                )
         control.to_csv(out / "matched_control.csv", index=False)
         pairs.to_csv(out / "ordered_pairs.csv", index=False)
         table.to_csv(out / "safety_rule.csv", index=False)

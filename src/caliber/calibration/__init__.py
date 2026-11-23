@@ -155,6 +155,11 @@ from .calibrators import (  # noqa: E402
     calibrate_weighted,
     certification_note,
 )
+from .tool2_baselines import (  # noqa: E402
+    calibrate_group_conditional_oracle,
+    calibrate_max_quantile,
+    calibrate_pooled,
+)
 from .fallbacks import (  # noqa: E402
     calibrate_group_weighted,
     group_weights,
@@ -177,6 +182,10 @@ __all__ = [
     "calibrate_mondrian",
     "calibrate_naive",
     "calibrate_weighted",
+    # T1-C -- the baselines Tool 2 is scored against (prereg.TOOL2_BASELINES)
+    "calibrate_group_conditional_oracle",
+    "calibrate_max_quantile",
+    "calibrate_pooled",
     "certification_note",
     "distance_weights",
     "effective_sample_size",

@@ -2958,3 +2958,499 @@ along with the claim that every instance was a choice made after seeing a number
 eleventh was not, which is the entire reason amendment 12 exists.
 
 Fingerprint `289b0f72f828` -> `a2ab9a1fdfe4`. Suite 1,106 passed, 7 skipped.
+
+---
+
+### D95 - T1-C's baselines, and a frozen name that did not fix its own direction [T1-C, local, no bank result yet; amendment 14]
+
+T1-C is the last item on the work plan's pre-27-November list that had not started, and the
+last place a CALIBER-beats-a-baseline comparison can still come out positive: T1-A is
+refuted on CT, T1-B is 0 of 4 there and 1 of 4 on the face bank. The three baselines are
+built and tested; **no T1-C number exists yet**, because the comparison needs a bank pass
+and both banks are Track 2's.
+
+#### 1. The frozen name did not determine the arm, and the gap had to be closed on a property
+
+`prereg.TOOL2_BASELINES` has named `max_quantile` since 18 November. Flags are
+`score >= tau` (`apply_flags`), so a **lower** threshold flags more and `-inf` flags
+everything -- which means "max-quantile" could be read as the largest per-group threshold
+or the smallest, and those are opposite choices. The name does not say which, and picking
+the one that flattered Tool 2 would be this project's recurring failure mode at its purest.
+
+So it was settled on the property the name appeals to -- *trivially safe* -- with both
+readings run on a fixture where they disagree. Four calibration operators with positive
+scores centred at 1.0, 2.0, 3.0, 4.0 and the deployment operator at 2.5, which is the
+interior fold the harness exists for:
+
+| per-group threshold | tau | coverage at the unseen operator | valid at 0.90 |
+|---|---|---|---|
+| smallest (`g_a`) | 0.3665 | **1.0000** | yes |
+| `g_b` | 1.3319 | 0.9850 | yes |
+| `g_c` | 2.3296 | 0.6200 | no |
+| largest (`g_d`) | 3.3572 | **0.0400** | no |
+
+The largest per-group threshold is not trivially safe; it is the least safe choice on the
+table. So `max_quantile` is the **minimum** certifiable per-group threshold, and
+`test_the_conservative_reading_of_max_quantile_is_the_valid_one` runs both candidate
+readings so the decision cannot be quietly reversed later.
+
+**One sub-decision, recorded because it changes the arm.** A group too thin to certify
+returns `-inf` from `split_threshold`. Letting that into the minimum would send this arm to
+"flag everything" whenever any group anywhere was thin -- a baseline that compares against
+nothing. Uncertifiable groups are excluded from the minimum and recorded in `results`
+instead, so `reportable` still goes False and the caller can see which groups dropped out.
+
+#### 2. Amendment 14: the bandwidth grid, frozen before the run
+
+`TOOL2_SELECTION_SCOPE` already required the kernel bandwidth to be chosen inside each fold
+on calibration operators only, but it named **no candidate set**. A grid assembled after
+seeing which bandwidth won would make that nested selection cosmetic -- the same defect as
+selecting on the held-out operator, one level up. `TOOL2_BANDWIDTH_GRID = (0.25, 0.5, 1.0,
+2.0, 4.0)`, as multiples of D33's median non-zero distance, recomputed per fold over that
+fold's retained groups. D33's own default (1.0) is on the grid, so the grid does not move
+the method's existing choice. Every point is reported under `TOOL2_REPORT_ALL_WEIGHTINGS`,
+so it cannot be mined for a best case, and the verdict prints the span rather than the best
+point.
+
+#### 3. `TOOL2_REQUIRE_BOTH_VALID` is a per-fold pairing, and the difference is 53 points
+
+The rule could be read as "average each arm over the folds it is valid on, then compare".
+That compares two different fold sets, and it is exactly what let `nearest` post the
+smallest area in D-070 Sec. 3 while under-covering in three folds of seven. Measured on a
+four-fold fixture where Tool 2 is valid everywhere and the safe rule only in two:
+
+| reading | saving against the trivially-safe rule |
+|---|---|
+| arm averages over all four folds | **+32.8%** |
+| paired, restricted to the two folds where both are valid | **-20.8%** |
+
+A 53-point swing, and the two readings disagree about the sign. The verdict pairs per fold
+and prints `folds_both_valid` beside every row, because a headline resting on two folds is
+not the same claim as one resting on seven.
+
+**The pathology itself is now a test.** On the same fixture the two invalid arms post the
+*smallest* areas of any arm -- 0.3100 and 0.0200 against the valid arms' 0.5100 and 0.8113 --
+so ranking on area alone selects the broken ones. That is the whole content of
+`TOOL2_REQUIRE_BOTH_VALID`, and it was a comment until now.
+
+#### 4. Two implementation choices worth a line each
+
+**Extended the existing harness rather than writing a second one.** `--t1c` swaps the arm
+set inside `scripts/tool2_holdout.py` and leaves the Q4 path untouched. The reason is not
+elegance: I cannot run any of this against a real bank here, so Track 2 runs it cold, and
+the loading, fold, interiority and validity code in that script is the code they have
+already run successfully. A fresh script would have put all of it back in play.
+
+**The module is `calibration/tool2_baselines.py`, not `baselines.py`.** There is already an
+`evaluation/baselines.py` -- non-conformal reference *detectors*, a different thing from
+calibrators -- and two modules of that name degrade the file-parametrised test IDs to
+`baselines.py0` and `baselines.py1`, which is unreadable in a failure report.
+
+#### 5. What is needed, and what it cannot be
+
+One bank pass, which is request one to Track 2:
+
+```
+PYTHONPATH=src python scripts/tool2_holdout.py runs/<bank> --t1c \
+    --distances-csv runs/<...>/ct_distances.csv --out runs/t1c/lidc.csv
+PYTHONPATH=src python scripts/tool2_holdout.py runs/<bank> --t1c --exclude-nearest 1 \
+    --out runs/t1c/lidc_sparse.csv
+```
+
+The second form is D75's sparse-grid case and is not optional: on a dense grid the
+weighting has little to win, and a result from the full grid alone would describe the grid.
+
+**What this cannot become.** If Tool 2 is not valid at every unseen operator there is no
+efficiency claim to make, and the verdict refuses to print one -- an area number beside a
+validity failure is the `nearest` error again. If it is valid and saves nothing, that is the
+reportable result and the headline says so.
+
+Fingerprint `a2ab9a1fdfe4` -> `0ea2d2fa9b3a`. Suite 1,135 passed, 7 skipped.
+
+### D96 - The dimensioned check could not fail, so it proved nothing; and two gates that disagreed with each other [T1-D, both banks, Track 2's D94 pass; amendment 15]
+
+Track 2 ran D93 and D94 on both banks and returned level vectors, brackets, design
+effects, the survivor's test, the quadrant panel and the face bank's spread ratio. Four of
+those land on Track 1's side. One of them retracts a frozen claim made the previous day.
+
+#### 1. The level I specified was k/n by construction, and the only computable version confounds the two counts
+
+Amendment 12 required a **dimensioned** check beside any pass that came from a
+dimensionless ratio. Amendment 13(b) declared that check run and passed, off an aside in
+Track 2's D93 message: tau sat between the 0.03 and 0.18 levels of `F_a` over 13 splits,
+and thirteen draws of `Beta(4, 38)` have median min 0.034 and median max 0.177 while the
+region count gives [0.097, 0.103]. I wrote that it "passes at the subject count and
+excludes the region count by a factor of order 300".
+
+Track 2 implemented the wording I froze -- *the fraction of that split's calibration
+positives at or below its threshold* -- and found it empty. `tau` **is** the k-th smallest
+of those positives, so that fraction is `k/n` whatever the scores do. Measured over all 234
+cells it runs 0.0990 to 0.1001. It is a constant and it carries no `n`.
+
+The only version that carries anything is **test-side**: the split's test positives at or
+below tau, which is `1 - matched coverage`. Its across-split variance is then a sum,
+
+```
+var[level] = var_Beta(n_calibration) + var_test(n_test)
+```
+
+and variances add, so the count read off the total lies **below both** counts. The estimand
+is their harmonic combination, confirmed over 60 seeds a row:
+
+| n_calibration | n_test | harmonic | median bracket | holds n_calibration | holds harmonic |
+|---|---|---|---|---|---|
+| 40 | 50 | 22 | (10, 50) | 67% | 78% |
+| 5000 | 50 | 50 | (10, 100) | **0%** | 85% |
+| 5000 | 3300 | 1988 | (1000, 2000) | 23% | 62% |
+| 40 | 3300 | 40 | (10, 70) | 92% | 92% |
+| 100 | 10000 | 99 | (15, 200) | 92% | 92% |
+
+The decisive row is the second. Build the world the check exists to reject -- calibration
+side **at** the region count, test side at subject scale, which is this bank -- and the
+bracket comes back (10, 100) and **excludes the region count in 200 of 200 seeds, with the
+region count true.** The check returns the same verdict whether the hypothesis is true or
+false. Track 2's "region count excluded at 9 of 9 on each bank" is therefore a property of
+the statistic and not a finding about the bank, and 18 of 18 across two banks adds nothing
+to it.
+
+The method recovers the calibration count only where the test side is much the larger (the
+last two rows). On these banks both sides are subject-scale, which is the one regime where
+the bracket looks right and establishes nothing.
+
+#### 2. What this is an instance of
+
+**Statistics trap twelve, and Track 1's ninth.** The eleven before it were, with one
+exception, a choice made after seeing a number. This one was frozen in advance, named
+before it was applied to the second bank, and carried its own refusal to gate. None of that
+helped, because the defect was not in *when* it was chosen but in what it could return:
+
+> Freezing a statistic in advance makes it honest about when it was chosen. It says
+> nothing about whether it can come out the other way. Only a calculation under the
+> hypothesis the statistic is supposed to reject can say that.
+
+That sentence is now in `prereg.py`'s module docstring, and the test that should have been
+written on 22 November exists as
+`test_the_level_range_cannot_exclude_a_region_scale_calibration_side`. It builds the
+rejected world and asserts that the check wrongly rejects it -- a test that passes by
+demonstrating the method's blindness, so the retraction cannot be quietly undone.
+
+Worth stating plainly: the check was biased **towards the answer I wanted.** Test-side
+noise inflates the width, a wider width reads as a smaller count, and a smaller count is
+what excludes the region count. Track 2 saw the shape of this and said so -- *"the widest
+ranges are at the operators with fewest positives, so the test side's own sampling is in
+the range and the brackets lean low"* -- in a caveat under item 2. The caveat was the
+finding.
+
+#### 3. The conclusion survives, on evidence that can fail, and it corrects the conclusion too
+
+The claim 13(b) was taken to support -- that the Beta's reference unit is the calibration
+subject and not the region -- stands on the **clustered bootstrap**, which resamples
+subjects and so measures the design effect directly, and which `BETA_REGION_COUNT_USE` has
+always named as the only certificate path. Track 2's item 4, matched cells, per operator:
+
+| bank | effective n | design effect | transfer-cell design effect |
+|---|---|---|---|
+| CT | 13 to 154, median 44 | 47 to 186, median 125 | median 54 |
+| face | 19 to 46, median 28 | 61 to 211, median 110 | median 29 |
+
+It also corrects the conclusion. The effective count is **not one number**: it tracks each
+operator's positive count across an order of magnitude. So `BETA_REFERENCE_UNIT` names the
+**unit** -- what one independent draw is -- and may not be read as naming a count. Freezing
+the count would repeat amendment 7's defect exactly: a constant where the right object is a
+function of the bank, which is a different error from a wrong value. The 10-to-70 bracket
+is struck from that constant's docstring, and D93's "near 45" and 174 were already gone.
+
+Also fixed: `LevelRangeCount.excludes` returned False for a count that was never a
+candidate. The obvious call is `excludes(bank_region_count)`, and a region count is never a
+round number -- 5021, 3089, 8983 on this bank -- so the honest answer "never tested" was
+being delivered as "not excluded". It raises now.
+
+#### 4. The direction rule's note quoted the wrong correlation, on both banks
+
+`GAP_DIRECTION_SOURCE`'s note said the two banks *order tau oppositely (rho -0.70..-1.00
+against +0.976)*. Those are the **gap** correlations. The rule's input is
+`rho(d, tau_b - tau_a)`, and D89's identity -- three lines above, in the same note --
+forces the two to have opposite signs. Reproduced from both banks' `ordered_pairs.csv`:
+
+| bank | rho(d, tau_b - tau_a) | rho(d, gap) | rule's call |
+|---|---|---|---|
+| CT (lidc_ct) | +0.546 to +1.000 | -0.657 to -1.000 | non-increasing |
+| face-prior | -0.886 to -0.980 | +0.886 to +0.980 | non-decreasing |
+
+Pooled on CT: **+0.049**, against the amendment-10 record of +0.05. Track 2's numbers
+reproduce to three decimals on both banks. The sentence's conclusion is untouched -- the
+banks do order tau oppositely -- but the figures attached to it were the wrong quantity,
+and `GAP_DIRECTION_RULE` explicitly invites running the rule by hand from one CSV, so
+anyone doing that would have found the opposite sign on both banks and concluded they had
+erred. Corrected, with both columns now tabulated beside each other.
+
+#### 5. The face bank's fit cannot discriminate, and the CT bank's disagreement is not optional to disclose
+
+`GAP_FACE_BANK_PREDICTION` passed: face tau falls with the distance, unanimously, -0.89 to
+-0.98 across four family cells. Run the rule on that and it calls a **non-decreasing** fit
+-- the same shape as `GAP_PREDICTION_DIRECTION`, the Week-2 constant **refuted** on the CT
+bank. On the face bank the rule's answer and the refuted constant's answer coincide.
+
+So a face-bank isotonic fit agrees with the rule and with the refuted hypothesis at once
+and tells them apart not at all, while the bank where they disagree is the bank barred from
+reporting a direction. `FACE_BANK_DIRECTION_COINCIDENCE` is frozen: the coincidence must be
+stated wherever the face fit appears, and the CT bank's opposite sign must be disclosed
+beside it. The bar on the CT bank was a bar on letting it **set** the direction; it was
+never a licence to omit that the two banks answer oppositely.
+
+#### 6. `reportable=True` on all 72 rows of a bank stamped DEVELOPMENT ONLY
+
+Two orthogonal senses of the word meet in `ordered_pairs.csv`. The per-cell `reportable`
+column is **statistical** -- is this estimate determined well enough to quote. The
+`claim_stamp` is **provenance** -- may any number from this bank be quoted at all. On the
+face bank every one of the 72 rows carries `reportable = True` under
+`claim_stamp = DEVELOPMENT ONLY`, so `df[df.reportable]` selects 72 development rows for
+the write-up. `spread_ratio.log` says it outright: *NOT REPORTABLE - development only, no
+number below may appear in the write-up.*
+
+`t1a_safety_rule.py` now conjoins the column and keeps the statistical bit as
+`reportable_statistical`, so an existing filter becomes conservative rather than wrong: on
+a development bank it selects nothing. `CLAIM_STAMP_BINDS` records which gate wins, and
+that a frozen prediction passing on a development-only bank has passed **on a
+development-only bank**, stamp beside it.
+
+**This is load-bearing for the paper, not a tidy-up.** CT is reportable for coverage and
+barred from setting the direction. Face gives the direction and is development-only. As
+things stand the direction rule has **no bank on which its output is both unbarred and
+reportable** -- which is a different sentence from the one D93 recorded, that the rule "is
+correct on both banks".
+
+`scripts/restamp_bank.py` recomputes a bank's claims from its manifest alone, reads no row
+and needs no pass. The face bank is `w07_ct_onboarding`, old enough that its manifest may
+predate `reportable_claims` entirely, in which case D-018's boolean is giving all-or-nothing
+and a re-stamp fixes it for free. If instead the prior is inadmissible for the modality,
+the second bank can never carry coverage, and that is a fact the publication plan needs in
+November rather than in December. Asked, not assumed.
+
+#### 7. The survivor's test is flat, and its consolation does not replicate
+
+D94 left one candidate for the extreme-pair compression: the matched cell is a rank
+statistic of its own scores and so immune to a per-split refit, the transfer cell is not,
+so refit wobble enters transfer cells only. The test was pre-specified -- re-estimate
+`G_ab` per split from that split's own scores, read the across-split spread against pair
+distance. Track 2 ran it. Reproduced here:
+
+| bank | median sd of G(u0) | rho(abs distance, sd) | by distance quartile |
+|---|---|---|---|
+| CT | 0.0513 | **+0.087** | 0.045, 0.063, 0.055, 0.048 |
+| face | 0.0365 | **+0.005** | 0.036, 0.038, 0.038, 0.040 |
+
+Flat. **The candidate is refuted by its own pre-specified test**, which makes three
+mechanisms dead by three different arguments: curvature by sign, test-side noise by sign,
+refit wobble by flatness.
+
+Track 2 offered one consolation -- on CT, `rho(sd of G, log measured/predicted) = +0.41`,
+so the mechanism "is not unrelated". On the face bank that correlation is **+0.049**. It
+does not replicate, so it is a CT coincidence and not a partial mechanism, and it is not
+carried forward.
+
+#### 8. What the second bank actually says about the discrepancy, which is not what the first said
+
+The 1.61x was never a median. CT: median measured/predicted **0.97**, rho +0.977, log-log
+slope 1.08, within 2x at 100% -- 1.61 was the single most distant pair. Face: median
+**1.28**, rho +0.851, slope 0.80, within 2x at 89%. And the shape differs:
+
+| bank | log(measured/predicted) by distance quartile |
+|---|---|
+| CT | -0.052, -0.029, -0.038, -0.018 |
+| face | -0.012, **+0.161**, **+0.357**, **+0.529** |
+
+On CT the discrepancy is flat in distance and the median sits slightly *below* 1. On face
+it **grows monotonically with distance**, reaching 1.70x in the far quartile. So the second
+bank turns what looked like one outlying pair into a trend -- and no mechanism triaged so
+far has the right shape for it, since all three died and the two that die by sign die on
+arguments that do not depend on the bank.
+
+One decomposition is available without a new run, and it splits the face result in two.
+`spread_ratio.log` already reports a count-matched subset -- pairs whose positive counts
+are within 1.5x -- as a standard secondary line, so the cut is Track 2's and not one I
+chose after seeing the trend. Applied to the face excess:
+
+| bank | all 72 pairs | count-matched | rho(abs d, excess), matched | far quartile, matched |
+|---|---|---|---|---|
+| CT | 0.97 | 0.94 (n=18) | **-0.112** | -0.099 |
+| face | 1.28 | **1.08** (n=28) | **+0.418** | **+0.524** (1.69x) |
+
+So the two halves of the face result have different causes. Its **level** is largely
+positive-count mismatch: matching the counts moves the median from 1.28 to 1.08, nearly
+closing it. Its **distance trend survives the control** at rho +0.418, with the far
+quartile still at 1.69x. On face, distance and count mismatch are themselves correlated
+(rho **+0.550**, against +0.140 on CT), which is why the two had to be separated before
+either could be read.
+
+The honest status: the Beta law predicts the **ordering** of transfer spreads well on both
+banks (rho +0.977 and +0.851), predicts the **magnitude** to within 8% once positive counts
+are matched, and leaves **one open residual** -- a distance-growing inflation present on
+the face bank at matched counts and absent on CT. That is a sharper open item than D94's
+was, and narrow enough to be stated as a limitation rather than a mystery. No mechanism is
+proposed: three have died, and inventing a fourth to fit a trend on one bank is where this
+project's recurring failure lives.
+
+#### 9. Provenance note
+
+`lidc/spread_ratio.log` is stamped `prereg f3b3f1b6aed8` while everything else in the
+archive is at `a2ab9a1fdfe4`, so that one file is the D92-era output and was not re-run.
+The spread computation does not read any constant amendments 10 to 13 touched, so the
+numbers stand; the stale stamp is noted rather than acted on.
+
+#### 10. Answers to Track 2's two questions
+
+**The frozen level estimate: test-side, for a smaller purpose than it was requested for.**
+`level_calib` is `k/n` and is dropped. `level_pooled` mixes labels across splits -- face
+runs 0.006 to 0.348 from label re-valuation -- and is a different quantity, not read.
+`level_test` is the right column, and what it measures is the **matched coverage estimate's
+own combined effective count**, which is worth having. It is not the dimensioned check and
+may not be cited against the region count.
+
+**The two-solve cos channel: accepted as proposed**, built into the bank writer when the
+next bank is scheduled, three-solve form logged ungated, LIDC untouched. One fence: LIDC's
+reconstructions are not kept, so the channel can never be back-filled there, and with face
+development-only it would exist on no bank whose numbers may be published. Build it;
+nothing may become load-bearing on it until a bank that carries coverage has it.
+
+#### 11. Status
+
+| Item | State |
+|---|---|
+| Dimensioned check via the level range (amendment 13b) | **Retracted**; the check cannot fail |
+| Beta reference unit = calibration subject | **Stands**, on the clustered bootstrap |
+| Effective n as one number | **Withdrawn**; 13 to 154 per operator, tracks positive count |
+| Curvature as the discrepancy | Ruled out, by sign, D94 |
+| Test-side noise as the discrepancy | Refuted by sign, D94 |
+| Per-split refit wobble as the discrepancy | **Refuted by flatness**, both banks |
+| Face excess LEVEL (1.28) | **Mostly positive-count mismatch**; 1.08 at matched counts |
+| Face excess DISTANCE TREND | **Open, no candidate**; survives count-matching at rho +0.418 |
+| Direction rule's note | Corrected; wrong correlation quoted on both banks |
+| Direction rule reportable anywhere | **No**, pending the face bank's re-stamp |
+| `reportable` vs `claim_stamp` | Conjoined in the writer |
+
+Amendment 15; fingerprint `0ea2d2fa9b3a` -> `9c0221cae495`. Suite 1,138 passed, 7 skipped.
+
+### D97 - My pre-specification passed and the claim is refused; and the grid cannot tell the distance from the knob [T1-B, T1-D, local, off Track 3's row 5; amendment 16]
+
+Track 3 merged T3-A through T3-D (c4941df, 3,210 insertions, suite now 1,183). Two of
+their results reach into Track 1's open items, and following one of them up produced a
+worse finding about Track 1's own headline comparison.
+
+#### 1. Track 3 hands over a candidate for the residual D96 left open
+
+T3.6 row 5, measured on the LIDC bank and reported as a **negative** result for their own
+purposes: within family cells the operator distance does not order the score-law shift
+(rho -0.16 to +0.18 on 66 of 72 pairs), and **the law shift follows the view ratio** (up to
++0.92 within sparse view). Their phrasing: *"the distance counts absolute change."*
+
+D96 left exactly one open residual -- the face bank's spread excess grows with distance at
+matched positive counts, rho +0.418 -- and recorded that no fourth mechanism would be
+proposed, because three had died and inventing one is this project's failure mode. Row 5 is
+not me inventing one. It is another track's independent measurement, and it makes a
+specific prediction: my predicted spread ratio is `f_b/f_a`, a **ratio**, so if the law
+shift is driven by the view ratio while the distance measures absolute change, a ratio
+prediction should fail exactly where the two diverge.
+
+So the test was legitimate to run. It was pre-specified first, in writing, before any
+number: a pass required (a) the view ratio to order the face excess at rho >= +0.40, at
+least as well as the distance, **and** (b) the partial correlation of distance given the
+view ratio to fall below +0.20. The pre-specification also barred me from trying any other
+predictor on this residual in this round.
+
+**Both conditions passed.** The view ratio orders the excess at **+0.429** against the
+distance's +0.418, and the partial correlation of distance given the view ratio collapses
+to **+0.068**.
+
+#### 2. The pass is refused, because the pre-specification was defective
+
+It asked the question in one direction only. Run symmetrically:
+
+| face bank, count-matched (n=28) | raw rho | partial, given the other |
+|---|---|---|
+| abs distance vs excess | +0.418 | **+0.068** |
+| abs log view ratio vs excess | +0.429 | **+0.128** |
+
+Both collapse. That is what collinearity does: the two predictors correlate at **+0.916**,
+and of the 28 count-matched pairs exactly **1** has distance and view-ratio ranks differing
+by more than a quarter of the sample (3 of 72 unmatched). Neither variable survives
+controlling for the other, and that is not evidence for either.
+
+A partial correlation near zero means the two cannot be separated. It does not mean the
+variable controlled for is the cause. My criterion (b) would have licensed the reading that
+Track 3's row 5 explains my residual -- a tidy close, one day after D96 -- and the only
+reason it did not is that I ran the direction I had not specified.
+
+**This is the same failure shape as D96, one day later, moved up a level.** D96's defect
+was a statistic that could not come out the other way. This one is a *test design* that
+could not come out the other way, written by someone who had just spent a day on the first
+defect. Freezing the test in advance did not help again, and for the same underlying
+reason: what has to be checked is not when a criterion was chosen but whether it can fail.
+The symmetric pair is now barred from being omitted anywhere in the project
+(`SPREAD_RESIDUAL_UNATTRIBUTABLE`).
+
+The residual therefore stays exactly where D96 left it: open, sized, consistent with Track
+3's finding, and **not** explained by it.
+
+#### 3. The same measurement is a harder limit on T1-B, which matters more
+
+`GAP_PREDICTION_BASELINES` requires the distance to beat `acquisition_parameter`, and
+`BASELINE_SCOPE` already restricts that baseline to within-family pairs because no scalar
+knob orders a limited-angle operator against a sparse-view one. The freeze also already
+called this "the objection that makes rho = +0.976 weak within a family". That was
+qualitative. Measured, in the only scope where the baseline exists:
+
+| family cell | pairs | rho(abs distance, abs log knob ratio) |
+|---|---|---|
+| sparse_view | 30 | **+0.923** (CT), **+0.957** (face) |
+| limited_angle | 6 | **+0.970** (CT), **+0.970** (face) |
+
+The baseline is a near-duplicate of the predictor it is meant to control, on both banks.
+So **T1-B's within-family comparison is not identified**: whichever of the two wins, wins
+by a margin that 30 and 6 pairs cannot resolve, and the result cannot be reported as the
+measure carrying information beyond the knob.
+
+The cause is the grid's shape, not the distance measure. The grid is two one-dimensional
+arms -- sparse view turns the view count at a full arc, limited angle turns the arc at 120
+views -- so within an arm the distance is nearly a monotone function of the one knob that
+moved. It follows that:
+
+- T1-B's claim has to live on the **36 cross-family pairs**, which is where no scalar knob
+  is defined and so where the measure is not duplicated. That is half the grid, and it is
+  the half `BASELINE_SCOPE` already identified as the interesting one.
+- The remedy is a **grid change, not an analysis change**. Interior operators that move
+  both knobs at once -- 90 views at 120 degrees, 60 views at 150 -- break the duplication.
+- **It must be settled before the next bank is built.** No reanalysis of the existing 72
+  pairs can recover a contrast the grid never varied independently, so this is a request
+  with a deadline rather than a caveat.
+
+#### 4. Track 3's other result, noted and not consumed
+
+H-T3C offers a mechanism for the thing D89 recorded as unexplained and `GAP_FACE_BANK_PREDICTION`
+still calls a bank property: *why* the two banks order tau oppositely. LIDC's
+marginal positives are aligned (+0.57 to +0.65) with their score coupled to the hidden
+truth and tau rises; the face bank's are orthogonal, edge-bound and decoupled and tau
+falls. The pre-named falsifier -- LIDC orthogonal and truth-driven while tau rises -- did
+not fire, and both banks fell in the regime assigned to them in advance.
+
+Track 3 is careful about what that buys: *"H-T3C remains a description of two regimes,
+consistent with six banks, not a law"*, and one sub-prediction failed as worded. Nothing in
+Track 1's freeze changes on it. Recorded here because D96 Sec. 5 says the two banks' opposite
+signs must be disclosed wherever the face fit appears, and H-T3C is now the thing to
+disclose beside them -- as a hypothesis with a surviving falsifier, which is more than
+"unexplained" and less than a mechanism.
+
+#### 5. Status
+
+| Item | State |
+|---|---|
+| Face residual explained by the view ratio | **Not shown**; both partials collapse at +0.916 collinearity |
+| Face residual | **Open**, sized at rho +0.418, unchanged from D96 |
+| T1-B within-family margin | **Not identified**; knob and distance +0.92 to +0.97 collinear |
+| T1-B claim scope | The **36 cross-family pairs** |
+| Grid remedy (interior operators) | **Needed before the next bank**, not re-analysable after |
+| One-sided partial correlations | **Barred** project-wide for collinear predictors |
+| Why the banks order tau oppositely | Track 3's H-T3C, falsifier did not fire; hypothesis |
+| Merge of Track 3's T3-A..T3-D | Clean; suite **1,183 passed, 7 skipped** |
+
+Amendment 16; fingerprint `9c0221cae495` -> `cc6bb1e631a7`. Suite 1,183 passed, 7 skipped.
