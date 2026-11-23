@@ -1,0 +1,54 @@
+# Week 11 — the first run on a medical prior (D-016 corrected by D79), smoke size.
+#
+#   D:/venvs/caliber-gpu/Scripts/python.exe -u -m caliber.runner \
+#       configs/experiments/w11_m4raw_brats_smoke_gpu.yaml
+#
+# Song et al.'s BraTS 2021 brain-MRI score model (ICLR 2022), converted to PyTorch
+# (scripts/convert_song_checkpoint.py) and verified against their own Flax model to ~1e-5
+# relative (T2.10), on M4Raw brain k-space. Anatomy matches; three things do not:
+#
+# * **Resolution.** The network is fixed at 240^2, so the working grid is 240^2: 15 x 15
+#   regions of 16 px rather than the fastMRI bank's 16 x 16. Every per-region quantity,
+#   and every design-split quantile that sets the label, is re-valued here, not carried over.
+# * **Normalisation is per-slice max, not p99.** BraTS was min-max scaled to [0, 1]; under
+#   p99 1% of M4Raw pixels sit above 1 (up to 1.9) and the prior's denoising gain halves.
+# * **BraTS is skull-stripped; M4Raw is not.** Skull, scalp and background are outside the
+#   prior's training distribution.
+#
+# Not reportable yet, on two counts that are Track 1's to rule: M4Raw is an unreportable
+# substrate (D-015), and the prior's domain is recorded as "mri_brain", which no modality
+# admits until the anatomy-matched case is ruled (denoiser.PRIOR_DOMAINS).
+
+include: base
+
+experiment:
+  name: w11_m4raw_brats_smoke_gpu
+  solver:
+    name: ddnm
+    checkpoint: checkpoints/song_inverse_problems/brats_ncsnpp_ve
+    n_steps: 24
+    device: cuda
+  n_posterior: 4
+  operators:
+    - modality: mri
+      family: [random1d, equispaced1d, variable_density2d]
+      acceleration: [2, 4, 8]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [240, 240]
+  dataset:
+    name: m4raw
+    root: data/raw/m4raw
+    split: auto
+    image_shape: [240, 240]
+    slices_per_volume: 1
+    normalisation: max
+    calib_fraction: 0.5
+    design_fraction: 0.10
+
+run:
+  limit: 2
+  cache_reconstructions: 2
+  checkpoint_every: 10

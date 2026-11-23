@@ -10,6 +10,9 @@ from .denoiser import (
     Denoiser,
     DiffusersUNetDenoiser,
     NoiseSchedule,
+    SongVEScoreDenoiser,
+    build_denoiser,
+    ve_schedule,
 )
 from .diffusion import DDNMSampler, DPSSampler
 from .flow import FlowDPSSampler
@@ -48,5 +51,8 @@ __all__ = [
     "PosteriorSampler",
     "PseudoInverseSampler",
     "SolverInfo",
+    "SongVEScoreDenoiser",
+    "build_denoiser",
     "build_solver",
+    "ve_schedule",
 ]

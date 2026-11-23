@@ -199,3 +199,65 @@ def test_the_script_refuses_a_measure_that_is_not_in_the_csv(tmp_path, capsys):
     ])
     assert code == 1
     assert "spectral_divergence" in capsys.readouterr().err
+
+
+# -- each row takes the distance of its own (calibration, deployment) pair ------------
+
+
+def _two_direction_inputs(tmp_path: Path) -> tuple[str, str]:
+    """A Week 8-style table, both directions, against a CSV holding both calibrations."""
+    coverage = pd.DataFrame([
+        {"direction": "ascending", "calibrated_at": "ct.v180", "deployed_at": "ct.v90",
+         "method": "naive", "coverage": 0.85},
+        {"direction": "descending", "calibrated_at": "ct.v30", "deployed_at": "ct.v90",
+         "method": "naive", "coverage": 0.95},
+        {"direction": "descending", "calibrated_at": "ct.v30", "deployed_at": "ct.v180",
+         "method": "naive", "coverage": 0.97},
+        {"direction": "ascending", "calibrated_at": "ct.v180", "deployed_at": "ct.v90",
+         "method": "group", "coverage": 0.90},
+    ])
+    distances = pd.DataFrame([
+        {"calibration": "ct.v180", "deployment": "ct.v90", "measure": "null_space_growth",
+         "value": 0.40},
+        {"calibration": "ct.v30", "deployment": "ct.v90", "measure": "null_space_growth",
+         "value": -0.30},
+        # stored only in the other order: the reader must negate it
+        {"calibration": "ct.v180", "deployment": "ct.v30", "measure": "null_space_growth",
+         "value": 0.70},
+    ])
+    cov, dist = tmp_path / "cov.csv", tmp_path / "dist.csv"
+    coverage.to_csv(cov, index=False)
+    distances.to_csv(dist, index=False)
+    return str(cov), str(dist)
+
+
+def test_a_two_direction_table_is_matched_by_pair_not_by_deployment_alone(tmp_path):
+    """The bug: matching on the deployment operator took the first calibration in the CSV,
+    so v30 -> v90 was plotted at v180 -> v90's distance."""
+    cov, dist = _two_direction_inputs(tmp_path)
+    points = curve_collapse.points_for(cov, dist, "ct", "naive_transferred",
+                                       "null_space_growth", 0.90)
+    got = {(r.calibration, r.operator_id): r.distance for r in points.itertuples()}
+    assert got[("ct.v180", "ct.v90")] == pytest.approx(0.40)
+    assert got[("ct.v30", "ct.v90")] == pytest.approx(-0.30)
+    assert got[("ct.v30", "ct.v180")] == pytest.approx(-0.70), "reverse order is negated"
+    assert len(points) == 3, "the group arm is not the naive arm"
+
+
+def test_one_direction_can_be_selected(tmp_path):
+    cov, dist = _two_direction_inputs(tmp_path)
+    points = curve_collapse.points_for(cov, dist, "ct", "naive_transferred",
+                                       "null_space_growth", 0.90, direction="descending")
+    assert set(points["direction"]) == {"descending"} and len(points) == 2
+
+
+def test_a_table_that_does_not_name_its_calibration_is_refused_when_that_is_ambiguous(
+    tmp_path,
+):
+    cov, dist = _two_direction_inputs(tmp_path)
+    legacy = tmp_path / "legacy.csv"
+    pd.DataFrame([{"operator_id": "ct.v90", "method": "naive_transferred",
+                   "coverage": 0.85}]).to_csv(legacy, index=False)
+    with pytest.raises(ValueError, match="calibrated_at"):
+        curve_collapse.points_for(str(legacy), dist, "ct", "naive_transferred",
+                                  "null_space_growth", 0.90)

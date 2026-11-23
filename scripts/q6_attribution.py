@@ -41,6 +41,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+from caliber.reportability import DETECTION, carries
 from caliber.scorebank import read_bank, read_manifest
 from caliber.scoring.attribution import (
     CANONICAL_COMPONENTS,
@@ -105,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[q6] {len(df):,} region rows, {df['operator_id'].nunique()} operators")
 
     prov = manifest.get("provenance") or {}
-    if prov and not prov.get("reportable", True):
+    if prov and not carries(prov, DETECTION):
         print(
             f"[q6] NOT REPORTABLE -- dataset={prov.get('dataset')}, "
             f"solver_family={prov.get('solver_family')}. Q6's answer from this bank is a "

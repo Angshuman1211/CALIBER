@@ -25,6 +25,7 @@ import os
 import platform
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -37,15 +38,32 @@ PARTIAL_SCORES = "scores.partial.parquet"
 PARTIAL_MANIFEST = "manifest.partial.json"
 
 
+#: How long a rename may be retried while another process holds the target open (P-39).
+REPLACE_RETRIES = 20
+REPLACE_WAIT_S = 0.25
+
+
 def _atomic_write_bytes(path: Path, write) -> None:
     """Write via a sibling temp file and rename, so a crash never leaves half a file.
 
     A checkpoint that is itself corrupted by the crash it exists to survive would
     be worse than none: it would look like a result.
+
+    **On Windows the rename fails while any other process has the target open** --
+    reading a checkpoint to watch progress is enough (P-39: a status check killed a
+    two-hour bank at its 160th pair). The lock lasts as long as the reader's read, so
+    the rename is retried for up to ~5 s before the error is allowed to stand.
     """
     tmp = path.with_name(path.name + ".tmp")
     write(tmp)
-    os.replace(tmp, path)
+    for attempt in range(REPLACE_RETRIES):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == REPLACE_RETRIES - 1:
+                raise
+            time.sleep(REPLACE_WAIT_S)
 
 
 def _git_sha() -> str | None:

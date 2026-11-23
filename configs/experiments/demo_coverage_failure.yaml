@@ -1,0 +1,50 @@
+# A two-minute live demo of the central claim, on synthetic phantoms.
+#
+#   PYTHONPATH=src python3 -m caliber.runner configs/experiments/demo_coverage_failure.yaml
+#   PYTHONPATH=src python3 scripts/analyse_bank.py runs/<run_id> \
+#       --calibration-operator mri.random1d.R2.c0.08.s0 --label ratio --tau 1.10
+#
+# Needs no dataset, no checkpoint and no GPU, and finishes in seconds. It exists so the
+# claim can be *shown* rather than described: a threshold calibrated at R=2 and carried to
+# R=8 stops keeping its promise, and calibrating per operator puts it back.
+#
+# Two differences from w01_smoke_phantom, both load-bearing:
+#
+#   - `split: auto` gives design / calib / test sides, so thresholds are fitted on patients
+#     they are not scored on. Without it every coverage number is in-sample and lands near
+#     nominal by construction, which is P-23's artefact and the harness warns about it.
+#   - A five-point operator ladder instead of three, so the failure is visibly *graded*
+#     with operator distance rather than being two points and a line.
+#
+# **Nothing here is reportable, and the harness says so unprompted**: the substrate is
+# synthetic and the sampler is a reference, not a generative prior (D-018, D-035). That
+# refusal is itself worth demonstrating -- the pipeline will not let a number from this
+# run be quoted.
+
+include: base
+
+experiment:
+  name: demo_coverage_failure
+  solver:
+    name: reference_nullspace
+    hallucination_scale: 0.18
+  n_posterior: 8
+  operators:
+    - modality: mri
+      family: random1d
+      acceleration: [2, 3, 4, 6, 8]
+      center_fraction: 0.08
+      mask_seed: 0
+
+data:
+  image_shape: [128, 128]
+  dataset:
+    name: phantom
+    n_items: 120
+    image_shape: [128, 128]
+    split: auto
+    design_fraction: 0.2
+
+run:
+  limit: 120
+  cache_reconstructions: 2

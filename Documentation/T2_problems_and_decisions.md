@@ -23,17 +23,164 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 
 ### Still open
 
---|---|---|---|
-| `random1d R2` | 0.726 | **0.865** | -0.489 | +0.397 |
-| `random1d R8` | **0.920** | 0.651 | -0.771 | +0.463 |
-| `variable_density2d R2` | 0.829 | 0.878 | -0.668 | **+0.026** |
+#### P-45 - `label_comparison.py` refuses the LIDC bank: 0.48% of regions fail the identity
 
-At `variable_density2d R2`, the headline cell, the ratio among candidates is uncorrelated
-with the error and driven by how little each region hides. T2.5 reports every number
-against the label as ruled and states this beside them. The check that would settle it is
-the within-candidate, per-operator decomposition above. Measuring it on M4Raw would show
-whether 0.499 there is the same cancellation. `component_auroc.py` prints the per-operator
-label check on any bank.
+**Open - decides:** Track 2 (the cause), Track 1 (the guard's tolerance) - **See:** D38, D74, T2.11 §1f, T2.6
+
+**Update, D89 and D91 (T2-A6).** Track 1 withdrew the question T2-A5 answered: a ratio
+formed from the same vectors in one solve cannot exceed 1 whatever the solver does, so the
+tolerance cannot be read off a residual. T2-A6 settles which case this is. `cos theta` is
+`(s_free^2 + free_content^2 - err_free^2) / (2 s_free free_content)`, and the three columns
+come from three separate null-space solves (`P_N(x_hat)`, `P_N(x)`, `P_N(x_hat - x)`), so
+the solver's non-additivity enters directly. Measured on the design subjects with a
+perturbed truth: with the error term taken as the difference of the two solves, no region
+exceeds 1 in any of 36 runs; in the bank's form 46 of 1,600 do at limited-angle 90 degrees
+at a 0.5% perturbation. On the bank the excess above 1 has medians of 0.003 to 0.043 by
+operator and reaches 0.31, and neither it nor the count follows the per-operator additivity
+defect, because a region must already sit near `cos theta = 1` to cross. The guard is
+unchanged. Open for Track 1: a tolerance from T2.11 Sec. 1j's table, or an `err_free`
+formed from the two solves, which would be a change to how the next bank is written.
+
+**Update, D87 (T2-A5).** Measured on the design subjects: CG uses all 20 iterations at
+every operator and stops at a relative residual of 0.7e-4 to 5.6e-4 against a tolerance of
+1e-6; the null projection is not idempotent (9-41%) and not additive (2-12%), because a
+stopped CG is not a linear map. Ten times the iterations lowers the residual and makes
+additivity worse. The guard asks for 1e-3, a hundred times tighter than the solver gives.
+The cause is confirmed; the guard's tolerance is Track 1's to set and is unchanged.
+
+**Update, D86.** By operator: limited-angle 90 degrees 714, sparse-view 30 329,
+limited-angle 150 degrees 230, sparse-view 180 176, limited-angle 120 degrees 156,
+sparse-view 90 76, sparse-view 45 63, none at sparse-view 120 or 60. 221 of the 1,744 are
+positives. D86 also rules on the guard: its form should change, since one region should not
+condemn a bank, but its threshold must come from what the solver's tolerance can explain and
+not from the share observed here. That needs the CG measurement below, so the guard is
+unchanged for now and still refuses this bank.
+
+`label_comparison.py` checks D38's identity before it reports cos theta: the three stored
+columns must give |cos theta| <= 1 at every region, to 1e-3 of `err_free^2`. On the LIDC bank
+1,744 of 360,000 regions do not, by a median of 0.006 in cos theta and at most 0.31, and the
+script stops. The face-prior CT bank has 11 such regions and the 2-subject smoke bank 5, so
+this was always present and is forty times more common here. The regions are those where
+the error is small beside the content, so cos theta sits near 1 and a small inconsistency
+crosses it; they concentrate at limited-angle 90 degrees (709) and sparse-view 30 (329).
+The medical prior reconstructs well, which is what puts so many regions at that boundary.
+The suspected cause is the CT null-space projection: it is a CG solve, so `P_N(x_hat - x)`
+and `P_N x_hat - P_N x` agree only to its tolerance. Not confirmed. For T2-C the median was
+computed directly with cos theta clipped (+0.882, unchanged when the violating regions are
+dropped). **What would close it:** measuring the CG tolerance's effect on the three columns
+at one limited-angle operator, and a ruling on whether the guard should refuse on the
+worst region or on a share of regions.
+
+---
+
+#### P-44 - The LIDC bank's matched-operator control fails on the registry split and holds over splits
+
+**Resolved (D86, D87): the bank is read** - **See:** D85, D86, D87, D-070 §2, T2.11 §1c and §1e to §1h, D-027, T1-D
+
+**Update, D87.** Track 1 confirmed the reading and corrected its basis: the violations do
+concentrate at the failing cells (rank-sum p = 0.048), and what settles it is that the
+scores are computed once, so a solver defect is identical in all 13 splits and cannot
+produce a shortfall that one split has and their mean does not. T2-A4 then closed the
+other open question: the threshold's spread is what random calibration halves of this
+cohort give (inside the null's 95% at 8 of 9 operators), so nothing about the bank
+explains it.
+
+**Update, D86.** Track 1 reversed D85's reverting clause as mis-specified (one pooled
+calibration term for nine cells; a gate that fails a sound bank when any one of nine
+intervals misses) and ruled the bank read on the 13-split table. Both checks D86 attached
+were run first (T2.11 §1g). Track 1's `clustered_coverage` reproduces T2-A1. The
+identity-violating regions do sit mostly at two of the three failing cells (69%), but 221
+of the 1,744 are positives and dropping them moves the control by at most 0.0014, so the
+bank was read; that reading of the condition is Track 2's and is flagged to Track 1.
+T2-A3 (per-pair coverage over 13 splits) is delivered. Still not known: what moves the
+threshold between splits.
+
+**Update, 20 Nov.** Track 1 ruled that the control stays on the registry split and that its
+interval must resample subjects on both sides and refit the threshold in each replicate, as
+D-070 §2 already required of every interval. Recomputed that way (T2.11 §1f) the interval
+contains 0.90 at 6 of 9 operators and excludes it at limited-angle 120° (upper end 0.897),
+limited-angle 90° (0.888) and sparse-view 30 (0.899). The ruling said that outcome reverts to
+"the bank is not read". Still open: the run used Track 2's implementation, because Track
+1's `clustered_coverage` was not yet pushed, and two of the three failures are within
+0.003 of the line. The entry below is as written on 19 Nov.
+
+
+The pre-registered control for T2-A: calibrated and tested on the same operator, coverage
+must come back at about 0.90, "or the bank is wrong and nothing else is read". Track 2's
+written form of it (T2.11 §1c, fixed with 20 of 900 pairs built) asked for the
+group-conditional arm's interval to contain 0.90 at all 9 operators and for its mean to be
+within 0.03. On the registry split it is 0.795-0.856, mean **0.831**, and the interval
+contains 0.90 at 4 of 9. **Fail.** Nothing downstream was run. The bank is intact: 360,000
+rows, complete, no non-finite values. Over 13 patient splits the same arm averages
+**0.897** (0.892-0.905 by operator, sd 0.051), and the registry split is the lowest or
+near-lowest of the 13 at every operator. The same 41/51 partition is also low on the
+face-prior CT bank (0.893 against 0.912), which passes. So the control as written tests one
+draw of the calibration set, with an interval that resamples test subjects only. Whether
+"about 0.90" is met by the 13-split mean is a reading made after the first form failed,
+which is the kind of choice D-070's pre-registration exists to keep in the open, so it is
+Track 1's. Not established: why this bank's spread is wider than the face-prior bank's
+(positives are less concentrated here, and subjects differ less). **What would close it:**
+Track 1's ruling, and, either way, reporting this bank over patient splits and never from
+the registry split alone.
+
+---
+
+#### P-43 - The repository has no licence, and the O7 release cannot go out without one
+
+**Half closed (20 Nov): licence added; the banks' release still open** - **See:** O7, D79, D86, D-070 (risk register), T2.11 §5
+
+**Update, D86.** Track 1 has no objection to Apache-2.0. `LICENSE` and a `NOTICE` for the
+adapted `ncsnpp.py` are in the repository and `pyproject.toml` names the licence. Banks are
+not released. TotalSegmentator (CC BY 4.0) and LIDC-IDRI (CC BY 3.0) both permit derived
+data with attribution on their own pages; the fastMRI banks remain a separate reading.
+
+The risk register asked Track 2 to resolve the *checkpoints'* licence before a release.
+That half is settled: `yang-song/score_inverse_problems` has no LICENSE file and GitHub
+reports no licence, so the weights cannot be redistributed, and the release does not need
+them. It ships the converter and the download command. Checking it turned up the other
+half. **This repository has no LICENSE file either**, and `pyproject.toml` names no licence,
+so an "open-source release" today would be source nobody is licensed to use.
+`solvers/ncsnpp.py` is adapted from Apache-2.0 code and keeps its header, and Apache-2.0
+asks for a copy of the licence alongside. Apache-2.0 for the whole repository would be
+consistent with that file. Also undecided: whether the score banks are released. The
+M4Raw and TotalSegmentator banks derive from CC BY 4.0 data and could be, with
+attribution; the fastMRI banks' cached reconstructions cannot. Not patched, because a
+licence is not one track's to choose. **What would close it:** a LICENSE file agreed by
+the three tracks, and a ruling on the banks.
+
+---
+
+#### P-41 - With the CT bank running, the laptop has 1-2 GB of memory left to commit
+
+**Open - mitigated, not removed** - **See:** P-38, P-24, P-39, T2.11 §1d
+
+The LIDC bank holds 3 GB of commit for 21 hours. With the user's own applications open,
+the machine had 4 GB free when the bank started and 1.0-2.2 GB once it was on the GPU.
+P-38 is the same limit met from the other side: there the GPU run failed for want of
+system memory. This time the run holds, and everything beside it has to fit in what is left.
+Importing the GPU build of torch in a second process costs more than that, so nothing else
+uses the GPU interpreter while the bank runs. Analyses and the week's own tests run on
+the CPU interpreter (`OPENBLAS_NUM_THREADS=1`). The full suite runs only with the bank
+paused at a checkpoint: in Week 11 a concurrent suite killed a bank at pair 216. The queue's
+restart floor is lowered from 4 GB to 2.5 GB, because at 4 GB a crashed bank would have
+waited for memory that was never coming. **What would close it:** a second machine for
+analysis, or a larger pagefile. Neither is a code change.
+
+---
+
+#### P-37 - D73's transfer verdict counts over-coverage as good transfer
+
+**Open - decides:** Track 1 (`evaluation/transfer.py` fixes the estimand) - **See:** D73, D51, D39, T2.9 §2
+
+`transfer_baseline.py` reported "CALIBER's threshold transfers better at 7 of 8" on CT from
+30 views. At 6 of those 8 operators, CALIBER's transferred threshold flags ≥ 99.7% of all
+regions. The penalty, coverage(in-group) − coverage(transferred), is signed, so a threshold
+that flags everything has coverage 1.000 and a *negative* penalty, which the verdict reads
+as the better transfer. The `interpretable` gate checks only the in-group arm. On MRI the
+same thing happens in both detectors' favour, once per direction. Two-sided, on |penalty|,
+`s_disagree` transfers as well or better than the CALIBER score at all 16 CT cells. Not
+patched, because the estimand is Track 1's. A two-sided penalty, or a flag-area gate on the
+transferred arm, would close it.
 
 ---
 
@@ -629,6 +776,113 @@ rather than producing plausible-looking but systematically mis-scaled reconstruc
 
 ### Resolved
 
+#### P-42 - The old stamp would have marked the LIDC CT bank reportable for detection
+
+**Fixed (Week 12, T2.11)** - **See:** D82, D80, D-072, P-18
+
+Found while implementing D82, not by a wrong number. The manifest's `reportable` was the
+conjunction of three checks: a real substrate, a generative sampler, a prior admissible
+for the modality. D80 had already made `ct_chest` admissible for CT while ruling that a
+prior of another anatomy carries coverage and not detection. The boolean had no way to
+hold the second half. So the LIDC bank, a chest prior on whole-body slices, would have
+been written `reportable: true`, and `select_weights.py` or `q6_attribution.py` run on it
+would have printed a detection reading with no warning. D82 names the case; nothing
+enforced it. The manifest now carries `reportable_claims`, and `reportable` is true only
+when a bank carries every claim (D-072). The bank that was already running resumed from its
+checkpoint on the new code, `scripts/restamp_bank.py` re-stamps finished banks, and
+`tests/test_reportable_claims.py` pins this bank among the others. **Lesson:** P-18 again, one level finer. A gate that answers
+"may this bank be reported?" with one bit will be asked a question with two answers.
+
+---
+
+#### P-40 - The guidance rule chose a diverged DPS setting, because divergence saturates the gate
+
+**Fixed (Week 11, T2.10)** - **See:** D-031, D-033, D68
+
+`select_guidance.py` picks DPS's guidance strength from a design-split sweep. It keeps the
+settings that pass D-033 (null-error share > 0.5) and takes the one with the smallest
+data-consistency error. On the BraTS prior at 24 steps it chose **zeta = 50**. That is the
+setting at which DPS diverges: its null-space error reached 294-801 times the image, which
+drives the null-error *share* to 1.000 and passes the gate. The DPS bank launched on it was
+stopped within a minute, having written nothing. The rule now also excludes any setting
+whose relative range or null error exceeds 1, i.e. worse than reconstructing zeros. On that
+sweep it refuses every value, which is the honest answer: at 24 steps DPS on this prior
+either under-fits (zeta <= 5 fails D-033) or diverges (zeta >= 20). Pinned by
+`tests/test_select_guidance.py` with the real case. **Lesson:** a share is a ratio, and a
+ratio of two exploding quantities can look like the best value in the table.
+
+---
+
+#### P-39 - Reading a checkpoint to watch progress killed the run that was writing it
+
+**Fixed (Week 11, T2.10)** - **See:** D-040, D-042
+
+The M4Raw bank on the BraTS prior died at its 160th pair with `PermissionError: [WinError 5]
+Access is denied` on `os.replace(scores.partial.parquet.tmp, scores.partial.parquet)`.
+The checkpoint write is atomic (temp file, then rename), and on Windows the rename fails
+while any other process has the target open. The other process was a progress check that
+read the partial parquet to count saved pairs, at the instant the runner swapped it. Nothing
+was lost (D-042: the restart resumed at 160/2,160), but a two-hour run can die this way at
+any checkpoint. `_atomic_write_bytes` now retries the rename for up to ~5 s on
+`PermissionError` before letting it stand; a reader's lock lasts only as long as its read.
+Pinned by two tests in `tests/test_checkpointing.py`: a transient lock is waited out, and a
+lock that never clears still raises. Progress is now read from the run's log, not from the
+checkpoint.
+
+---
+
+#### P-38 - On Windows the GPU run failed for want of *system* memory, with the card half empty
+
+**Worked around (Week 10, T2.9)** - **See:** P-24, D-043, D-042
+
+The DPS bank failed at the start of sampling three times: a CUDA out-of-memory error
+reporting 3.2 GB of the 6 GB card still free, a CUDA "unknown error", and a second
+out-of-memory error. Each time, the machine's free *commit* was low: 1.9–4.9 GB of 32–34 GB,
+with the browser, the editor and other sessions open, and once with two CPU analyses running
+beside it. Under Windows' driver model a GPU allocation also needs backing commit, so
+the card can be half empty and still refuse. Measured steady once it ran, the runner
+commits ~6.2 GB on the GPU path, close to the preflight's 6.4 GB estimate. **So the
+estimate, fitted on the CPU, is about right on the GPU too.** (An earlier reading in T2.9
+assumed it was not.) What goes wrong is *when* the check is made. It compares against the
+commit available after the runner's own imports, so it refused, at 6.35 GB, a start that
+then ran with 1.4 GB to spare. The DPS config sets `skip_memory_check` in the file (it is
+part of the config hash, so a resume must see the same value). What makes the run fit is
+the launcher, which waits for 7 GB of free commit before every start. With the browser,
+the ChatGPT app and Teams open, the machine never reaches that.
+
+---
+
+#### P-36 - `curve_collapse.py` gave every row the distance of the first calibration listed
+
+**Fixed (Week 10, T2.9)** - **See:** D72, D-053, D-056
+
+`points_for` matched a coverage row to a distance by the deployment operator alone and
+took the first match. The CT distance CSV holds three calibration operators (180, 30 and
+120 views), so a row calibrated at 30 views and deployed at 90 would have been plotted at
+the distance from 180 views. It never ran that way, because the Week 8 tables use the arm
+names `naive` / `group` and the script refused them first. It now matches each row's own
+(calibrated_at, deployed_at) pair, negates a signed distance stored in the other order,
+accepts both arm names, and refuses a table that does not name its calibration when the CSV
+is ambiguous. Pinned by three tests in `tests/test_collapse.py`.
+
+---
+
+#### P-35 - Tool 2 on CT recomputed every missing operator distance inline, on the CPU
+
+**Fixed (Week 10, T2.9)** - **See:** D75, D71
+
+A leave-one-operator-out sweep needs the distance between every two operators.
+`tool2_holdout.py --distances-csv` reads a cache, but `ct_distances.csv` held only the
+calibration operators' pairs (17 of 36), and every missing pair fell back to
+`compute_distance` on the CPU at minutes a pair, without memoisation. After 33 minutes the
+run had written nothing. `ct_distances.py --all-pairs` now fills the matrix once on the GPU
+(19 pairs, 37 min), one order per pair, since the readers look either order up. The metric
+is symmetric and `null_space_growth` is exactly antisymmetric on the same seeded probes,
+which `tests/test_holdout_distances.py` now asserts on CT operators. Each Tool 2 run then
+takes about 30 seconds.
+
+---
+
 #### P-31 - The ruled label is still led by its denominator within operators
 
 **Resolved (Week 8) by D-061** - **See:** D-061, D-060, D-059, D-037, P-30, T2.7
@@ -647,7 +901,24 @@ Pooled over operators, among candidates, the numerator now leads (AUROC 0.797 ag
 Per operator it is not enough:
 
 | Candidates at | AUROC(`-free_content`) | AUROC(`err_free`) | rho(ratio, `free_content`) | rho(ratio, `err_free`) |
-|---|-#### P-34 - The three limited-angle CT operators shared one calibration group
+|---|---|---|---|---|
+| `random1d R2` | 0.726 | **0.865** | -0.489 | +0.397 |
+| `random1d R8` | **0.920** | 0.651 | -0.771 | +0.463 |
+| `variable_density2d R2` | 0.829 | 0.878 | -0.668 | **+0.026** |
+
+At `variable_density2d R2`, the headline cell, the ratio among candidates is uncorrelated
+with the error and driven by how little each region hides. T2.5 reports every number
+against the label as ruled and states this beside them. The check that would settle it is
+the within-candidate, per-operator decomposition above. Measuring it on M4Raw would show
+whether 0.499 there is the same cancellation. `component_auroc.py` prints the per-operator
+label check on any bank.
+
+*(Restored in T2.9: the T2.7 edit that moved this entry to Resolved cut the table after its
+header row, which also ran the next entry's heading into it.)*
+
+---
+
+#### P-34 - The three limited-angle CT operators shared one calibration group
 
 **Fixed (Week 7, T2.6)** - **See:** D-021, D-023
 
@@ -1510,7 +1781,7 @@ by Track 1, and Track 1's own documents link to it. Copying the entries here wou
 a second source of truth and two chances to drift, which is the problem this file exists
 to avoid.
 
-What lives here instead is the index — 64 entries, so a problem in Part I can be
+What lives here instead is the index — 72 entries, so a problem in Part I can be
 traced to the decision that settled it without opening the log.
 
 | ID | Decision | Week | Status |
@@ -1579,3 +1850,11 @@ traced to the decision that settled it without opening the log.
 | [D-062](decision_log.md) | Phase 2 gate: coverage claims stand, detection claims do not, DPS ablation promoted | Week 9 | Track 1's gate -- see D67-D69 |
 | [D-063](decision_log.md) | The holdout harness runs on CT now; interiority was blind to the angular arc | Week 9 | Track 1's fix -- see D71 |
 | [D-064](decision_log.md) | The curve-collapse test, and one command to run it | Week 9 | Track 1's test -- see D72 |
+| [D-065](decision_log.md) | Six CPU re-analyses are queued against your banks, and one GPU run is the priority | Week 10 | Track 1's ask -- see D73-D78 |
+| [D-066](decision_log.md) | The DPS arm of the ablation: zeta = 5, 24 steps, the random1d family, its own bank | Week 10 | ACCEPTED |
+| [D-067](decision_log.md) | The medical prior runs as a converted NCSN++ behind an exact VE-to-VP adapter, and waits on a ruling to be reportable | Week 11 | ACCEPTED (implementation) — admissibility OPEN, Track 1's |
+| [D-068](decision_log.md) | On the medical prior, DPS runs at 100 steps and zeta = 5, not at DDNM's budget | Week 11 | ACCEPTED |
+| [D-069](decision_log.md) | Two of my scripts were wrong, you caught both; three re-runs | Week 11 | Track 1's fix and ruling -- see D80, D81 |
+| [D-070](decision_log.md) | The Phase 4 plan: what we run, what we stop, and who owns each piece | Week 12 | Track 1's plan -- see D82, PHASE4_WORK_PLAN.md |
+| [D-071](decision_log.md) | The LIDC bank's intensities follow the prior's training rule: min-max per volume | Week 12 | ACCEPTED |
+| [D-072](decision_log.md) | A bank's manifest records the claims it carries; `reportable` means all of them | Week 12 | ACCEPTED (implementation of D80, D82) |

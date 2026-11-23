@@ -274,3 +274,41 @@ def test_a_pair_that_stays_nan_stops_the_run_and_keeps_completed_work(tmp_path, 
     saved = pd.read_parquet(partial)
     assert saved.groupby(["sample_id", "operator_id"]).ngroups == 2, "completed pairs lost"
     assert not saved["err_total"].isna().any()
+
+
+# -- P-39: a reader holding the checkpoint open on Windows --------------------------
+
+
+def test_a_transient_lock_on_the_checkpoint_is_waited_out_not_fatal(tmp_path, monkeypatch):
+    """On Windows the rename fails while another process has the file open -- reading a
+    checkpoint to watch progress is enough, and it killed a bank at its 160th pair."""
+    import os
+
+    from caliber.scorebank import io as bank_io
+
+    monkeypatch.setattr(bank_io, "REPLACE_WAIT_S", 0.0)
+    real_replace, calls = os.replace, {"n": 0}
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise PermissionError(5, "Access is denied")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(bank_io.os, "replace", flaky_replace)
+    target = tmp_path / "scores.partial.parquet"
+    bank_io._atomic_write_bytes(target, lambda p: p.write_bytes(b"ok"))
+    assert target.read_bytes() == b"ok" and calls["n"] == 3
+
+
+def test_a_lock_that_never_clears_still_fails_loudly(tmp_path, monkeypatch):
+    from caliber.scorebank import io as bank_io
+
+    monkeypatch.setattr(bank_io, "REPLACE_WAIT_S", 0.0)
+
+    def always_locked(src, dst):
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(bank_io.os, "replace", always_locked)
+    with pytest.raises(PermissionError):
+        bank_io._atomic_write_bytes(tmp_path / "x.parquet", lambda p: p.write_bytes(b"ok"))

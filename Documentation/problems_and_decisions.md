@@ -1045,6 +1045,1243 @@ Run it on `naive_transferred` for the claim, and on `group_conditional` as the c
 
 ---
 
+### D73 — The dispersion baseline is compared on the coverage axis, not the detection axis [T1.4, answers the D68 risk from the other side]
+D68 named the risk that sinks Track 1's own contribution: posterior dispersion ranks hallucinations within **0.001–0.012 AUROC** of `s_disagree` at every operator, so the decomposition appears to buy nothing. The planned answer was the DPS ablation, which needs Track 2's GPU.
+
+**There is a second answer, and it needs no GPU: the comparison was being held on the wrong axis.** `scripts/dispersion_baseline.py evaluate` reports AUROC and AP and nothing else — a pure detection comparison. D67 had already ruled detection numbers unreportable on this bank, because the label is near-determined by the score. So the number that threatens the contribution was measured on the axis the project disqualified, while the axis the project actually claims — coverage under operator shift — had never been run against the baseline at all. `scripts/coverage_by_patient.py` takes no `--score` flag; it is hardwired to CALIBER's score.
+
+**The estimand.** Absolute coverage is not comparable between detectors: different scales, different thresholds, different flag areas. The *loss from transferring* is, because it is within-detector:
+
+    penalty(d) = coverage(d, threshold fitted at the deployment operator)
+               - coverage(d, threshold fitted elsewhere)
+    delta      = penalty(baseline) - penalty(CALIBER)
+
+Each detector is measured against itself first, and only the two self-comparisons are compared. `delta > 0` is the decomposition buying **transferability** rather than detection power — which is the project's thesis, and is exactly what dispersion has no mechanism for, since nothing about full-image spread tracks what the operator changed.
+
+**This also survives the label's defects, and for a structural reason rather than by hope.** Both detectors are scored against the same label, so a label that is partly a function of CALIBER's score inflates CALIBER's coverage *in both of its arms equally* and cancels in the penalty. That is an argument about the estimand; it is not a repair of the label and does not license reading the AUROCs again.
+
+**I shipped this with a defective interval and the null caught it.** The first version resampled the test patients and held the thresholds fixed. But a split-conformal threshold is a single order statistic of a few dozen positives, and its variation is the *larger* term — so the interval measured patient variation, ignored threshold variation, and read as tight. Measured on a 10-calibration-patient fixture with **nothing drifting**: `|delta|` averaged **0.0386** and reached **0.1277**, against the 0.02 floor I had pre-registered. It would have called threshold noise a CALIBER win most of the time. This is the seventh instance of the project's recurring failure — a statistic returning the hoped-for number — and the fourth of them mine.
+
+**The fix is to resample the calibration side too and refit every threshold per replicate.** `_tau_replicates` calls `split_threshold` rather than reimplementing it, so the flooring rule and the `-inf` for an uncertifiable group are identical to the point estimate's. Validated both ways:
+
+| fixture | result |
+|---|---|
+| null, 40 fixtures, nothing drifts | interval covers zero **40/40**, **zero** directional verdicts |
+| 1.5-separation drift, 20 patients | detected **16/16** |
+| 0.75-separation drift | 10/16 at 20 patients, **15/16** at 40 |
+| interval width | 0.29 at 20 patients → 0.20 at 40 → 0.14 at 80 |
+
+**Two consequences for how this is read, both of which weaken what can be claimed.**
+- **A single detector's penalty is not evidence of transfer failure.** With no drift it is centred on zero but reaches 0.05 at 10 calibration patients (0.014 at 100). Only the difference between two detectors on the same patients is reportable.
+- **Equivalence now requires the whole interval inside the floor, not the point estimate.** `abs(delta) <= floor` would have called the null "the two transfer alike" off an estimate of 0.015 with an interval of ±0.15. At ~40 patients and a 0.02 floor that condition is unreachable, so the honest verdict on this bank will usually be **`undetermined`**, and `floor_for_equivalence` reports what it would take to leave it. The project cannot establish detector equivalence on the coverage axis at this sample size; it can detect a difference of ~0.2 coverage points.
+
+`evaluation/transfer.py` + `scripts/transfer_baseline.py`, 26 gates. The GPU step is already done — the 0.001–0.012 numbers prove `dispersion.parquet` exists — so this is one CPU command on Track 2's machine:
+
+```
+PYTHONPATH=src python3 scripts/transfer_baseline.py runs/<run_id>_by_patient \
+    --low mri.random1d.R2.c0.08.s0 --high mri.random1d.R8.c0.08.s0 \
+    --dispersion runs/<analysis>/dispersion.parquet
+```
+
+**Not run on the real bank, deliberately** — the local bank is calibration-only with 3 samples, and the guards correctly refuse it.
+
+### D74 — The hallucination label thresholds a direction, not a magnitude [T1.1, attacks D67's cause]
+D67 ruled detection claims unreportable because `err_free ≈ sqrt(s_free² + free_content²)` at Spearman 0.99 — the project's own identity at `cos θ ≈ 0` — so the 0.95–1.00 AUROCs measure the identity. Four label forms were tried and **all four thresholded a magnitude**: `err_free`, the ratio, the ratio under a candidacy gate, `err_free` under a design quantile. Each inherited the same tautology, which is why moving the threshold never fixed it.
+
+`cos θ` is the other coordinate of the same decomposition and it is **scale-free**: it says which way the invented content points, not how much there is. `attribution.py` has inverted the identity to recover it since Q6; no label had ever used it. D74's label is `cos θ < kappa`, with `kappa` a design-split quantile (0.25, pre-registered).
+
+**Why this is the right coordinate, physically.** A region where the prior recovered the hidden anatomy and one where it invented structure can carry *identical* `err_free`. Only the direction separates them, and the project's own definition (Sec. 4) says the first is reconstruction and a flag firing on it is a false positive.
+
+**Measured on the w02 M4Raw bank** (real prior, 384 regions — a smoke bank, not a reported one):
+
+| quantity | value |
+|---|---|
+| identity residual, max relative | **0.000e+00** — `cos θ` exactly recoverable |
+| `cos θ` spread | sd **0.0892**, range [−0.338, +0.269], median 0.073 |
+| ρ(`err_free`, `hypot(s_free, free_content)`) | **+0.971** ← what a magnitude label inherits |
+| ρ(`cos θ`, `s_free`) | **−0.435** ← what the direction label inherits |
+
+**The honest claim is that the dependence is moderate rather than algebraic, not that it is absent.** Nothing built from `(s_free, free_content, err_free)` can be independent of a score built from `s_free`, because the identity ties all three. What changes is that the score *can now fail* against this label, where against a magnitude label it could not.
+
+**And on the preliminary evidence it partly does fail.** Per operator, direction-agnostic (`max(auc, 1-auc)`, D65's rule), against the `free_content` anatomy control:
+
+| operator | label | score | anatomy | excess |
+|---|---|---|---|---|
+| R4 | magnitude | 0.572 | 0.946 | **−0.374** |
+| R4 | alignment | 0.618 | 0.770 | **−0.152** |
+| R8 | magnitude | 0.881 | 0.579 | +0.302 |
+| R8 | alignment | 0.615 | 0.515 | **+0.100** |
+
+So the direction label **removes the saturation** — AUCs fall from 0.88 to a believable 0.62 — and **halves the anatomy deficit at R4**, but does not by itself rescue a detection claim: at the milder operator the anatomy control still wins. Two caveats: R4 carries only 16–17 positives, barely above D32's nine-positive floor, so those AUCs are very noisy; and my first reading of this table was **pooled**, which gave `+0.097` and hid the sign reversal between operators — D60's retracted error, reproduced in the same session as the module built to avoid it.
+
+**One trap, encoded as a test rather than a comment.** A label like `s_free · sin θ` — invented *mass* rather than direction — looks more physical and restores the tautology intact: `sin θ ≈ 1` wherever `cos θ ≈ 0`, which is nearly everywhere on this bank, so the product collapses back to `s_free` (ρ > 0.95 measured). Do not "improve" the label this way.
+
+Undefined-`cos θ` regions are labelled **negative and counted**, never dropped: dropping them would make the label's support depend on score magnitude, which is the same confound by another route. `label_comparison.py` refuses any bank failing the identity, because `cos θ` is meaningless there.
+
+`attribution.py` + `evaluation/bank.py` (label `alignment`) + `scripts/label_comparison.py`, 17 gates. **D-061's absolute label remains the reported one** until this is run on a reportable bank.
+
+### D75 — Tool 2's defeat by the nearest-operator arm may be a property of the grid, not the method [T1.2/T1.4]
+Every grid run so far reports Tool 2 as valid but flagging no less area than `nearest`, recorded as a negative result. That comparison has a feature of the **grid** built into it: these grids are dense, so each held-out operator has a calibration operator close enough that borrowing its threshold wholesale is nearly right. Weighting cannot beat `nearest` when `nearest` is already nearly `matched`, and that says more about the operator grid than about the method.
+
+`--exclude-nearest N` drops the N closest calibration operators along with the held-out one, posing the deployment case Tool 2 was argued for (§9, D4): an operator with no near neighbour to borrow from. The `nearest` arm is recomputed over the survivors, so both arms face the same handicap.
+
+**The trap, and it is why interiority had to move inside the fold loop.** Removing a neighbour can leave a previously bracketed operator at the end of the retained signed axis, where the weighting can only extrapolate (D52). Counting such a fold as interior would credit Tool 2 with an interpolation it cannot perform. `is_interior` now takes the retained list rather than the whole grid, and the dropped operators leave the calibration pool as well — otherwise the weighting would still be borrowing from the operator the fold removed.
+
+A re-analysis of an existing bank; no new GPU. Both readings should be reported: Tool 2 buys nothing on a dense grid, and the open question is whether it buys anything on a sparse one. The harness now says so itself when `nearest` wins and the flag is unset.
+
+### D76 — "The weights could not be selected" and "the result depends on the weights" are different claims [T1.1, converts D54]
+D54 recorded that 8 design patients cannot separate any weighting from any other, so `WeightSelection` reports `discriminated=False` and the project ships equal weights as a stated default (D25). That reads as a gap: a score whose weights were never chosen.
+
+But only the first claim was ever established. If the coverage result holds at **every** weighting on the sweep, the inability to select one costs the project nothing — and that is a stronger position than a selected weight, which would invite the question of what the result would have been at another.
+
+`weight_sensitivity` sweeps `w_free` across D28's grid and recomputes the quantity the paper leads with — the paired within-patient coverage restoration — at each point. The verdict has **two** conditions, not one: the restoration must hold at every weighting, *and* the spread across the grid must be smaller than one weighting's own interval. A flat curve is evidence of insensitivity only if a single point is determined to better than the curve's spread; without that second condition it is a curve nobody can see the shape of, which is D72's lesson pointed the other way.
+
+The label is held fixed and **asserted** to be, per weight: every label form is a function of cached truth columns (and, for D74, of `s_free`), none of which move with the weighting. A label that moved would make each row answer a different question.
+
+**Also delivered: flag area at matched coverage** (`area_at_matched_coverage`). D39 ruled that detectors compete on area because a conformal threshold pins the miss rate; D51 added that an area means nothing unless the arm is valid, after the `nearest` arm posted the project's smallest area at coverage 0.547. Fixing *coverage* and comparing area closes that loop by construction — the degenerate detector cannot win, because reaching the target is what it is charged for, and a constant score has to flag the whole image to do it. Independent of any AUROC, so it stays available under D67: a statement about operating points, not about ranking.
+
+`evaluation/sensitivity.py` + `evaluation/transfer.py` + `scripts/weight_sensitivity.py`, 16 gates including a negative control — a bank where `s_disagree` is pure noise must **not** be reported as weight-insensitive.
+
+---
+
+### D77 — The preprint cut excludes both novel tools and leads with the failure [T1.7, delivers §23's first publication]
+`T1.7_preprint_draft.md`. The cut is narrower than the blueprint's §23 sketch, in three specific ways, each because the excluded thing is either not ready or not true.
+
+**Out: Tool 2.** Valid, and flags no less area than the nearest-operator arm on every grid run (D71). D75 raises the real possibility that this is a property of dense grids rather than of the method, and that experiment has not run. **A preprint is the wrong place to debut an unresolved negative about your own primary contribution** — it fixes the framing in the literature before the question is settled, and if `--exclude-nearest` later vindicates the weighting, the preprint has already conceded it.
+
+**Out: Tool 3.** T3.6 does not exist and the √null_frac law was refuted at p = 6.9e-15. §23 always planned a separate analytical paper; this just confirms the split was right.
+
+**Out: every detection claim**, per D67.
+
+**What is left is a complete contribution**: a demonstrated failure, a demonstrated fix, two modalities with structurally different operators, and the failure graded by a quantity computable from the operators alone. Every number in it is one Track 2 has already measured and reported — CT 0.890→0.693 along views and 0.888→0.796 along arc with 13/13-split failures at the severe end; group-conditional restoring 0.902–0.923 on CT and 0.884–0.901 on MRI; ρ = +0.976 for the signed distance against +0.762 symmetric. Nothing is invented and nothing waits on a run.
+
+**The title leads with the negative.** "Conformal reliability certificates ... do not survive a change of acquisition operator." The measured result *is* the failure; the fix is textbook once the failure is established, and claiming the fix as the contribution invites the correct objection that group-conditional CP is Vovk et al. Leading with the failure also makes the paper's novelty defensible at a workshop-tier venue, which is where this realistically lands.
+
+**§6.4 is promoted from limitation to result, and it is the part most likely to outlive the rest.** D67's finding — that a magnitude-based hallucination criterion becomes a function of the score under a mismatched prior, via the identity, at Spearman 0.99 — is a caution about how *the field* evaluates these detectors, not just about our bank. It comes with the identity that predicts when it happens, the four criteria that all inherit it, the anatomy control that beats the score (0.946 against 0.572), the pooling error that reads as "exactly chance" (0.499 pooled, 0.662 within operator), and D74's direction-based alternative. A reader can apply all of that without using anything else in the paper.
+
+**One hard blocker remains: medical weights (D-016).** The draft states at §6's head that every number is development output and why. The structure of the results should survive the prior change; the magnitudes will not.
+
+---
+
+### D78 — The solver ablation's analysis is written ahead of the run, and its premise has to be measured at image level [T1.6/T1.4, prepares D68]
+D68 promoted the DPS ablation from ablation to load-bearing: it is the only configuration in which the decomposition can earn its keep, because DDNM replaces the range component structurally and has already confined the posterior spread to the null space. Writing the analysis now means the run is one command rather than a session's work, and it means the verdict rules are **pre-registered** rather than chosen after seeing the numbers — which matters more here than usual, since this is the experiment the project wants a particular answer from.
+
+`scripts/solver_ablation.py`, 13 gates, with fixtures that plant the answer **both** ways: a bank where the low-share solver's score beats its baseline, and one where it ties. A verdict that cannot come back negative is not a verdict, and the negative branch is the outcome this project should expect.
+
+**Three sections in a fixed order, and the first can stop the other two.** The premise — the null-error share per solver — is checked before any detection number is computed, and if the two solvers do not differ by at least 0.05 the script says `PREMISE ABSENT` on stderr: D68's rationale would simply not hold on those banks, and reading sections 2 and 3 would be reading an experiment that was never set up.
+
+**The finding that came out of building it: the null-error share cannot be computed per region.** `P_N` is a **non-local** operator, so projecting and then restricting to a region is not the same as restricting and then projecting — energy crosses region boundaries and the orthogonal decomposition does not hold region by region. Measured on the M4Raw bank, `err_free² / err_total²` exceeds 1 in **97 of 384 regions**, reaching 1.035. This is not a bank defect and not a normalisation error; the identity residual on the same bank is exactly 0. It is simply the wrong place to take the ratio.
+
+So the script takes it as an **area-weighted energy ratio over each volume**, where it is the global MSE ratio and exact, and prints the per-region out-of-range count as a diagnostic rather than hiding it — a *large* excess there would indicate a genuine normalisation problem of the kind `identity_residual` exists to catch.
+
+**This has a consequence for D68 itself.** The 0.99-against-0.817–0.852 figures the ablation's rationale rests on came from Track 2. If they were computed as a mean of per-region ratios they carry a bias, and the gap is exactly the quantity that decides whether the ablation has a premise. Asked in cross-track D-065.
+
+**One more caveat the verdict carries rather than drops:** an excess measured against a magnitude label can be the identity rather than a detector (D67), so the script says so in its output and points at `label_comparison.py`. The ablation can establish that the decomposition beats its baseline; it cannot by itself establish that either of them detects invention.
+
+---
+
+### D79 — The medical prior was never licence-blocked; the preprint's one hard blocker is lifted [T1.6/T1.7, corrects D-016]
+D-016 has deferred the medical prior since **Week 1**, and the stated reason was that Song et al.'s MRI checkpoint is fastMRI-derived, so NYU's data agreement plausibly reached the weights. **That is false.** Their training sets are LIDC (lung CT, 320×320), LDCT (head/chest/abdomen CT, 512×512) and **BraTS 2021 (brain MRI, 240×240)**. fastMRI is cited only for the *undersampling mask pattern*, which is where the confusion almost certainly started. Correction written into D-016.
+
+**Why this is the most consequential entry in weeks.** D-016 gates every reportable number in the project, the `reportable` flag on every bank, D67's criterion-validity argument, and T1.7's preprint — where it is the *only* hard blocker. A nine-week deferral rested on a misreading of one citation.
+
+**And the better substrate was already in the repository.** The MRI prior is brain; the fastMRI bank is knee, so BraTS is cross-anatomy there. But `banks/w02_solver_smoke/` is **M4Raw — brain MRI on real k-space, verified end to end**. BraTS → M4Raw is an anatomically matched medical prior, which is a stronger claim than anything the project has had, and it needs no new substrate.
+
+**What it does not fix, and this matters for how the result is framed.**
+- **Resolution.** 240×240 / 320×320 / 512×512 against the project's reduced-resolution 2D grid. The region definition (D20) lives on that grid, so changing working resolution moves the region count and every per-region quantity with it — including the design-split quantiles that set the label. Every gate is re-valued, not carried over.
+- **The criterion is still circular** (D67). A medical prior should *raise* `cos θ` — its invented content should be less orthogonal to real anatomy than a face model's — which would weaken the `err ≈ hypot(s, c)` collapse. That is a prediction, and D74's `label_comparison.py` is the test. **It is written before the run, deliberately**, because this is a prediction the project wants to come true.
+- **The licence question moved rather than vanished.** The weights carry **no stated licence**: no LICENSE file, Google Drive hosting. Fine for a cited preprint; a real question for the O7 release, and it should be raised before packaging rather than at it.
+
+**Song et al.'s checkpoints turned out to be the wrong artefact, and the better one was elsewhere.** Their files are **JAX/Flax** msgpack (`step`/`optimizer`/`target`), not PyTorch, and NCSN++ **VE** score models against this project's **VP/DDPM** epsilon samplers — two conversions deep, either of which silently mis-scales. That download was abandoned mid-transfer once the format was clear.
+
+**What is wired instead: SegGuidedDiff's unconditional models** (Konz et al., MICCAI 2024) — `ddim-breast_mri-256` (Duke Breast MRI) and `ddim-ct_organ_large-256` (CT-ORG, neck to pelvis). `diffusers` `UNet2DModel`, `in_channels=1`, 113.7 M parameters, trained on `DDPMScheduler` defaults so the schedule is this project's exactly. **Zero new loader code**; the schedule was verified end to end rather than assumed (table in D-016's resolution). Track 2's Week 2 search that found "no open substitute" was two years stale.
+
+**Two things improve beyond simply having a medical prior.** The models are single-channel, so `DiffusersUNetDenoiser`'s greyscale-to-RGB replication becomes a no-op and one stated narrowing of the method disappears. And **CT-ORG is neck-to-pelvis organ CT against TotalSegmentator's whole body** — a genuinely close anatomical match, where LIDC would have been lung-only. CT is also where the project's results are strongest (ρ = +0.976, 13/13-split failures), so the best-matched prior sits on the strongest result.
+
+Treat downloaded weights as untrusted input: a checkpoint can be a pickle, so `torch.load` executes arbitrary code. These are `.safetensors`, which is the format that exists to avoid that.
+
+---
+
+### D80 — Anatomy gates claims, not banks [T1.6, answering T2.10's question]
+Track 2 registered Song's BraTS prior as `mri_brain` rather than `mri`, parked it in `AWAITING_RULING`, and asked Track 1 whether an anatomy-matched prior makes a bank reportable. Their framing is right and is adopted: **domains carry anatomy**, for every medical prior, because a bare `mri` would stamp a brain prior reportable on fastMRI *knees*.
+
+**The ruling: a prior is admissible for a modality when it is a medical prior of that modality, whatever anatomy it saw. Anatomy mismatch gates which claims the bank can carry, not whether the bank is reportable.**
+
+This is **D67's coverage/detection split applied to the prior instead of to the label**:
+- **Coverage claims survive cross-anatomy.** Both arms are scored against the same label on the same reconstructions. A prior that suits the anatomy badly changes what gets labelled; it does not change whether a transferred threshold loses coverage relative to an in-group one. That comparison is the project's central claim and it holds.
+- **Detection claims do not.** The criterion's validity rests on `cos θ`, and anatomy mismatch is precisely the mechanism that drives `cos θ` toward zero — the face-prior pathology reappearing in the one quantity the label depends on. T2.9 §4 measures it: at chance on CT, 0 of 9 operators beating the anatomy control.
+
+**Why not block the bank.** Blocking would have blocked the *coverage* result too, and that is the one the project can actually make. The detection result is already gone for the same underlying reason, so refusing the bank buys no protection and costs the headline claim. `AWAITING_RULING` is now empty and kept only so the next prior from an unanticipated anatomy parks there rather than being admitted by whoever adds it.
+
+**Not changed:** D-015's separate question of whether M4Raw is reportable as a *substrate*. That is a property of the dataset, not of the prior. An anatomy-matched prior does not launder a substrate.
+
+**Five priors are now registered anatomy-qualified** across two independent families — Song VE/NCSN++ (`mri_brain`, `ct_chest`, `ct_head_chest_abdomen`) and SegGuidedDiff diffusers (`mri_breast`, `ct_neck_to_pelvis`). Keeping both is deliberate: it makes "does the result depend on which medical prior?" an ablation rather than an assumption.
+
+### D81 — Two defects in my Week 10 scripts, both found by Track 2, both fixed [T1.4]
+Track 2 ran the six queued analyses and overturned two of my results by hand. Both defects are mine and both are in the same family as entries I had already written warnings about.
+
+**1. D73's penalty is signed, so over-coverage counted as transferring well.** `penalty = coverage(in-group) − coverage(transferred)`. A transferred threshold that **over-flags** has coverage ≈ 1.000, hence a *negative* penalty, hence reads as better than a threshold that is merely right. My `interpretable` gate checked `reaches_nominal` and `trivial` on the **in-group** arm only; the transferred arm's flag area never entered the verdict. Track 2 measured the cost: on CT, CALIBER's transferred arm flags ≥ 99.7% of all regions at 6 of 8 operators, and my script called that "CALIBER transfers better at 7 of 8". **This is D51's rule — an area means nothing until validity is reached — reproduced on the arm D51 was not looking at, in a module whose docstring cites D51.**
+
+Fixed in three parts, because the obvious fix is insufficient:
+- The comparison is now on **`|penalty|`**, taken **inside** the bootstrap per replicate before differencing. Taking it outside would give an interval for the signed difference wearing the absolute one's label.
+- `|penalty|` alone does **not** suffice, and a test caught it: over-coverage can only move coverage from ~0.90 to at most 1.000, so it is charged ~0.10 however badly it flags, while under-covering can cost the full 0.90. A detector can still win by flagging everything.
+- So a detector whose transferred arm over-flags **cannot be declared the winner**: the verdict returns `winner_over_flags`, which counts as undetermined rather than as either side's win, and points at `area_at_matched_coverage` — the estimand that compares at fixed coverage, where over-flagging is charged properly.
+
+**2. `solver_ablation.py` valued one label on the pooled design rows of both banks.** Pooled ε = 0.856 against 0.906 (DDNM) and 0.726 (DPS), so each arm was scored at a positive rate that was not its own. A label gate is a magnitude, and **D-020 is this project's own finding that magnitudes transfer across neither modalities nor substrates** — two solvers are two substrates for this purpose. Now one label per bank, from that bank's own design split, with the two printed side by side and a note when they differ.
+
+**And the verdict it printed was unsound.** It said "D68 ANSWERED, POSITIVE" off the magnitude label, with the D67 caveat relegated to a closing line. By D38's identity that label is approximately a function of `s_free`; the score contains `s_free` and `s_disagree` does not, so the excess *is* the identity. A positive is now withheld unless the label is D74's direction label. **A negative still stands on any label** — if the score cannot win where the label favours it by construction, that is decisive — and the asymmetry is deliberate.
+
+**I also withdraw the question I put to Track 2 in D-065** about how the D-033 null-error shares were computed. They are computed at image level per item, exactly as I later established by reading `operators/decomposition.py` myself. The question should never have been asked; the answer was in the repository. Their definition is also better than the one I wrote: its denominator is `‖P_N δ‖² + ‖P_R δ‖²` rather than `‖δ‖²`, so it stays meaningful when the projector is only approximately orthogonal — the CT case, D-012.
+
+---
+
+### D82 — M4Raw is reportable for coverage claims and not for detection [T1.6, scopes D-015, follows D80]
+D-015 made M4Raw a development substrate. Its stated reason, in `fastmri.py`, is worth quoting exactly because the scope of the ruling follows from it:
+
+> `reportable = False`. M4Raw is 0.3 T brain against fastMRI's 3 T knee and carries **no pathology annotations**, so it cannot close the annotation-linked evaluation (Sec. 14).
+
+**The consequence clause is annotation-linked.** Field strength is named as a way the substrate differs; the stated *harm* is that Sec. 14's annotation-linked evaluation cannot be closed. Coverage under operator shift consumes **no annotations**: the reported label is `err_free > eps` valued on the design split, and `require_annotation` is an optional secondary reading that the coverage claim does not use. So the gate's own rationale does not reach the coverage claim.
+
+**Ruling: M4Raw carries coverage claims and not detection claims.** This is D80's structure applied to the substrate instead of the prior — *the defect gates which claims the bank can carry, not whether the bank exists*. The two rulings are now one principle with two instances, rather than a rule and an exception.
+
+**Why this is worth ruling rather than routing around.** The MRI medical-prior result — naive transfer at 0.000–0.159 against group-conditional's 0.80–0.91, below nominal on every one of 13 patient splits in both directions — is the strongest demonstration of the central claim anywhere in the project. Dropping it would also drop Front II and objective O5 to a limitations paragraph, and the blueprint promises two modalities. Routing around the gate for CT (D-070) was the right unblock; it was never a reason to abandon MRI.
+
+**Implementation: not a boolean flip.** Setting `reportable = True` would let a *detection* number from M4Raw be stamped reportable, which is exactly what this ruling forbids — and this project has made that error before (P-18: the first fastMRI bank stamped `reportable: true` under a face prior, because the gate could not see the thing that mattered). Following D-018's own logic, that reportability is a property of the bank so it travels in the manifest, the flag becomes scoped:
+
+```python
+reportable = False                            # the unqualified claim
+reportable_claims = frozenset({"coverage"})   # D82: what this substrate carries
+```
+
+The harness then stamps "reportable for coverage" and refuses a detection number from that bank by construction rather than by memory. The same field expresses D80's cross-anatomy case — CT + LIDC is chest-prior on whole-body anatomy, so coverage-reportable and detection-not — so one mechanism serves both rulings.
+
+**Two limits that travel with the claim, and must appear in the write-up.**
+- **0.3 T is a generalisation limit, not a validity one.** The comparison is internally valid at 0.3 T: both arms, same label, same reconstructions. What field strength limits is whether the *magnitude* transfers to 3 T, which is untested.
+- **"13 of 13 splits" is not 13 independent confirmations.** Thirty patients resampled 13 ways is a robustness check against split choice — which is what it was designed for — not 13 replications. Phrase it as "on every one of 13 patient splits" and never in a way that implies independence. The same caveat applies to the CT 13/13.
+
+**External precedent, found while clearing the prior art (D-070):** Shor & Bronstein (arXiv 2610.26558, Oct 2026) use **M4Raw as the evaluation target** for a reconstruction-risk method, with fastMRI brain as source. A 2026 paper treating M4Raw as a legitimate evaluation substrate is not a licence, but it is evidence that the substrate objection is about scope rather than admissibility.
+
+---
+
+### D83 — Phase 4's frozen choices are code, and two of the frozen choices were measured wrong first [T1-A, T1-D, implements D-070 Sec. 2]
+
+**The freeze is a module, not a table.** `src/caliber/evaluation/prereg.py` holds every tunable choice behind T1-A..E as a module constant with no setter, and the analyses import them rather than taking them as arguments. D-070 Sec. 2 asked for these to be fixed before the CT bank finished; a Markdown table does not achieve that, because nothing stops it being edited in the same commit as the result it governs. `prereg.fingerprint()` stamps a short hash of the whole freeze onto every result row, so a table produced under a different freeze is visible without reading git history. Five of this project's eight statistics traps were choices made after seeing a number, which is the entire reason for the mechanism.
+
+**Two of the frozen choices were then checked, and one was wrong.** Both corrections are recorded here because both changed what gets reported.
+
+**1. The permutation null shuffles operator labels, not the distance column.** Shuffling the distance column i.i.d. destroys the antisymmetry of `null_space_growth` and the triangle structure of the matrix, giving a null world in which no sign rule could work. Measured over 60 independent noise fixtures at 500 permutations each: label permutation rejects at **0.050** at the 5% level and **0.100** at the 10% level — calibrated to three decimal places — while the i.i.d. column shuffle rejects at **0.083**. The inflation is about 1.2 Monte-Carlo standard errors at 60 trials, so it is suggestive rather than decisive; the label permutation is used because its exchangeability argument is correct, not because the alternative was proved broken. Power is intact: the planted-perfect fixture returns p = 0.002 at J = +1.000.
+
+**2. The closed-form Beta law is the wrong reference for a measured spread, and the first version of this module had the sign of the error backwards.** `Beta(n+1-k, k)` is the law of coverage against an *infinite* test set. A split measures coverage on a finite one, so
+
+```
+Var(measured) ~= Var_Beta(threshold) + p(1-p)/n_test
+```
+
+Simulation through the project's own split structure confirms this to within ~4% across a fiftyfold range of sizes (0.0368 vs 0.0385 predicted at 8 positives/patient; 0.0118 vs 0.0122 at 80; 0.0054 vs 0.0055 at 400). At the project's balanced splits the measured spread runs about **1.36x the closed-form Beta SD**, so comparing the two directly reports a *correctly calibrated* method as over-dispersed — and would invite a repair to something with nothing wrong with it.
+
+The effect this module was originally written to handle — that the 13 splits re-cut the same 30 patients, so their coverages are positively correlated and the sample variance is biased low — is **real, in the predicted direction, and about fifteen times smaller**: 0.0366 against 0.0374 at matched split sizes, a 2.2% deflation. It is reported because it is true, not because it changes a conclusion.
+
+**3. The spread check is underpowered at 13 splits, and says so.** The sample SD of `n` split coverages carries relative noise about `1/sqrt(2(n-1))`, so the reference interval spans **0.62x to 1.49x** the correct SD at 13 splits. The check therefore cannot distinguish correct calibration from a 36% error — the size of the very correction above. More splits barely help: 120 of them still leave a 1.27x band. A passing check is reported as `consistent_but_underpowered` rather than `consistent_with_exchangeability`, because a verdict of "consistent" from an interval that wide is low power and not evidence. **T1-D's worst-operator bound is the solid half of T1-D; the Beta-law spread comparison can only catch gross mis-calibration.**
+
+**What the safety rule reports, and the comparator that makes it meaningful.** The primary endpoint is the **false-safe rate** — of the ordered pairs the rule green-lights, the fraction that under-cover — reported against the **trivial rule**, whose false-safe rate equals the base rate of unsafe pairs. If 10% of pairs under-cover, a 10% false-safe rate is what saying nothing achieves. It is reported beside the **green-light fraction**, because a rule that admits two pairs in seventy-two can reach a perfect false-safe rate and be useless; this is coverage and area again, on a different axis. The significance test runs on Youden's J instead, because J's denominators are counts of the measured outcomes and so are invariant under the permutation, whereas the false-safe rate conditions on a green-lit set that changes size under every replicate.
+
+**Three refusals built in rather than left to judgement.** A reliably *reversed* rule is significant two-sided and returns `no_better_than_trivial`, not a result. An incomplete pair grid returns **no p-value at all** rather than one computed on a shrinking sample per replicate. And the worst-cell bound reports three separate numbers — the observed minimum (biased low), the pointwise bound (anti-conservative, since that cell was selected for being lowest), and the **Bonferroni simultaneous bound**, which is the only one a deployment certificate can cite.
+
+**Also found, and relevant to T1-A's reading.** The three limited-angle operators and `ct.sparse_view.v120.a180` have **identical null-space dimension** (64000 at 320^2), because dimension counting sees views times detectors and not the arc. Any distance that reduces to a dimension count predicts zero difference across four of the nine operators whose ill-posedness differs sharply, so the limited-angle cells are where the probe-based signed measure is actually tested. The first computed pair agrees: `a120 -> a150` growth = **-0.1247**, correctly negative for a wider arc revealing more.
+
+**Cost note for the plan.** The signed distance matrix is a property of the operators alone — no bank, no prior, no reconstruction — so it was started before T2-A exists. It is also **~15 hours of CPU**: 771 s per (pair, measure) at 320^2, 36 unordered pairs by 2 measures, with the reverse direction filled by antisymmetry rather than computed. It is resumable and contends with nothing on the GPU. This was not a scheduled item in D-070 and should have been.
+
+**Status:** 47 new tests, full suite 603 passed / 0 failed / 5 skipped. No result from any of this — T1-A and T1-D need T2-A's bank for their coverage side.
+
+---
+
+### D84 — The signed distance matrix is a perfect total order on the CT grid, and that scopes T1-B's baseline [T1-0, amends D83's freeze]
+
+**T1-0 is finished:** 36 unordered pairs x 2 measures over the 9 CT operators at 320^2, 72 of 72 computed, in `runs/t1a_ct_distances/distances.csv`. Operator-only -- no bank, no prior, no reconstruction -- so it was computed while T2-A was still unrun. Total cost ~11 h CPU at 180-770 s per computation, the reverse direction filled by antisymmetry rather than computed. **The grid matches `w12_ct_lidc_gpu.yaml` exactly**: same nine operators, same 320^2, so the matrix is valid for the bank T1-A will read.
+
+**The signed measure induces a single consistent ill-posedness ordering, with zero violations in 72 ordered pairs:**
+
+| | operator | index |
+|---|---|---|
+| 1 | `sparse_view.v180.a180` | +0.426 |
+| 2 | `sparse_view.v120.a180` | +0.216 |
+| 3 | `limited_angle.v120.a150` | +0.169 |
+| 4 | `limited_angle.v120.a120` | +0.111 |
+| 5 | `limited_angle.v120.a90` | +0.030 |
+| 6 | `sparse_view.v90.a180` | -0.024 |
+| 7 | `sparse_view.v60.a180` | -0.206 |
+| 8 | `sparse_view.v45.a180` | -0.316 |
+| 9 | `sparse_view.v30.a180` | -0.405 |
+
+Every one of the 72 signed distances agrees in sign with this ranking. Three things follow, and one of them changes the pre-registration.
+
+**1. The sign rule has a plain-language reading.** "Safe iff the signed distance is at most zero" is exactly "safe iff you deploy on an operator that is no more ill-posed than the one you calibrated on", because on this grid the signed distance reduces to a one-dimensional index. That is the form a deployment rule wants.
+
+**2. The green-light fraction is exactly 50%, forced by antisymmetry, and is not evidence of anything.** For any antisymmetric measure, exactly half of the ordered pairs are negative: 36 of 72. So D83's `green_light_fraction >= 0.10` floor cannot bind on this grid and must not be reported as a check that passed. The rule's selectivity is not a free parameter here -- which is good, there is nothing to tune, but it means the floor is doing no work and saying otherwise would be padding.
+
+**3. The limited-angle family interleaves with the sparse-view family, and that is where the distance earns its keep.** The three limited-angle operators sit *between* `v120` and `v90` on the common scale. No acquisition parameter can produce that ordering: all three limited-angle operators have 120 views, and all six sparse-view operators span 180 degrees, so **no single scalar knob orders a limited-angle operator against a sparse-view one**. Combined with the fact that those four 120-view operators share a null-space dimension of 64000, the cross-family cells are the only place where both parameter-style baselines are either undefined or degenerate.
+
+**Consequence: T1-B's baseline was underspecified, and it is amended before any coverage number exists.** `GAP_PREDICTION_BASELINES` was `("constant", "acquisition_parameter")`. The acquisition parameter is a *strong* baseline within a family -- which is the whole force of the "any monotone function of view count orders the gaps" objection -- and **undefined across families**. Leaving that unstated would have let the comparison be settled after seeing which cells the distance won. So:
+
+- the baselines are now `("constant", "acquisition_parameter", "null_space_dimension")`, with `BASELINE_SCOPE` recording where each one is defined;
+- `null_space_dimension` is added because it is the only parameter-style baseline defined on the cross-family cells, **and it is degenerate there** -- which is the point, not a flaw to hide: a baseline that cannot separate four of nine operators is a weak one, and saying so is better than quoting a flattering margin against it;
+- within-family and cross-family results are reported **separately and always both** (`GAP_PREDICTION_REPORT_BY_FAMILY_SCOPE`), because pooling lets 36 pairs with a strong baseline average against 36 where it does not exist.
+
+**On the legitimacy of amending a freeze.** An amendment is only honest while no number it governs exists. This one was derived from the forward operators alone with T2-A unrun, and it is recorded in `prereg.AMENDMENTS` with its date and reason rather than silently edited, so `fingerprint()` moves visibly (`f2ee5cef4f66` -> `4495741687bf`) and any table stamped with the old hash is identifiable. A test asserts every amendment is dated at or after the freeze and carries a reason.
+
+**The symmetric measure cannot ground the rule.** All 36 `null_space_projection` values are positive, range 0.295 to 0.574. It carries magnitude and no direction, so it is reported beside the signed measure and cannot substitute for it. Worth stating because D-052 found four of five measures coincided on MRI masks; on CT they do not -- for the pair `a120 -> a150`, signed growth is **-0.1247** while the symmetric distance is **+0.4773**. The two disagree about whether that transfer is downhill, which is exactly the information the signed measure adds.
+
+**T1-A is claim-compatible with T2-A, checked rather than assumed.** T1-A and T1-D report coverage and nothing else, so `scripts/t1a_safety_rule.py` now calls Track 2's `require_claim(provenance, "coverage")` and refuses a bank that does not carry it. Under T2-B's rules, TotalSegmentator with the LIDC chest prior carries **coverage only** -- cross-anatomy, so D80 grants coverage and refuses detection -- which is exactly the claim the analyses need. A test pins the agreement, so if the admissibility rules move it fails then rather than on the day the bank lands. The same check shows the old face-prior M4Raw bank carries **nothing** (the prior is not admissible for MRI), and that M4Raw under the BraTS prior carries coverage: D82 works end to end, but banks written before the field existed read as carrying nothing until `scripts/restamp_bank.py` is run on them.
+
+**Status:** 56 Track 1 tests. No result -- the coverage side of T1-A, T1-B and T1-D is still T2-A's bank.
+
+---
+
+### D85 — The LIDC control passes on the registry split once its interval includes the calibration draw [rules P-44, T2.11 Sec. 1e; corrects D83's own gate]
+
+Track 2 built T2-A's bank (900 pairs, 19 Nov 20:18), applied the pre-registered matched-operator control, got **FAIL**, read nothing downstream, and escalated the reading to Track 1. That was the right call and the right order. This is the ruling.
+
+**The ruling: the control PASSES, on the registry split, at 9 of 9 operators — not because the control was redefined, but because the interval it was tested against omitted the larger of its two variance terms.**
+
+**What the control did.** Per operator, the group-conditional arm was calibrated on the 41 calibration subjects, tested on the 51 test subjects, and compared against a 95% interval that — in Track 2's own words — "resamples test subjects only. It does not move the 41 calibration subjects, and they are where most of this spread comes from." The interval contained nominal at 4 of 9 operators, so the rule failed.
+
+**Why that interval is the wrong one, and why this is not a post-hoc repair.** The requirement that a conformal coverage interval must move the calibration side is **not** being introduced now to rescue a failing control. It was frozen in D83 on **18 November**, before this bank finished on **19 November**, as `REFIT_THRESHOLD_PER_REPLICATE = True`, with the reason stated: *"the threshold is a single order statistic of a few dozen positives, so its own variability is the larger term, and ignoring it understated the interval by roughly 5x."* D-070 Sec. 2's pre-registration says the same thing in its own words — *"recomputed inside every bootstrap resample... Not held fixed, that is D73's defect."*
+
+So **the pre-registration contradicts itself**: Sec. 1c's control specifies a test-side-only interval, and Sec. 2 forbids exactly that for every coverage interval in the project. The conflict is resolved in favour of Sec. 2, which is the general rule, carries a documented reason, and was frozen first. The dates are checkable in git.
+
+**With the calibration-draw term restored, every cell contains nominal.** Taking each operator's reported test-only interval, recovering its test-side SD, and adding the calibration-draw term in quadrature (41 calibration subjects as the unit, `sd = sqrt(0.9 x 0.1 / 41) = 0.047`):
+
+| operator | coverage | test-only 95% | contains 0.90 | with calibration draw | contains 0.90 |
+|---|---|---|---|---|---|
+| sparse-view 180 | 0.804 | [0.707, 0.913] | yes | [0.666, 0.942] | yes |
+| sparse-view 120 | 0.795 | [0.670, 0.905] | yes | [0.646, 0.944] | yes |
+| sparse-view 90 | 0.809 | [0.710, 0.899] | **no** | [0.677, 0.941] | **yes** |
+| sparse-view 60 | 0.833 | [0.752, 0.906] | yes | [0.713, 0.953] | yes |
+| sparse-view 45 | 0.837 | [0.778, 0.891] | **no** | [0.729, 0.945] | **yes** |
+| sparse-view 30 | 0.847 | [0.802, 0.890] | **no** | [0.745, 0.949] | **yes** |
+| limited-angle 150 | 0.850 | [0.781, 0.913] | yes | [0.737, 0.963] | yes |
+| limited-angle 120 | 0.856 | [0.827, 0.885] | **no** | [0.760, 0.952] | **yes** |
+| limited-angle 90 | 0.847 | [0.820, 0.877] | **no** | [0.751, 0.943] | **yes** |
+
+**4 of 9 becomes 9 of 9.** Two independent checks agree that the bank is fine. The registry split sits **1.29 SD below** the 13-split mean using Track 2's own measured across-split SD of 0.051, which is about the 10th percentile — and the lowest of 13 draws is expected at the 7th. "The registry split is the lowest of 13 at four operators" is what the lowest of 13 looks like, not evidence of a defect. Separately, the measured spread implies **~35 effective units** behind 16,400 calibration regions, which is the subject count: exactly what it should be.
+
+**This ruling is weaker than Track 2's reading 2 in one way and stronger in another.** Weaker: it does not claim the control "passes at 0.897", because that number comes from a form of the control chosen after the first form failed, and the paper would have to say so. Stronger: it does not require it. The registry split stays the reporting split, and no number has to be re-expressed as an across-split quantity.
+
+**Conditions, and one of them can still overturn this.**
+
+1. **Track 2 recomputes the control's interval properly** — cluster bootstrap over subjects on *both* sides, threshold refitted inside every replicate, as `caliber.evaluation.reliability.clustered_coverage` now does. The quadrature table above is a back-of-envelope with `sd_cal` **estimated from the subject count rather than measured**, and it is not the final answer. **If the correct bootstrap still excludes nominal at any operator, this ruling reverts to reading 1 and the bank is not read.**
+2. **The registry split's value is reported in the paper**, with its rank among the 13 and the across-split mean beside it. Not replaced by the mean, not omitted.
+3. **The paper states that the control's first interval omitted the calibration draw**, and that the rule requiring otherwise was pre-registered on 18 November, before the bank finished. A reader who suspects a post-hoc rescue is entitled to the dates.
+4. **The unexplained spread travels as a limitation.** This bank's across-split SD is 0.051 against the face-prior bank's 0.034 on the same partition. Two candidate causes were measured and ruled out. It is T1-D's first row and it is an open question, not a solved one.
+5. **A single-split coverage is still not a per-cell "measured validity" for T1-A** — not because the registry split is bad, but because any single-split cell coverage on this bank has an SD of about 0.05, so a hard "valid / invalid" call at nominal is a coin-flip near the boundary. T1-A's "actually unsafe" label must therefore be taken from an **interval** that moves both sides, not a point estimate. This is a change to T1-A's frozen label definition and is recorded as such below.
+
+**D83's own gate had the mirror-image defect, and it is fixed.** `scripts/t1a_safety_rule.py` compared each matched cell against `beta_reference(len(calib))` — the raw **region** count. On this bank that is 16,400 regions, giving a 98% band of `[0.889, 0.911]`, and **it would have failed all nine cells**, for the same reason Track 2's interval failed five: the region is not the independent unit. The control is now a cluster bootstrap over subjects with the threshold refitted per replicate; the Beta band is still printed, labelled as the independence-assumed idealisation, beside a **design effect** so the gap is visible rather than implicit. On T2-A's geometry the design effect is of order 100. A test pins design effect ~1 on independent singletons and >10 on clustered fixtures, and another pins that resampling both sides gives a wider interval than resampling the test side alone — which is this whole decision in one assertion.
+
+Writing `design_effect` also produced a smaller correction worth recording, because it is the same mistake a third time: the first definition divided the observed SD by the **Beta SD alone**, and so reported a design effect of 2.6 on a fixture built with no clustering at all. The missing factor was the test-set term, which contributes an equal share at balanced split sizes. The reference is now `sqrt(Var_Beta(n_cal) + p(1-p)/n_test)`, and independent singletons come back at 1.3.
+
+**Amendment to T1-A's frozen label (condition 5).** `UNSAFE_TOLERANCE = 0.0` applied to a point estimate was frozen on 18 November on the stated grounds that it is the *conservative* orientation. On a bank whose per-cell coverage SD is 0.05 that is no longer true in the way intended — it makes the label a coin flip for any cell within a standard error of nominal, which is most of them. The label becomes: **a cell is actually unsafe iff the upper end of its cluster-bootstrap interval is below nominal.** That is still the conservative direction (it takes more evidence to call a cell unsafe, so it cannot inflate the rule's apparent accuracy by manufacturing easy negatives), it uses the interval the project's own rules already require, and it is fixed before any ordered-pair coverage has been computed. Recorded in `prereg.AMENDMENTS` with this reasoning.
+
+**Status:** 60 Track 1 tests; full suite 655 passed / 0 failed / 5 skipped before this change. Still no result: T1-A's coverage side needs the per-pair intervals, which is the first thing to run now that the bank exists.
+
+---
+
+### D86 - T2-A1 fails D85's reverting clause, and the clause was the mis-specified part [rules P-44 round 2; corrects D85 conditions 1 and 2]
+
+Track 2 implemented D85 condition 1 to the letter: cluster bootstrap over subjects on both
+sides, threshold refitted per replicate, 4,000 replicates, percentile interval. **It excludes
+nominal at 3 of 9** (limited-angle 120 deg 0.856 [0.805, 0.897]; limited-angle 90 deg 0.847
+[0.801, 0.888]; sparse-view 30 0.847 [0.785, 0.899]), confirmed at two further seeds and
+10,000 replicates. By D85's own words -- *"if the correct bootstrap still excludes nominal at
+any operator, this ruling reverts to reading 1 and the bank is not read"* -- the bank is not
+read. Track 2 ran nothing downstream and reported it. That was exactly right.
+
+**The ruling: the bank IS read. D85's condition 1 was the defective part of D85, not T2-A's
+bank.** Reversing one's own reverting clause is the shape of a post-hoc rescue, so what
+follows is organised around keeping the load off any rule that was not already public.
+
+**What was actually wrong with condition 1.** Two things, both mine.
+
+1. *A pooled SD applied cell by cell.* D85's quadrature used one `sd_cal = sqrt(0.9 x 0.1 / 41)
+   = 0.047` for all nine operators -- the fully-clustered bound, with the subject as the unit.
+   The real calibration-draw SD is operator-specific. Track 2 measured it: mean 0.051 (my
+   0.047 was right on the mean, which is why the table looked convincing) but **0.024 to 0.066
+   across operators**, and smallest at exactly the three cells nearest nominal. "4 of 9 becomes
+   9 of 9" was an average masquerading as nine cell-level predictions.
+2. *A 9-cell pointwise gate.* Condition 1 fails the bank if **any one** of nine intervals
+   misses nominal. Under a sound bank that gate fires with probability between 0.025 (cells
+   perfectly correlated) and 0.204 (independent); the cells share one calibration draw, so the
+   truth is nearer the low end, but it is several times the 2.5% the phrase "the interval
+   contains nominal" suggests.
+
+**The gate is anti-correlated with the defect it claims to detect.** On the registry split all
+nine cells sit below nominal, by 0.044 to 0.105. The gate fires on the three *closest* to
+nominal and passes the five *furthest* from it:
+
+| operator | below nominal | across-draw sd | T2-A1 |
+|---|---|---|---|
+| sparse-view 120 | 0.105 | 0.066 | pass |
+| sparse-view 180 | 0.096 | 0.058 | pass |
+| sparse-view 90 | 0.091 | 0.066 | pass |
+| sparse-view 60 | 0.067 | 0.062 | pass |
+| sparse-view 45 | 0.063 | 0.050 | pass |
+| sparse-view 30 | 0.053 | 0.040 | **fail** |
+| limited-angle 90 | 0.053 | 0.024 | **fail** |
+| limited-angle 150 | 0.050 | 0.061 | pass |
+| limited-angle 120 | 0.044 | 0.030 | **fail** |
+
+Each cell's test is individually correct -- a 0.105 shortfall against an SD of 0.066 *is* less
+surprising than 0.044 against 0.030. What does not follow is the conclusion. Which cells fire
+is set by each operator's score sensitivity, and that is a property of the operator, not
+evidence about the bank.
+
+**What the ruling rests on instead: Track 2's own Sec. 1e table, with no rule reinterpreted.**
+Per operator, the mean over 13 patient splits is 0.898, 0.901, 0.895, 0.894, 0.892, 0.895,
+0.897, 0.899, 0.905 -- nominal at every one of the nine, the widest miss 0.008. A bank with an
+operator-specific defect cannot produce that; limited-angle 90 deg, the worst T2-A1 cell, has
+the *highest* across-draw mean of the nine. And the registry split is one ordinary low draw:
+its shortfall against each operator's own across-draw mean is a near-constant **-1.38 SD**
+(spread of the nine standardised positions: 0.48), with `corr(shortfall, across-draw sd) =
++0.61` -- the signature of one draw displacing every cell together, each by its own
+sensitivity. **P(the lowest of 13 draws is at least this low) = 0.68.** Finding one split this
+low among 13 is the expected outcome, not an anomaly.
+
+**Provenance, stated honestly, including where it is weak.** D85 claimed the refit rule was
+frozen on 18 Nov and "checkable in git". It is better than that: `git log -S` puts *"resample
+the calibration side too and refit every threshold per replicate"* in `problems_and_decisions.md`
+at commit `c06c51f`, **25 October 2026**, three and a half weeks before the bank. D85's
+attribution of it to D-070 Sec. 2 was wrong -- that text is D73's -- but the substance is
+committed and early.
+
+The multiplicity rule is **not** in that position, and committing it has not fixed that.
+`reliability.py` and D83 landed in `1e94d37`, **20 Nov 16:20** -- a day after the bank
+finished and hours after T2-A1's result was known. Git now confirms the rule's *content* but
+can say nothing about its 18 Nov date, which rests on my word and on the file's own
+`FROZEN_ON`. A reader who suspects the correction was reached for once the gate fired cannot
+be answered from the history. **This ruling therefore does not rest on it**, and that is why
+it is built on Track 2's 13-split table instead, which needs no rule of mine at all. For the record the
+correction would not settle the matter anyway: rescaling the three percentile intervals to the
+one-sided Bonferroni level over nine cells clears limited-angle 120 deg (0.909) and sparse-view
+30 (0.914) but leaves limited-angle 90 deg at **0.9001** -- on the line. Unresolved, not passed.
+Limited-angle 90 deg is reported as unresolved on the registry split.
+
+**What this costs Track 1, which is the point of the next two paragraphs.**
+
+**Condition 2 of D85 is reversed for the label.** D85 said "the registry split stays the
+reporting split, and no number has to be re-expressed as an across-split quantity". For
+descriptive coverage tables that stands. For **T1-A's "actually unsafe" label it is wrong**, and
+T2-A1 is what shows why: the draw's displacement is *common to the cells*, so it moves all 72
+ordered pairs the same way and cannot average out over them. A label read from one draw is
+biased one way by a known amount -- which is not what "conservative" was bought for. The label
+is now taken from the across-split mean (`prereg.UNSAFE_LABEL_SOURCE = "across_split_mean"`,
+minimum 8 splits). So Track 2 does need the split-averaged tables, for the reason Track 2's
+reading 2 did not give.
+
+**And that amendment flatters Track 1's primary endpoint, so it carries a cost.** The registry
+split depresses every pair by about 0.07, which manufactures unsafe cells among the green-lit
+pairs and *inflates* the false-safe rate; removing it lowers the headline number. A change in
+that direction does not get to be silent. `UNSAFE_LABEL_SOURCE_SENSITIVITY` now requires the
+single-draw false-safe rate to be reported beside the primary one, every time, so a reader sees
+which way the choice cut. Pre-registration fingerprint `2d5f00f0761f` -> `6248be6039f4`.
+
+**What the matched arm does not contaminate.** `scripts/t1a_safety_rule.py` skips `a == b`, so
+the diagonal is not among T1-A's 72 ordered pairs and the three failing cells inject no false
+safes into the endpoint. The converse also holds and is worth stating in the paper: the matched
+diagonal is a validity check, not evidence for the sign rule, because the conformal guarantee
+makes it come out right whatever the rule does.
+
+**The spread is no longer unexplained, and D-071 is back as the suspect.** Track 2 reports
+`rho(tau, coverage) = -0.93 to -0.99` over the 13 splits and tau varying 3x more than on the
+face-prior bank: the spread is the *threshold*, not per-subject coverage. Sec. 1e ruled D-071
+out on two measurements -- positive concentration, and per-subject coverage at a **pooled**
+threshold -- neither of which can see the tau channel. Per-volume min-max (D-071) makes the
+score scale subject-dependent, so the calibration half's composition moves tau directly. The
+discriminating variable is **dynamic range, not anatomy**: the mean per-volume HU range of the
+calibration half. It also predicts the contrast already observed, since the face-prior bank
+maps a fixed HU window (D-013) and so has a subject-independent score scale (sd 0.034 against
+0.051). Named as the T2-A2 test; untested.
+
+**Implemented, not just decided.** An amendment nothing imports is prose, so the freeze is
+wired: `safety.LABEL_SOURCE_COLUMNS` maps each source to its columns, `safety_rule` reads
+`prereg.UNSAFE_LABEL_SOURCE`, and a frame lacking the frozen source's columns **raises rather
+than falling back** -- the one outcome that must not happen is a table computed on the
+registry split and read as the primary endpoint. `reliability.draw_marginal_coverage` forms
+the mean with the overlap taken out (`n_eff = n / (1 + (n-1) rho)`, `rho` the mean pairwise
+calibration overlap, which is the correlation and *not* the Jaccard figure the existing
+spread check uses); at 13 re-cuts of 100 subjects taking 41 each, `n_eff` is 2.6 and the
+honest standard error is **2.2x** the naive one. The quantile is frozen normal, with the
+Student inflation (3.3x at 1.6 df) reported beside it: compounding a modelled `rho` with a t
+on 1.6 df would shrink the unsafe class until the false-safe rate was near-vacuously zero,
+which is the flattering direction again.
+
+The runner makes its **own** re-cuts from the bank's subject ids rather than waiting on
+Track 2, so T1-A runs the moment the bank lands; the registry partition is split 0 and the
+design subjects are held out of both sides everywhere. One difference from Track 2's
+13-split run, in the conservative direction: theirs re-values the label's epsilon per split,
+this holds the registry epsilon fixed, so the spread here misses that component, the interval
+is narrower, and *more* pairs are called unsafe.
+
+**A defect the end-to-end run caught, which no unit test would have.** The first sensitivity
+table scored each arm on its own usable rows. A pair can be uncertifiable on the registry
+split and fine averaged over re-cuts, so the arms came out over 1 and 2 pairs and their
+false-safe rates sat on **different denominators** -- the difference would have been partly a
+change of sample dressed as a change of label. The arms are now restricted to the pairs every
+arm can score, with `n_dropped` reporting what that cost.
+
+**Status:** pre-registration amended twice (`2d5f00f0761f` -> `b63c76138528`), 84 Track 1
+tests passing, and the runner verified end to end on the MRI fixture bank. T1-A's coverage
+side is unblocked and waits only on the bank.
+
+### D87 - The identity violations do concentrate in the cells that failed T2-A1, and the reading still stands [rules T2.11 Sec. 1g; discharges D86's live condition]
+
+D86 named one measurement a live condition that could still overturn it: the per-operator
+cross-tab of the 1,744 regions with `|cos theta| > 1`. The words were that concentration in
+the three cells that failed T2-A1 "is the pattern that sends the bank back". **They
+concentrate.** So this entry owes either that reversal or the reason the condition was the
+wrong one. It is the second, and the condition was mine.
+
+**The concentration is real; it should not be softened.** Per operator: la 90 deg 714,
+sv 30 329, la 150 deg 230, sv 180 176, la 120 deg 156, sv 90 76, sv 45 63, sv 120 and sv 60
+none. The three failing cells average 400 violations against the six passing cells' 91 --
+**4.4x**. An exact one-sided rank-sum over the nine cells puts the failing three at W = 8
+against an expected 15: **p = 0.048** (4 of the 84 ways to choose 3 of 9 are at least this
+extreme). Track 2's "69% of the mass" overstates it slightly -- la 90 deg alone is 41% of all
+violations, and setting it aside leaves the failing three holding 485 against the passing
+six's 545 -- but the effect survives that, and p = 0.048 is the number to quote.
+
+**The exoneration offered does not do the work claimed, and the reason matters.** Two figures
+came with it: only 221 of the 1,744 are positives (0.23% of positives), and dropping every
+violating region moves matched coverage by at most 0.0014. The second is close to the first
+restated. Those 221 imply about 10,700 positives per operator, so at la 90 deg (about 90
+violating positives) the *arithmetic ceiling* on dropping them is +0.0072 upward and -0.0013
+downward. The shortfall being explained is 0.053. **The test's entire range is 14% of the
+quantity it was pointed at**; it could not have convicted the bank and it cannot acquit it.
+It is a bound, not evidence, and belongs in Sec. 1g as one.
+
+There is a further reason not to lean on it. `|cos theta| > 1` is a **threshold on a
+continuous numerical error**, so the 1,744 are its visible tail, not the affected population.
+Dropping them removes the regions where the inconsistency crossed 1 and keeps every region
+where it reached 0.99. A CG solve that converges worse at limited angle converges worse
+there everywhere, not only where it broke the identity.
+
+**What settles it: the defect is split-invariant, the failure is split-specific.** The
+reconstructions and the scores are computed once. Re-cutting calibration and deployment
+re-partitions subject ids; it does not recompute a single reconstruction. So whatever score
+corruption the CG tolerance causes is **identical in all 13 splits**. D86's load sits on
+Sec. 1e: per-operator 13-split means 0.892 to 0.905, nominal contained at all nine, widest
+miss 0.008 -- and la 90 deg, the worst T2-A1 cell and the holder of 41% of the violations,
+carries the *highest* across-draw mean of the nine. A defect present in every split cannot
+explain a shortfall that appears in one split and vanishes in the mean of thirteen. The
+concentration survives as a fact about which operators are numerically hardest. It is not
+evidence about the bank's coverage.
+
+**A second check, from Track 2's own transfer table.** sv 120 is the out-of-order operator,
+hardest to cover from almost every row. It has **zero** violations, as does sv 60. The most
+anomalous cell in the transfer structure is one of the two numerically cleanest, so the
+defect does not explain that structure either.
+
+**Where the concentration does bite, and it is not a coverage question.** It is largely a
+family effect: la holds 1,100 over three cells, sv 644 over six. Limited angle is more
+ill-posed, so CG converges worse -- *and* limited angle has the largest reconstruction error
+and the greatest score sensitivity. One cause, both symptoms. That is a confound for **T1-B**,
+which predicts the transfer gap from operator distance: if solver quality co-varies with
+ill-posedness, part of the distance-gap slope is the solver rather than the geometry. Within
+la the violations do not order the failures -- la 150 deg has more violations than la 120 deg
+and passed -- which is mild evidence for two separate channels, on n = 3.
+
+**My error in D86, the third one.** "If they concentrate, the bank goes back" named a
+correlation without naming the mechanism it would have to act through, and the mechanism is
+ruled out by the split invariance above. A condition that cannot distinguish "these operators
+are harder" from "these numbers are wrong" is not a test. Conditions in this log should name
+the channel, not the pattern.
+
+**Still owed, and what would overturn this.** The **CG residual per operator** -- not the
+violation count -- is the measurement that settles whether the limited-angle scores are
+numerically sound. The `label_comparison.py` guard stays unchanged until it exists: a
+share-based threshold chosen after seeing 0.48% is the same shape as reversing a reverting
+clause, and it should be set from the residual, not from the share it has to admit. If the
+residual at limited angle moves `err_free` by an appreciable fraction of epsilon, the
+*detection* content at those operators is in question -- not the coverage -- and D80 already
+refuses that independently.
+
+#### Both of my Sec. 1f predictions failed, and one failure should close its question
+
+- **Fixed epsilon does not shrink the 13-split spread** (0.051 either way). That kills the
+  explanation D86 offered for Track 2's bootstrap SEs running 0.73 to 0.92 of the empirical
+  across-split sds. The residual gap is unexplained; I should stop attributing it.
+- **The calibration half's mean per-volume HU range does not order tau** (rho -0.05 to +0.36,
+  median +0.08). Within a subject a wider range does go with lower positive scores (-0.19 to
+  -0.44), so D-071's normalisation does reach the scores -- the half's *mean* is simply the
+  wrong aggregate for a *quantile*.
+
+The next step is **not** a third composition variable. `tau` is the k-th smallest positive
+score over about 41 subjects' worth of regions, and an order statistic of a subsample varies
+whether or not any composition variable drives it. **Test that null before fishing further:**
+draw 13 subject-level subsamples of the observed size from the pooled positives, recompute
+`tau` in each, and compare the simulated sd of `tau` with the observed one. If the null
+reproduces it there is nothing to explain, D-071 is exonerated, and the face/CT contrast
+(sd 0.034 vs 0.051) becomes tail shape -- which the same simulation checks on both banks. If
+the null undershoots, a composition channel exists and the predictor to try is the **lower
+tail** of the per-volume range distribution, not its mean, because a low quantile is set by
+the widest-range subjects. That direction is named here, before the run, so that if it works
+it is a prediction rather than a shape found afterwards.
+
+#### The artefact contract, which was the other thing asked for
+
+T1-A could not read Sec. 1g's table. Now it can, and the plumbing carries three refusals
+rather than conveniences:
+
+- `caliber.data.splits.PROBE_SALTS` and `calib_sets_for_salts` -- the 13-salt re-cut design in
+  one place instead of three literal copies. Membership is **reconstructed** from the salt, so
+  a per-split table need not carry it and cannot disagree with it. A salt the protocol does
+  not name is refused, because an unplaceable draw's share of the overlap cannot be measured.
+- `reliability.pair_coverage_from_splits` -- their two CSVs to the one ordered-pair frame the
+  label reads, with both label sources on it. Measured overlap **0.413**, so n_eff = 2.2 and
+  the standard error is **2.44x the naive one**. Their `split_sd / sqrt(13)` is the naive one,
+  so the interval is rebuilt here and never read: accepting a stored one would narrow it, and
+  a narrower interval calls more pairs unsafe. The merge is outer, so a pair in one table only
+  keeps its row instead of shrinking the false-safe denominator.
+- `t1a_safety_rule.py --pair-coverage-dir` -- both arms come from that one artefact rather
+  than mixing its across-split arm with this script's own bootstrap for the registry arm.
+  Otherwise the sensitivity table would compare pipelines as well as label sources, which is
+  D86's different-denominators defect in a subtler dress. The split fractions are checked
+  against the bank's own `split` column, since the overlap is reconstructed from them and the
+  wrong ones would silently report another design's overlap. This script's bootstrap is kept
+  beside theirs under `_local` names, as a free cross-implementation check.
+
+**Status:** 699 tests passing (was 683). Verified end to end by running Track 2's own
+`pair_coverage_by_split.py` on a synthetic 120-subject CT-shaped bank and reading its output
+with `t1a_safety_rule.py`; the two implementations' registry coverage agreed to 0.0000 on
+every pair. Apache-2.0 for the repository is agreed; NOTICE must carry the TotalSegmentator
+(CC BY 4.0) and LIDC-IDRI (CC BY 3.0) attributions, since both licences require them.
+
+### D88 - T1-B's response variable was never frozen; it is frozen now, with its contamination stated [T1-B; completes D83 and D84's freeze]
+
+D83 froze the distance. D84 froze the baselines and their scope. `GAP_PREDICTION_FORM`
+froze the functional form. **Nobody froze what the gap is.** The one quantity T1-B is
+*about* -- the response -- was the one left selectable, and T2-A3's cell table now exists,
+so it had to be closed before the first fit rather than after.
+
+The hole is not academic. Both of these are defensible readings of "the gap":
+
+- `NOMINAL - coverage(a -> b)` -- the shortfall against the promise;
+- `coverage(b -> b) - coverage(a -> b)` -- the shortfall against what that deployment
+  operator reaches when it calibrates on itself.
+
+They give different fits, and picking the one the distance predicts better after seeing
+both is exactly the forking path `prereg.py` exists to close.
+
+**The ruling: `GAP_DEFINITION = "matched_minus_transfer"`.** T1-B's claim is that distance
+predicts *how much coverage you lose by having calibrated somewhere else*, and what you
+would otherwise have had is the matched cell at the deployment operator. Subtracting it
+removes the bank's own per-operator level -- a property of the bank, not of the shift --
+from the response instead of leaving it in. It also vanishes identically at zero distance,
+which anchors a monotone fit at the origin. `nominal_minus_transfer` is reported beside it
+every time as the operational reading, since that is what a deployment certificate cares
+about.
+
+**A property of the difference worth stating, because it is a check on D86.** D86 moved
+T1-A's label to the across-split mean because one calibration draw displaces every cell
+together -- a bias common to all 72 pairs, which therefore does not average out across
+them. A *gap* is a difference of two cells, so a displacement common to both cancels to
+first order. Track 2's own numbers put the registry displacement at a median -0.061 on
+transfer cells and a comparable amount on matched ones. **Prediction, recorded before the
+fit: the registry arm and the across-split arm will agree far more closely for the gap than
+they do for the level.** If they do not, the displacement is not common-mode, and D86's
+central argument -- not merely D88's choice -- needs revisiting. The sensitivity table
+therefore tests D86 as well as D88, which is why it runs on both arms crossed with both
+definitions, four combinations, every time.
+
+**`GAP_ERROR_METRIC = "mae"`, chosen so it is *not* the method's own objective.** PAVA
+minimises squared error. Grading the fit by RMSE would score the method on the criterion it
+optimises while scoring the baselines on someone else's. MAE also stops the single extreme
+pair -- the worst gap is near 0.5 -- from setting the comparison by itself. RMSE is reported
+alongside.
+
+**`GAP_CLUSTER_UNIT = "operator"`.** There are 72 ordered pairs and nine operators, each
+appearing in 16 pairs. Every interval resamples operators and weights a pair by the
+*product* of its two endpoints' draw counts, which is the dyadic form: a pair is an
+observation about two operators, so a replicate drawing one of them twice should count it
+twice. Resampling pairs instead would report an interval for a sample size the design does
+not have, which is D86's error in a new costume.
+
+**Both protocols, and both *directions* of the cross-family fit, reported separately.** The
+work plan asks to "fit on sparse-view only, predict limited-angle, **then reverse**". The
+first implementation here aggregated over folds and so averaged the two directions. That
+was wrong, and the correction is the most informative thing in this entry -- see below.
+
+#### What this declaration is worth, stated honestly
+
+`GAP_DECLARATION_KNEW` records the six summary figures from T2.11 Sec. 1g that had already
+been reported to Track 1 when the above was named. So this is a freeze **before the
+per-pair gaps**, not before any knowledge of them, and the difference matters. The last
+entry is the costly one: *sv 120 is out of order, hardest to cover from almost every row*
+-- a monotonicity violation, already known. Two consequences bind:
+
+1. The sv 120 anomaly **cannot be reported as something the fit discovered**. It was known
+   first, and it is in the pre-registration as known.
+2. **No sv-120 term may be added** to the model, under any name.
+
+A freeze that does not state its own contamination is a claim of a freeze, not one.
+
+#### Three findings from the implementation, all before a real gap existed
+
+Verified on the real nine-operator grid (`runs/t1a_ct_distances/`) with synthetic responses,
+so the grid is real and only the gaps are invented.
+
+1. **The cross-family protocol is radically asymmetric, and averaging the directions hides
+   it.** Fitting on the 30 within-sparse-view pairs and predicting limited-angle and the
+   span pairs gives MAE about 0.005 to 0.010 with **0 per cent extrapolation**. Fitting on
+   the 6 within-limited-angle pairs and predicting sparse-view gives MAE about 0.05 with
+   **78 to 93 per cent of the held-out points outside the training range**. Outside that
+   range a monotone fit is clamped, so in that direction it *is* a constant predictor, and
+   any apparent skill is the clamp. `extrapolated` is therefore reported on every row and a
+   warning fires above one half. Six within-family pairs cannot support a curve, and the
+   honest form of the limited-angle direction may be "not estimable" rather than a number.
+2. **`null_space_dimension` collapses to exactly the constant predictor** on any fold
+   trained inside limited angle, because all three limited-angle operators share a
+   null-space dimension of 64000. Beating it there is beating a constant twice, not beating
+   two baselines, and the verdict table must not be read as though it were. D84 predicted
+   the degeneracy; it is now visible in the output rather than in a footnote.
+3. **The machinery can say no.** Given gaps generated from the view-count knob alone, the
+   distance is reported as predictive on **none** of the four protocol x scope cells, and
+   the acquisition parameter is correctly left unbeaten within family. A comparison that
+   cannot decline is not evidence, so this is pinned as a test rather than checked once.
+
+One smaller thing, recorded because it looked like a bug and was not: on one slice the
+null-space baseline's MAE equalled the constant's to ten decimal places. Six observations
+differed in prediction by a constant offset, three with positive residuals and three with
+negative, so the absolute-error changes cancelled exactly. Coincidence, confirmed by
+computation rather than assumed.
+
+**Status:** 737 tests passing, 31 of them T1-B's; `src/caliber/evaluation/gap.py` and
+`scripts/t1b_gap_prediction.py`. Fingerprint `b63c76138528` -> `fe192e610104`, amendments
+now five. On branch `T1-B`. **No result**: the response needs T2-A3's cell table, which is
+on Track 2's disk. The runner reads that artefact directly, so T1-B is one command away
+from a number the moment it arrives.
+
+### D89 - T1-A's rule is refuted on the CT bank, and the refutation is an identity, not a surprise [rules T1-A; refutes D83's direction; corrects the gate]
+
+**The result, first.** Track 2 ran `t1a_safety_rule.py --pair-coverage-dir` unmodified on
+their tables. Pooled false-safe rate 0.361 [0.09, 0.67] against a trivial rate of 0.319:
+`no_better_than_trivial`, Youden's J = -0.10, permutation p = 0.81. No tolerance between 0
+and 0.05 beats trivial. By family cell the rule is worse than trivial everywhere it is
+defined: sv->sv 0.333 vs 0.167, la->sv 1.000 vs 0.889, la->la 0.667 vs 0.333. The
+pre-registered rule is reported as failed.
+
+**It did not fail by being uninformative. It failed by being backwards.** Within every
+family cell the gap *falls* with the signed distance: rho -0.72, -0.70, -0.70 and -1.00.
+Pooled it is -0.09. On the face-prior bank the same measure gave +0.976. A rule with the
+sign inverted performs at or just below chance, which is exactly what J = -0.10 is, so the
+two findings are one finding.
+
+**Why, derived rather than guessed.** Coverage of the positives at `b` is the fraction
+whose score clears the threshold they were given, so with `F_b` the CDF of those scores:
+
+    coverage(a->b) = 1 - F_b(tau_a)        coverage(b->b) = 1 - F_b(tau_b)
+    gap            = F_b(tau_a) - F_b(tau_b)
+
+`F_b` is non-decreasing, so `sign(gap) == sign(tau_a - tau_b)` **exactly, at every ordered
+pair**. Verified at 72 of 72 on a synthetic grid and pinned as a test. The threshold rises
+with ill-posedness, because the score tracks reconstruction error and an ill-posed operator
+has more of it; and the signed distance is positive precisely when `b` is the more
+ill-posed operator, i.e. when `tau_b > tau_a`. So a positive distance *forces* a negative
+gap. The frozen direction is backwards by arithmetic, not by bad luck, and no bank would
+have shown otherwise.
+
+**The conceptual error in D83, in one sentence.** It conflated where hallucinations are
+*likely* with where they are *hard to catch*. Deploying on a more ill-posed operator does
+give more hallucination -- and also larger scores, which clear an inherited threshold more
+easily. The two effects run in opposite directions and the rule bet on the weaker one.
+
+**The obvious fix is barred, and barring it was the point.** Having derived the identity,
+the temptation is to enter `tau_a - tau_b` as a predictor. It would beat the distance and
+every baseline, and the win would be arithmetic: its sign agreement with the gap is 100% by
+theorem, not by measurement. It is the endpoint in other units. `prereg.GAP_BARRED_PREDICTORS`
+now names it and two aliases, and the bar was written before anyone proposed them, which is
+the only time such a bar is worth anything. This would have been the eighth instance of the
+failure mode this project keeps hitting: a statistic that returns the hoped-for number.
+(Corrected in D91: the entry above counted seven instances, and the tally had already
+reached seven at the bootstrap-interval defect. The miscount is left visible rather than
+edited away, because the tally is the only thing that makes the pattern legible.)
+
+**What the identity is good for instead: a free check on the bank.** Agreement below 100%
+cannot happen if the recorded thresholds and coverages came from the same scores, so a
+disagreeing pair means the bank contradicts the definition of coverage. That is a defect no
+coverage result survives, and it costs one groupby --
+`gap.gap_sign_from_thresholds(ordered_pairs)`. It is strictly stronger than the matched
+control, which only asks whether the diagonal sits at nominal. A check that can only find
+faults cannot flatter the hypothesis, which is why this one is allowed and the predictor is
+not. **Track 2 should run it on their `ordered_pairs.csv` and report the agreement rate.**
+
+**What the reversal does not license.** Flipping the frozen direction and reporting T1-B
+confirmed. That is one free bit fitted to the data that refuted the hypothesis, on the same
+nine operators, and one free bit on nine units is not a result. The implementation now fits
+both directions because the frozen one, applied to a reversed truth, returns the training
+mean -- so before this change a perfect reversal and pure noise produced identical output,
+which is the wrong answer for the wrong reason. The decreasing fit is a diagnostic in the
+`reversal` frame, flagged `pre_registered = False`, and is barred from `verdict`. Pinned by
+a test that the opposite-direction fit cannot turn a withheld claim into a reported one.
+
+**The out-of-sample test, stated before the number exists.** If this account is right, the
+sign of the measured relation is set by how `tau` orders the operators and nothing else --
+the identity fixes the gap's relation to `tau`, and fixes nothing about its relation to the
+distance. So the face-prior bank's +0.976 requires the *opposite* threshold ordering: `tau`
+must *fall* as the face operators hide more of the image. That bank's own
+`ordered_pairs.csv` already carries the thresholds, so the check is one groupby and no new
+bank pass. Recorded as `prereg.GAP_FACE_BANK_PREDICTION`. **If `tau` rises there too, this
+account is wrong and the difference between the two banks is unexplained -- and must then be
+reported as unexplained, not patched.**
+
+**A fourth thing, which is about the distance measure rather than the rule.** Every family
+cell is between -0.70 and -1.00 while the pooled correlation is -0.09. For the pool to be
+near zero the between-family component must be strongly positive, cancelling the within-cell
+relation: a Simpson reversal, and a sign that `null_space_growth` does not order the
+operators the way `tau` does across families. The mechanism is visible in the grid -- all
+three limited-angle operators share `null_space_dim = 64000`, yet sparse-view 120 is the
+operator that is hardest to cover from almost every row. The measure counts *how much* of the
+image is unseen and not *how badly conditioned* what is seen is, and those come apart between
+the families. This is evidence on Q1's fifth candidate (spectral divergence in singular-value
+decay or conditioning) and it is the first evidence from a bank rather than from operators
+alone. It is **not** licence to swap the frozen measure for T1-B; it is a reason to compute
+the conditioning-based measure and pre-register it for the next bank.
+
+**The gate, corrected, with the audit it needs.** Track 2's run failed the matched control
+at limited-angle 90 deg -- 98% interval [0.795, 0.896] against nominal 0.90, short by 0.004
+at the upper end -- and they proceeded with `--ignore-control`, which labels the output
+diagnostic. The gate was wrong, for a reason provable from its own docstring: it applied
+`CONTROL_LEVEL = 0.98` *per cell* to nine cells, which leaves a family-wise spurious-failure
+rate of `1 - 0.98**9 = 16.6%`, not 2%. The docstring had already identified multiplicity as
+the thing to correct for ("a 95% band would fail one cell in twenty") and then under-solved
+it by a factor of nine. The per-cell level is now Bonferroni-derived from the number of
+checkable cells (99.778% at nine), so the stated level means what it says.
+
+This is the fourth time in this sequence that a stopping condition of mine has moved after
+it fired, and that pattern is the shape of a post-hoc rescue whatever the reasoning behind
+any single instance. So, explicitly:
+
+- The correction makes the gate **harder to fail**, which is the self-interested direction.
+- The uncorrected band and its own pass/fail stay in the output on every row
+  (`coverage_lo_uncorrected`, `coverage_hi_uncorrected`, `status_uncorrected`), and the
+  runner prints which cells the two levels disagree about.
+- **The gate cannot reach any number the rule reports.** The pair table is a function of the
+  bank and the distances; the control is a print-and-stop. Pinned by a test that builds the
+  pair table before and after running the control and asserts the frames are identical.
+- **Nothing was let through.** The result behind the gate is a refutation. A gate relaxation
+  that admits a negative result is not a rescue of anything.
+
+The cost is real and is why both bands are printed: a gate at 99.778% per cell has less
+power against a single genuinely broken operator than one at 98%.
+
+**The cos theta guard: I asked the wrong question, and T2-A5's table cannot answer the one I
+asked.** I said the guard's tolerance should be set from the solver's convergence. It cannot
+be. `|cos theta| <= 1` is Cauchy-Schwarz, which holds exactly for *any* two vectors whether
+or not `P_N` is a true projector -- so if numerator and denominator are formed from the same
+vectors in the same solve, no residual and no idempotency defect can produce a violation,
+and 1,744 of them above 1e-3 are impossible. Loosening the tolerance to 12% to match the
+additivity defect would legitimise the violations by adopting a threshold that makes them
+vanish, when the cause may be one line. Two cases, and they need different answers:
+
+1. The ratio is formed consistently -- then the violations are a formula or caching defect
+   (an analytic or cached norm in the denominator, or a different iteration count between
+   numerator and denominator), and the tolerance is not the problem.
+2. `cos theta` is computed through a polarization-type identity from norms of `P_N(a +/- b)`
+   -- then the additivity defect (2-12%) enters directly, violations of that order are
+   expected, and the tolerance should be set from the defect.
+
+**The diagnostic that separates them is the magnitude distribution of `|cos theta| - 1` per
+operator, regressed on that operator's additivity defect -- not the count above a fixed
+threshold.** Track 2's observation that the count does not track the defect (sv 30 has the
+smallest defect and the second most violations) does not settle it: a count above a fixed
+cut is a visible tail, not a population, which is D87's error in a new place. Until this is
+settled, `cos theta = +0.882` should not be described as good to a few percent; under case 2
+its band is roughly 0.78 to 0.99, and whether that matters depends on what it is being
+compared against. **Guard unchanged at 1e-3, as their default proposed, but for a different
+reason: not pending a tolerance, pending the formula.**
+
+**Status:** 758 tests passing, 45 of them T1-B's and 28 the runner's; `gap.py` gains
+`rank_correlation` and `gap_sign_from_thresholds`, `prereg.py` gains
+`GAP_PREDICTION_DIRECTION`, `GAP_BARRED_PREDICTORS` and `GAP_FACE_BANK_PREDICTION`.
+Fingerprint `fe192e610104` -> `ce668b3e9b98`, amendments now six. On branch `T1-B`. T1-B
+still has no fitted result: it needs the per-pair gap table. But its headline no longer
+depends on one, because the direction is settled by the identity.
+
+### D90 - T1-A's failure reconciled pair by pair, and "sv 120 is out of order" localised to one transposition [T1-A; builds on D89; `scripts/t1a_rule_anatomy.py`]
+
+Track 2 holds the CT bank and the per-pair coverage table; Track 1 holds the operator grid.
+The rule's predictions depend on the grid alone, so the whole of T1-A's confusion matrix can
+be reconciled here without waiting for their table. Run: `scripts/t1a_rule_anatomy.py`.
+
+**Their numbers are sound, checked independently.** The per-cell rates have to resolve to
+whole pair counts against predicted-safe denominators computed from the local distance
+matrix, and all of them do: sv->sv 0.167 x 30 = 5 unsafe and 0.333 x 15 = 5 false-safe,
+la->sv 0.889 x 18 = 16 and 1.000 x 6 = 6, la->la 0.333 x 6 = 2 and 0.667 x 3 = 2, sv->la 0
+of 18. Pooled, that is **23/72 = 0.3194** trivial against their reported 0.319 and
+**13/36 = 0.3611** false-safe against their reported 0.361. Two pooled figures and six
+per-cell rates reconstructed to the digit from operator data plus their rates. The table is
+arithmetically consistent and the denominators are what they should be.
+
+**The rule is not uninformative. Inside sparse view it is exactly inverted.** The rule calls
+36 of 72 pairs safe; D89's identity guarantees 36 cannot be unsafe; the two sets **overlap
+on 12**. Chance would give 18 (hypergeometric sd 2.14), so the rule's safe set is
+anti-correlated with the truth at z = -2.81 -- which is what a Youden J of -0.10 is made of.
+On the 30 sv->sv pairs the disagreement is **total**: every pair the rule calls safe is a
+pair the identity says may be unsafe, and vice versa, because within a family the distance
+and the threshold both rise with ill-posedness, so `distance <= 0` is precisely `tau_b <=
+tau_a` is precisely `gap >= 0`. The inversion is a property of the operator grid and needs no
+coverage number to state.
+
+**The six false-safe la->sv pairs, by name.** The rule calls exactly six la->sv pairs safe,
+and Track 2 report false-safe 1.000 there, so all six are wrong: la 90, la 120 and la 150
+each into **sv 120 and sv 180** -- the only two sparse-view operators whose null-space
+dimension is at or below the limited-angle value of 64000, which is what puts them on the
+negative side of the signed distance. The worst cell in the entire table, la 90 -> sv 120 at
+0.377, is one of these six. The rule's single worst behaviour is concentrated in a set the
+grid identifies in advance.
+
+**"sv 120 is out of order" is one adjacent transposition, and it is testable from one
+column.** (Corrected in D93: the prediction below holds -- `tau(sv 120) < tau(sv 180)`, 0.893
+against 0.972, 13 of 13 splits -- but the localisation in this section does not. Track 2's
+full ordering puts sv 90 below sv 180 as well, so it is not one transposition, and the
+parsimonious reading is that **sv 180** sits two positions too high rather than that sv 120
+is anomalous. `rho(views, tau) = -0.83` within sparse view, not -1.00. Left in place rather
+than edited away.) The threshold order was declared from the acquisition knob before any coverage
+number was consulted: fewer views and narrower arcs mean larger reconstruction error, larger
+score, higher threshold. Against the five coverage values Track 2 quoted, that order
+generates seven constraints and **six hold**. The one violation is:
+
+    from sv 30:  sv 120 = 0.676  vs  sv 180 = 0.731   implies  tau(sv 120) < tau(sv 180)
+
+and the knob order says the reverse, because sv 120 has fewer views than sv 180. This is the
+**stronger** of the two kinds of constraint the script forms: both cells share the
+calibration operator sv 30, so `tau_a` cancels exactly and no matched value is needed --
+verified by a test that widens the matched range to [0, 1] and shows the within-row verdicts
+do not move while every against-matched verdict goes undecided. It is also exactly what
+"hardest to cover from almost every row" requires, since a deployment operator is hard to
+cover from most rows precisely when its own threshold is low.
+
+So the anomaly is **one operator's score scale**, not a defect in the coverage machinery and
+not a problem with 72 cells: sv 120's positive scores sit lower than sv 180's despite sv 120
+having 120 views against 180. **Checkable from one column of Track 2's existing
+`ordered_pairs.csv`: is `tau(sv 120) < tau(sv 180)`?** A suspicious coincidence sits beside
+it -- sv 120's `null_space_dim` is 64000, exactly the value shared by all three limited-angle
+operators, despite sv 120 being a full-arc acquisition. Worth checking how sv 120's operator
+was built before concluding anything about its physics.
+
+**What is fitted here and what is derived.** One bit: the two families' knobs do not compare,
+so the relative placement of the limited-angle and sparse-view blocks cannot come from the
+knob. It is taken from the 18 sv->la pairs, the cell where every pair covers, and it says the
+limited-angle block sits above the whole sparse-view block. Everything stated about the other
+54 pairs is then a consequence. One bit fitted on 18 pairs, reconciling 54, is a real
+compression -- but it is one bit fitted, and the script says so in its own output rather than
+in a footnote.
+
+**The prediction to check when the per-pair table arrives.** The identity fixes the gap's
+sign and says nothing about magnitude, so it makes no claim about how far any cell falls. It
+does make one claim with no fitted parameter: **a pair with `tau_a < tau_b` has `gap <= 0`,
+covers at least as well as the deployment operator's own matched cell, and therefore cannot
+be unsafe.** There are 36 such pairs. Eighteen of them are the sv->la cell, where Track 2
+already report 0 unsafe, so that part is confirmed; the other 18 are per-pair checks. A
+single unsafe pair among the 36 falsifies D89's account, and that is the outcome to look for
+rather than a confirmation to collect.
+
+**Status:** 13 new tests, all passing. (The "774" first written here was a subset run,
+not the suite; the suite is 1,078. Corrected in D91.) `scripts/t1a_rule_anatomy.py` plus
+`runs/t1a_anatomy/{t1a_pair_anatomy,t1a_reconciliation,t1a_order_constraints}.csv`. No new
+frozen choice, so the fingerprint is unchanged at `ce668b3e9b98`. On branch `T1-B`.
+
+---
+
+### D91 - T1-B's direction was the wrong *kind* of frozen choice; and the 72-of-72 that supports D86 supports nothing [T1-B; rules on Track 2's T2.11 Sec. 1i, four items]
+
+Track 2 ran `t1b_gap_prediction.py` unmodified against fingerprint `fe192e610104` and
+reported T1-B **reportable on 0 of 4 protocol x scope cells, the same verdict in all four
+arm x definition combinations.** That stands. Nothing below changes it, and it goes in the
+paper as a negative result on this bank.
+
+Four items came with it, each with a default. All four defaults are taken. Two of them are
+taken for different reasons than the ones offered, and one of the numbers offered in
+support has to come back out.
+
+#### 1. Direction: their default stands, and the frozen choice was wrong in a way a flip would not fix
+
+The question asked was "do you want a mirrored (non-increasing) fit added as a new
+pre-registered analysis?", default no. **Default taken for this bank.** Fitting
+`-distance` over all 72 pairs, looked at after the result and in-sample, is a description;
+adopting it would be choosing a sign after seeing the sign it has to match, which is free
+whatever the justification. Track 2 flagged this themselves, correctly, before I did.
+
+But the diagnosis "a non-decreasing fit cannot follow a falling gap" stops one step short.
+By D89 `sign(gap) == sign(tau_a - tau_b)` exactly, so **the direction of the gap-distance
+relation is a property of how the calibration threshold orders the operators** - not of the
+mechanism, and not of the hypothesis. The two banks already disagree about it: rho -0.70 to
+-1.00 within the CT family cells against +0.976 on the face-prior bank. So no single frozen
+constant could have been right for a project that uses two banks. The defect is not that
+`increasing` was the wrong value. It is that a constant was the wrong *kind* of choice.
+
+**The ruling: `GAP_DIRECTION_SOURCE = "threshold_ordering"`**, amendment seven. The
+direction is computed by `gap.direction_from_thresholds`, which takes the recorded
+thresholds and the signed distance and nothing else - no coverage, no gap, no fitted value.
+`prereg.GAP_DIRECTION_RULE` writes it out so it can be run by hand off one CSV.
+
+**This is the first of the seven amendments that *widens* what may be claimed, and it is
+fenced accordingly.** Four fences, all in the module:
+
+1. `GAP_DIRECTION_BANKS_BARRED = ("lidc_ct",)`. On any bank whose per-pair gaps have
+   already been seen, the rule may be *shown* and may not be *reported*.
+   `DirectionCall.reportable` is False there regardless of every other condition. The CT
+   bank is named, so T1-B on LIDC stays 0 of 4 and cannot be revived by this amendment.
+2. The rule costs **one bit**, the same bit for all 72 pairs of a bank, where
+   `GAP_BARRED_PREDICTORS` forbids the 72 per-pair values of `tau_a - tau_b`. That bit is
+   still a bit taken from a barred quantity, which is exactly why fence 1 exists. Stating
+   the size of the concession is the point: one global sign, checkable as one number,
+   against 72 pairwise values that would determine the answer outright.
+3. `GAP_DIRECTION_DETERMINACY_MIN_RATIO = 3.0`. Near-flat tau leaves the ordering
+   undetermined and the correlation still returns a sign, from noise. The across-operator
+   tau range must exceed the median per-operator tau sampling spread - T2-A4's measured
+   quantity - by this factor, or the direction is recorded undetermined and nothing is
+   reported under this source. `tau_noise` has **no default**: `determinate` is `None`
+   until a measured value is supplied, and `reportable` is False while it is `None`. The
+   alternative to measuring it is assuming the tau spread is real, and T2-A4 exists
+   because a conformal threshold is a single order statistic whose spread may be entirely
+   sampling noise.
+4. `GAP_FACE_BANK_PREDICTION`, frozen at `ce668b3e9b98` *before* this amendment, must pass
+   first. It says tau must *fall* with the distance on the face bank. If tau rises there
+   too, D89's account is wrong, this entire path closes, and the two banks' sign difference
+   is reported as unexplained.
+
+So the only new run this authorises is on the face bank, after the tau check, and it is a
+genuine out-of-sample test of a magnitude claim rather than a sign claim. If someone later
+wants to argue the fence away, fence 1 names a bank rather than stating a principle, which
+is the only kind of fence that cannot be reinterpreted.
+
+**Why the LOO numbers are the strongest evidence against the frozen direction, stronger
+than any rho.** Fit-one-family-predict-the-other returned `distance = constant = views/arc
+= null-dim`, MAE 0.0707, **delta exactly 0** - four different predictors agreeing to the
+last digit is not four equally good predictors, it is PAVA collapsing every one of them to
+the training mean. The right report is "the estimator was inert", not "the distance is
+indistinguishable from the baselines"; a reader given the second sentence concludes
+something about the distance. Leave-one-operator-out within family then gives distance
+0.0884 against constant 0.0792, **delta -0.018 [-0.026, -0.006]** - out of sample,
+operator-clustered, and excluding zero. Under partial collapse a surviving step points the
+wrong way and actively costs accuracy. That interval is the result.
+
+**The prereg earned its keep on the other baseline.** Distance beat null-space dimension by
++0.005 **[+0.0001, +0.009]** - a lower bound four decimal places from zero, on one of two
+baselines. `GAP_PREDICTION_BASELINES` requires beating **both**, constant included, so the
+verdict is 0 of 4 and that +0.0001 never reaches a sentence. A conjunction requirement
+written in September caught a number that would have been reported in November.
+
+#### 2. The 72-of-72 gap-sign agreement is not evidence for D86, and comes out of its support
+
+D88 predicted, before the fit, that the registry and across-split arms would agree more
+closely on the gap than on the level. Track 2 reports median -0.061 -> -0.001 and mean
+absolute 0.066 -> 0.024. **The prediction held and the magnitude side is stronger than
+claimed.** Then: "Gap sign agrees at 72 of 72 pairs. So the common displacement cancels to
+first order." That inference is invalid.
+
+By D89 the gap's sign is `sign(tau_a - tau_b)` under *either* arm. So 72-of-72 says exactly
+one thing: **the two arms rank the nine thresholds the same way.** Demonstrated both
+directions, in tests:
+
+- Two arms sharing a threshold vector exactly and differing only in score scale: sign
+  agreement **100%** with mean `|gap difference|` of 0.09 on the fixture, and 0.22 in the
+  nine-operator simulation. Arbitrarily large non-cancellation, perfect agreement.
+- Two arms with *identical* score distributions - perfect cancellation, every gap
+  difference zero to machine precision - and one adjacent threshold pair transposed:
+  agreement falls below 100%.
+
+The statistic is high when the claim is false and low when the claim is true. It is the
+**eighth** instance of this project's recurring failure mode, and it is partly mine: D88
+framed the prediction on magnitudes, correctly, but said "agree far more closely" without
+naming the statistic, and an unnamed statistic gets chosen after the fact.
+`prereg.GAP_ARM_SIGN_AGREEMENT_BARRED` now bars it and names its replacement.
+
+**The two difference tables are not independent, and that is what makes the magnitude test
+sharp.** With `gap(a,b) = level(b,b) - level(a,b)`, subtracting the arms gives, as algebra:
+
+    gap_diff(a,b) == level_diff(b,b) - level_diff(a,b)
+
+exactly - residual 0.0, not 1e-12, in `gap.arm_difference_identity`. The gap-difference
+table *is* the level-difference table minus its own diagonal. So "the gap agrees better
+than the level" means precisely: **the displacement at the matched cell is strongly
+correlated with the displacement at the transfer cell**, which is D86's claim stated in a
+measurable form. At zero correlation the gap difference is no smaller than the level
+difference, so the statistic can fail.
+
+**How much correlation 0.024/0.066 forces, without an equal-variance assumption.** Writing
+`s` for the ratio of the two displacements' spreads and `r` for their correlation,
+`sd(gap)/sd(level) = sqrt(s*s - 2*r*s + 1)`, which over all `s` bottoms out at
+`sqrt(1 - r*r)` at `s = r`. A ratio of 0.364 therefore forces **`r >= 0.93` whatever the
+spreads turn out to be** - verified by brute force over `s` and by 400,000 random
+`(s, r)` draws below the bound, zero violations.
+
+I first obtained 0.934 by inverting the ratio under equal variance and was about to report
+it as an estimate. On this module's own fixture that shortcut overstates `r` by a factor of
+1.3, because the matched displacement carries **6%** of the transfer displacement's spread
+- unequal by a factor of 17. The bound is assumption-light where the inversion is not; both
+are in the code, and the test
+`test_inverting_the_ratio_directly_would_overstate_the_correlation` pins the gap between
+them so the shortcut cannot quietly come back. One assumption does remain: the bound is in
+standard deviations and Track 2 reported mean absolute deviations, which agree only for
+similar distributional shape. **So the number to report is not the bound. It is
+`corr(level_diff(a,b), level_diff(b,b))` measured directly** - one line on tables that
+already exist, and the quantity D86 actually rests on.
+
+#### 3. The gate, the cos-theta guard, and T2-E
+
+**Gate (their item 2): already done, in D89, before this message arrived.** Their default
+was "you update the gate", and the correction is a family-wise one -
+`CONTROL_FAMILY_LEVEL` with a per-cell Bonferroni level, because 0.98 applied to nine cells
+leaves a 16.6% family-wise spurious-failure rate, not 2%. `--ignore-control` should not be
+needed on a re-run. **Predicted, so it can be wrong:** la 90 degrees at 98%
+[0.795, 0.896] becomes roughly [0.779, 0.912] at the corrected 99.778% per-cell level and
+should pass - a normal-approximation rescaling of their reported band, to be replaced by
+their bootstrap.
+
+**And the gate passing must not be read as la 90 degrees being calibrated.** Its point
+estimate sits 5.4 points below nominal 0.90. Nine cells at 99.778% cannot resolve a
+5-point shortfall, so the corrected gate is *weak* by construction - which is why the
+runner prints `status_uncorrected` and the uncorrected band beside it every time. I
+corrected a stopping condition in the direction that makes it easier to pass, after it
+fired, for the fourth time in this project; the fence is that the gate cannot reach any
+number the rule reports, pinned by `test_the_gate_does_not_enter_any_number_the_rule_reports`.
+
+**cos-theta guard (their item 3): default taken, reason replaced.** Guard unchanged at
+1e-3, but not "until you set the tolerance from the T2-A5 table" - T2-A5 *cannot* set it.
+`|cos theta| <= 1` is Cauchy-Schwarz, which holds for any two vectors whether or not `P_N`
+projects, so no CG residual and no idempotency or additivity defect can breach it when
+numerator and denominator come from the same solve. The 2-12% additivity defect is real and
+irrelevant to this guard. T2-A6 is the diagnostic that can speak to it: the *magnitude*
+distribution of `|cos theta| - 1` per operator against that operator's additivity defect.
+A count above a fixed threshold is a visible tail, not a population - which is also why
+"sv 30 has the smallest additivity defect and the second most violations" is not the
+paradox it looks like.
+
+**T2-E (their item 4): default taken, and fig 9 should not be improved.** A flat fitted
+line laid over a visibly falling cloud of 72 gaps is the single clearest statement of the
+refutation in the paper, and the instinct to redraw it with a fit that follows the cloud is
+the thing to resist. Keep it as drawn. A reversed panel may be added beside it only if the
+face-bank tau check passes, and must be labelled a diagnostic.
+
+#### One discrepancy to resolve, and it is small
+
+The same four family-cell correlations came back as -0.72, -0.70, -0.70, -1.00 with pooled
+-0.09 in the T1-A run and -0.72, **-0.75**, -0.70, -1.00 with pooled **-0.11** here. One
+cell and the pooled figure moved. Most likely the two runs used different arms or
+definitions, in which case the pair is a sensitivity and should be reported as one. If
+both came from the same arm and definition on the same bank, one of them is wrong. Worth
+one line to say which, given how often this project's numbers have moved for reasons that
+turned out to matter.
+
+**Status:** 1,071 tests passing, 7 skipped, 18 of them new here. `prereg.py` amendments
+seven and eight; `gap.direction_from_thresholds`, `gap.DirectionCall` and
+`gap.arm_difference_identity`. Fingerprint `ce668b3e9b98` -> **`4a7426a10a50`**, so every
+table produced under the old one is visibly from an earlier freeze - including Track 2's
+T1-B run at `fe192e610104`, which is three amendments and three fingerprints further back and whose 0-of-4 verdict
+is unaffected. On branch `T1-B`, uncommitted: Track 2 cannot see D89, D90 or this entry
+until it is pushed.
+
+---
+
+### D92 - The Beta law transfers; the matched band does not. T1-D gets a positive result that needs no bank [T1-D, local, derived then verified]
+
+Everything handed to Track 2 on 21 Nov needs their artefacts. One Track 1 row needed
+nothing: T1-D's calibration-conditional side is a statement about split conformal, and
+D89's identity extends it from the matched cell to every transfer cell.
+
+**The law.** With `F_a`, `F_b` the positive-score CDFs at the calibration and deployment
+operators, `tau_a` the `k`-th smallest of `n` calibration positives, and coverage the
+fraction clearing the threshold:
+
+    U := F_a(tau_a) ~ Beta(k, n + 1 - k)                  [probability integral transform]
+    coverage(a -> b) = 1 - F_b(tau_a) = 1 - G_ab(U),      G_ab := F_b o F_a^{-1}
+
+**A transfer cell's coverage is the same Beta variable pushed through the operator pair's
+probability-probability map, and the matched cell is the case `G = identity`.** Verified
+draw by draw at `2e-16` before any of what follows was written, so this is algebra, not a
+model. `reliability.transfer_beta_reference` builds it by sampling the exact Beta and
+evaluating the *empirical* `G`, so no density is estimated and no asymptotics are used.
+
+#### 1. The matched Beta band is wrong at a transfer cell, and it can be too narrow
+
+`G'(u) = f_b/f_a` at the threshold, so the spread rescales by that density ratio. Measured
+against the first-order prediction across a **7.1x** range of spreads:
+
+| deployment scale | transfer mean | transfer sd | sd ratio | `G'` | ratio / `G'` |
+|---|---|---|---|---|---|
+| 0.7 (easier) | 0.8251 | 0.04343 | **1.605** | 1.603 | 1.0015 |
+| 1.0 (matched) | 0.9008 | 0.02677 | 0.989 | 0.990 | 0.9996 |
+| 1.6 | 0.9565 | 0.01309 | 0.484 | 0.490 | 0.9869 |
+| 2.4 (harder) | 0.9793 | 0.00611 | **0.226** | 0.221 | 1.0220 |
+
+Agreement to ~2% over a factor of seven. **The direction is the finding:** the ratio
+crosses 1, so a certificate quoting the matched Beta band at a transfer cell is not
+conservative - at the easier deployment operator the true spread is **1.6x** the band it
+would quote. `TransferBetaReference.matched_band_is_too_narrow` is a property rather than a
+note, because that is the case a deployment certificate must not get wrong. This is what
+T1-D's row asked for - "naive transfer should be shifted off the Beta law" - except that it
+is *rescaled* as well as shifted, and the rescaling is the part that bites.
+
+#### 2. The sign of the gap, in the law rather than in the bank
+
+The table above re-derives D89 without a bank. The **more** ill-posed deployment operator
+*over*-covers (mean 0.9793, gap -0.0785) because its high scores clear an inherited low
+threshold easily; the operator that **loses** coverage is the **easier** one (0.8251, gap
++0.0757). So any operator distance that tracks ill-posedness must get the gap's sign
+backwards. T1-A's refutation and T1-B's 0-of-4 are now both consequences of a two-line
+identity, and the test is named for the counterintuitive direction rather than the
+expected one, because the first version of it was named backwards and asserted the truth.
+
+#### 3. D86's mechanism is a theorem within a row, and 72-of-72 is about the cohort
+
+At a fixed calibration draw every deployment operator in one row is a monotone function of
+the same scalar `U`, so a row's cells are **exactly comonotone** - rank correlation `+1.0000`
+across 40,000 draws, not approximately. That is D86's "one calibration draw displaces every
+cell together", derived rather than observed.
+
+**But only within a row.** Nine rows have nine draws. Nine *independent* rows land on the
+same side with probability `2 * (1/2)^9 = 0.0039`; measured, **0.00392**. With one cohort
+imaged through all nine operators, **1.00000**. So the registry arm sitting below the
+across-split mean at **72 of 72** pairs is not evidence for the within-row mechanism - it
+is evidence that the nine operators share a calibration cohort. D86's remedy is right and
+unaffected; the mechanism it states is one layer short of what makes the number come out
+at 72 rather than at 64 or 8.
+
+**This is the second time a 72-of-72 has meant something other than what it was read as**
+(D91 was the first, on gap signs between label arms). The shape of the error is the same
+both times: a count over 72 pairs that is really a statement about 9 operators. The pairs
+are not the sample size - which `GAP_CLUSTER_UNIT` already says for intervals, and which
+evidently needs saying for counts too.
+
+**One question for Track 2, one line:** within a single split, do all nine operators
+calibrate on the same patient ids? If yes, point 3 is closed and D86 is proved. If no,
+72-of-72 at p = 0.004 is itself the anomaly and wants explaining.
+
+#### What this does not claim
+
+The law is conditional on exchangeability *within* each operator's own positives, which is
+the assumption split conformal already needs and which the region-clustering caveat at the
+end of this module qualifies. It says nothing about whether `G_ab` is estimable from
+operator geometry - that was T1-B's question and the answer there was no. It predicts the
+spread *ratio* between cells, not the absolute spread, for which the finite test set and
+the split overlap corrections already in `SpreadCheck` still apply.
+
+**Status:** `reliability.transfer_beta_reference`, `reliability.probability_map`,
+`reliability.TransferBetaReference`; 10 new tests, `tests/test_reliability.py` 40 -> 50;
+full suite **1,081 passed, 7 skipped**.
+
+**`TRANSFER_SPREAD_PREDICTION` frozen before the number exists**, on the same footing as
+`GAP_FACE_BANK_PREDICTION`: the across-split spread of cell `(a, b)` must be the spread of
+cell `(a, a)` times `f_b/f_a` at the threshold -- 72 predictions from artefacts that
+already exist, no fitted parameter, falsifiable on Track 2's 13-split table. Amendment
+nine; fingerprint `4a7426a10a50` -> **`f3b3f1b6aed8`**. The entry first claimed the
+deployment operator's matched cell "would not be `G'` at all"; that is false, since the
+spread ratio divides out the Beta's scale, so at the bank's ~10,760 positives per operator
+either reference gives the same number. Corrected in the constant and pinned by
+`test_either_matched_cell_gives_the_same_spread_ratio_at_equal_counts`. Branch `T1-B`.
+
+---
+
 ## Open Questions
 
 ### Q1 — "Operator distance" — **RESOLVED by D19** (retained for the reasoning)
@@ -1186,3 +2423,538 @@ S1 and S2 are delivered, which unblocks Track 3's T3.3 and Track 2's Week 2. **T
 | # | Track 1 asks | For | Cost |
 |---|---|---|---|
 | **A1** | One nullable bank column `free_content` = ‖P_N x_true‖ per region / `ref_intensity` | D21's criterion | Additive nullable column — backwards-compatible, no `SCHEMA_VERSION` bump (spec §6) |
+
+### D93 - One cohort closes D86; and four of my own claims break, one of them a floor the data walks under [T1-B, T1-D; rules on Track 2's T2.11 Sec. 1j; amendments 10-12]
+
+Track 2's run (f1d0012, 1,097 tests) answers both outstanding questions, confirms two frozen
+predictions, and falsifies three things I wrote. The falsifications are the useful part of
+this entry, so they come first.
+
+#### 1. The correlation floor I reported was wrong, and the data goes under it
+
+D91 reported `r >= 0.93` for the common-mode correlation between the two label arms'
+difference tables, from the assumption-free bound `r >= sqrt(1 - ratio^2)` with a ratio of
+0.364. Track 2 measured `common_mode_correlation = +0.788`.
+
+**The bound is right; I fed it the wrong quantity.** The algebra is in sd's --
+`sd(gap)/sd(level) = sqrt(s^2 - 2*r*s + 1)`, minimised at `s = r` with value
+`sqrt(1 - r^2)`. The 0.364 I substituted was a ratio of **mean absolute** differences
+(0.024 / 0.066). In sd's the ratio is 0.0287 / 0.0425 = 0.675, which gives a floor of
+**0.738**, and the measured 0.788 clears it.
+
+So the corrected statement is `r >= 0.738`, measured `+0.788`. D86's common-mode claim
+survives and is weaker than I reported: the common displacement is most of the level
+difference, not nearly all of it.
+
+This is worse than an overstatement. A floor of 0.93 with a true value of 0.788 is a
+**false floor** -- a claim of the form "at least", published, that the data violates. I
+caught the equal-variance version of this error in D91 and replaced it with the
+assumption-free bound; I then fed the assumption-free bound a mean-absolute input. The
+lesson that generalises is not about this bound: **a dimensionless ratio does not carry a
+label saying which norm produced it**, and sd-algebra silently accepts an L1 ratio. The
+`common_mode_correlation_lower_bound` field is computed from `sd_difference_ratio` in code
+and always was; only the number I wrote into the prose came from the wrong column.
+
+Ninth instance of the project's recurring failure -- a statistic returning the hoped-for
+number -- and the sixth of them mine.
+
+#### 2. "At equal positive counts" was a false premise, and the retraction reverses a correction
+
+`TRANSFER_SPREAD_PREDICTION` (amendment 9) carried the clause: *"at equal positive counts
+the deployment operator's matched cell gives the same ratio, so this choice is not
+load-bearing on a bank with ~10,760 per operator."*
+
+The bank's positive counts run **3,157 (sv 180) to 21,762 (la 90)**. 10,760 is their mean.
+The premise was false and the choice is load-bearing, as Track 2 measured:
+
+| Reference cell | rho | log-log slope |
+|---|---|---|
+| Calibration operator's matched cell | **+0.977** | **1.08** |
+| Deployment operator's matched cell | +0.88 | 0.66 |
+
+**The sequence matters more than the error.** I first wrote that the reference is
+load-bearing. I then "corrected" that to not-load-bearing on the basis of my own fixture --
+which had equal counts *by construction*, so it could not have returned anything else. The
+original instinct was right and the correction was the mistake. A fixture that confirms a
+claim because the claim is built into the fixture is the same failure mode wearing a test's
+clothing. **Tenth instance**, and the seventh of them mine.
+
+The clause is retracted in place with the retraction left visible, because the clause
+licensed the wrong reference and a silently rewritten freeze is not a freeze.
+
+#### 3. The Beta unit: a real local defect, inside a finding the repo already had
+
+Track 2's incidental line -- *"tau sat between the 0.03 and 0.18 levels of F_a over the
+splits"* -- does not fit the Beta law at any positive count on the bank. Working backwards
+from the span of 13 draws, only a count in the tens reproduces it: 21,762 regions imply a
+span of 0.007, 3,157 imply 0.018, and the observed span is **0.15**, which needs an
+effective count near **45**.
+
+**I then wrote this up as a discovery, and it is not one.** The comment block above
+`ClusteredCoverage` in `reliability.py` already says it, in these words: *"Regions are not
+independent: on T2-A's CT bank, 16,400 calibration regions behave like roughly 35 units,
+because the unit is the subject."* It goes further than I did: it records that the region
+count gives a band of +/-0.011 that **rejects a correctly calibrated bank** while the
+subject count gives +/-0.10 that **accepts almost anything**, concludes that *"neither is a
+measurement, so neither should be the gate"*, and names the cluster bootstrap as the gate.
+The module also already **measures** the thing per cell -- `ClusteredCoverage.design_effect`,
+`.effective_n`, and an `.independent_sd` carrying both variance terms -- and `as_row()`
+emits all three.
+
+I was editing that file and did not read it. The order of operations was: find a striking
+number, verify the number, write it up, then discover the module had it. This is **not**
+another instance of the project's statistic-shaped failure mode and should not be added to
+that tally -- the number was real and my arithmetic was right. It is a different and more
+ordinary failure: not reading the module being edited. Worth recording separately because
+the remedy is different. A frozen constant cannot prevent it; reading can. The correction is
+not subtle: **nothing in this section is a new finding about clustering.**
+
+**And one of my two estimates was wrong by the error that file documents.** I estimated a
+second effective count of 174 from the width of Track 2's la 90 interval, comparing it
+against `sqrt(p(1-p)/n_cal)` -- a *one-term* reference. `independent_sd`'s docstring exists
+precisely to say that the reference must be
+`sqrt(Var_Beta(n_cal) + p(1-p)/n_test)`, because comparing against the Beta term alone
+"makes genuinely independent regions look clustered by a factor of about sqrt(2)", which is
+how an earlier `design_effect` came out at 2.6 on a fixture with no clustering. **The 174 is
+withdrawn.** Redone with both terms it is not stable enough to quote, and it should not be
+quoted at all: the number is computed per cell from the bootstrap and should be read from
+`t1a`'s output, not estimated from a published interval width. No bracket is frozen.
+
+**What survives, and it is narrow.** Two things.
+
+First, a cheap cross-check that is new as a *method* rather than a finding: **tau's own
+motion across splits recovers the effective count without a bootstrap**, giving ~45 against
+the module's ~35 from resampling. A threshold level and a coverage interval are unrelated
+quantities and they agree within 30%, which is worth having because the tau version costs
+one column and no replicates.
+
+Second, the actual defect, which is mine from yesterday and local:
+`TransferBetaReference.interval` and `.contains` shipped with **no label**, while every
+other use of the Beta in this codebase carries one -- `make_figures` draws it as the band
+"split conformal follows if every *region* were independent" and calls the distance to the
+clustered band "the clustering"; `t1a_safety_rule` emits it as "the independence-assumed
+idealisation, with the design effect beside it". Mine read as a certificate. Amendment 11
+makes them refuse unless a unit is named, documents them as the rescaled idealisation, and
+states that **a band at the subject count is not a gate either** -- the property is
+`rescalable`, not `certifiable`, because nothing here certifies anything. The dimensionless
+results, `slope` and `sd_ratio`, stay available, since they do not depend on the unit.
+
+#### 4. Why rho +0.977 certified nothing, and the form of the failure mode that is new
+
+The prediction in amendment 9 was frozen before the number existed, is a true consequence of
+D92's law, and passed at rho +0.977 with 100% of pairs within 2x. It was also **blind to a
+unit error of order 100 standing immediately beside it**, because the predicted quantity is
+a *ratio of two spreads* and the reference's `n` appears in numerator and denominator and
+divides out. Verified in code: changing `n_independent` from 10,762 to 41 leaves `sd_ratio`
+and `slope` bit-identical while the quoted band widens 16x. This holds whatever the right
+effective count turns out to be, which is why it is the part of Section 3 that is actually a
+finding: the blindness is a property of the *statistic*, not of the number it was fed.
+
+Every previous instance of this project's recurring failure was a statistic that came out
+well because it had been chosen, framed, or inverted after the fact. This one is a different
+and worse shape: **the statistic was correct, frozen in advance, and still uninformative
+about the error next to it.** A dimensionless agreement certifies a law's *shape* and says
+nothing about its *scale*. Amendment 12 freezes `DIMENSIONLESS_PASS_WARNING`, which requires
+one dimensioned check beside any such agreement -- here, the matched cell's own across-split
+spread against its Beta sd at the independent count, which does not divide out.
+
+**Eleventh instance, and a new form.** The running tally: seven up to the
+bootstrap-interval defect, D91's eighth, and three in this entry -- Section 1's false floor,
+Section 2's fixture-confirmed correction, and this one. Four of the first seven were mine,
+the eighth partly so, and all three here are mine: **eight of the eleven**. Section 3's
+overclaim is a fourth error in this entry and is deliberately **not** counted, because it is
+a different failure and folding it in would blur the pattern the tally exists to show.
+
+#### 5. What is NOT explained, stated as such
+
+Track 2 reports the extreme pair la 90 -> sv 180 at **3.83 measured against 2.38
+predicted**, a factor of 1.61, while the median over 72 pairs is 0.97. My first hypothesis
+was curvature: tau wanders over a 0.15-wide band of `F_a` while `slope` is a central
+difference at half-width 0.02, so the linearisation is being asked to summarise a band it
+was not built for.
+
+**I tested it and it is not the explanation.** On gamma populations the exact pushforward
+(`sd_ratio`, the sd of `1 - G(U)` over the full Beta) and the linearisation (`slope`) agree
+to 0.6-0.8%, and they still agree to ~1% when the Beta is given n = 41 instead of n = 21,762.
+Curvature accounts for about one part in a hundred of a 61% discrepancy.
+
+So the compression at the extremes is **open**. The leading remaining candidate is that the
+measured spread carries test-set noise whose effective unit is also the subject, not the
+region, which would inflate the measured side worst where the deployment count is smallest --
+and sv 180 is the smallest count on the bank, which is the pair in question. That is a
+hypothesis with a mechanism and no number behind it, so it is recorded as one and not
+frozen as a prediction. No amendment is taken for it.
+
+#### 6. Both questions answered, and D86's mechanism closes
+
+**One cohort: yes.** Side is `split_for(subject id, salt)`; the operator does not enter. The
+same 41 calibration subjects at all nine operators, in all 13 splits, checked on the bank.
+
+This closes the gap D92 left. D92 proved that within one calibration row every cell is a
+monotone function of the same scalar `U`, so a row's cells are exactly comonotone -- but
+nine rows are nine draws, and nine *independent* rows would land on the same side with
+probability 0.0039. One shared cohort gives 1.00000. The cohort is shared, so the 72-of-72
+one-directional displacement is **the mechanism, measured**, and not a coincidence at
+p = 0.004. **D86's argument is now a theorem plus a verified premise rather than an
+argument**, and the retraction in D91 stands unchanged: the *gap-sign* count was never the
+evidence; the common-mode correlation is, at +0.788 against a floor of 0.738.
+
+**The two rho sets: same arm, different definition.** T1-A used nominal-minus-transfer,
+T1-B matched-minus-transfer. A sensitivity, neither wrong, and all four arm x definition
+columns are tabulated. The discrepancy I flagged in D91 is resolved and no one was wrong.
+
+#### 7. The direction rule's determinacy test was not sufficient -- Track 2 found the hole
+
+On the CT bank the rule's pooled `rho(d, tau_b - tau_a)` is **+0.05** while every family
+cell is **+0.55 to +1.00**, and the determinacy test passed anyway, because it checked
+tau's *range* against tau's noise (12.5x, well clear of the frozen floor of 3.0) and never
+asked whether the correlation it actually reads was resolved. A rule one bootstrap resample
+away from returning the opposite direction was being called determinate.
+
+**The cause is Simpson's.** The two families' tau levels are offset -- every limited-angle
+threshold sits above every sparse-view one -- so pooling the 72 pairs mixes a between-family
+level difference into a within-family trend and can cancel it exactly. On a fixture built to
+reproduce the bank's pattern (pooled -0.01, cells +0.79 to +0.94):
+
+| Reading | sign flips under bootstrap resampling |
+|---|---|
+| Pooled rho | **52.4%** |
+| Within-cell unanimity | **0.1%** |
+
+A coin flip against a stable verdict. Amendment 10 adds
+`GAP_DIRECTION_DETERMINACY_SCOPE = "within_family_cell"` and
+`GAP_DIRECTION_POOLED_RHO_BARRED`: the rule reads the four family cells, their signs must
+agree, and the pooled value may be shown but may not set the direction. `meta` is now
+required for a reportable call, and `DirectionCall.reportable` needs all three of
+determinacy, unanimity, and an unbarred bank.
+
+**This narrows what may be claimed.** It adds a condition, and both banks pass it -- CT at
++0.55 to +1.00 and face at -0.89 to -0.99, each unanimous. Amendment 7 remains the only
+entry in the tuple that widens.
+
+I am not taking Track 2's offered default ("nothing changes, the bank is barred anyway").
+The bar on CT is about gaps already seen; it does nothing about a rule that would hand the
+next bank a direction drawn from noise. A defect found in a rule is fixed in the rule.
+
+#### 8. Two frozen predictions passed, and one of them is the direction rule working
+
+**`GAP_FACE_BANK_PREDICTION` holds.** Frozen at fingerprint `ce668b3e9b98`, long before the
+face bank's pairs were completed. `rho(distance, tau_b - tau_a) = -0.94` over all 72 pairs,
+-0.89 to -0.99 within cells, with Track 2 computing the 19 missing pairs from the bank's own
+256^2 distances. tau follows the knob exactly there (+1.00 in both families); on CT it is
+-0.83 and -1.00.
+
+So the direction rule, which takes thresholds and distances and no outcome, returns
+**non-decreasing** on the face bank and **non-increasing** on CT -- the correct direction on
+each, and the face bank was genuinely out of sample. That is the amendment-7 widening
+earning its fence.
+
+**The T1-A gate passes 9 of 9 without `--ignore-control`.** D91 predicted la 90 would move
+to roughly `[0.779, 0.912]`; measured `[0.779, 0.906]`. The lower end is exact and the upper
+is 0.006 wide.
+
+**The warning D91 attached to that prediction stands and matters more than the pass.** la
+90's point estimate is **0.847**, which is **5.3 points under nominal**. The cell passes
+because the interval is wide, not because the cell is calibrated. Passing a gate is not
+evidence of calibration and must not be reported as any.
+
+#### 9. The baseline set is smaller than it looks: null-dim is the view count
+
+Track 2 resolved sv 120's `null_space_dim` of 64,000: the column is ambient minus
+measurements, `102400 - 320 * views`. Every 120-view operator gets 64,000 and the operator
+is built like the other five.
+
+**So `null_space_dimension` is an affine function of `views` within the sparse-view family**
+-- `102400 - 320v` -- and therefore rank-identical to it. Any rank-based method sees one
+predictor, not two. This is why `views/arc` and `null_space_dim` returned near-identical MAE
+in T1-B and why both ordered baselines collapsed the same way: they were the same baseline.
+
+T1-B's four predictors are three: the distance, a constant, and the acquisition knob in two
+sets of units. `BASELINE_SCOPE` already confines `acquisition_parameter` to within-family,
+which is why this never produced a wrong number -- but the four-baseline framing overstated
+how much the distance was being asked to beat, and anything written as "beats three
+baselines" must be written as "beats a constant and the knob".
+
+#### 10. D90's "one adjacent transposition" is wrong; the anomalous operator is sv 180
+
+D90's testable prediction **holds**: `tau(sv 120) < tau(sv 180)`, 0.893 against 0.972, in
+13 of 13 splits. Its localisation does not. Track 2's full ordering is
+
+    sv 120 < sv 90 < sv 180 < sv 60 < sv 45 < sv 30 < la 150 < la 120 < la 90
+
+and sv 90 (0.933) is below sv 180 as well, so this is not one transposition. The knob order
+is sv 180 < sv 120 < sv 90 < sv 60 < sv 45 < sv 30; the rest of the family is perfectly
+ordered, and the single displacement that explains the data is **sv 180 sitting two
+positions too high**. D90 named sv 120 as the anomaly; the parsimonious reading is that sv
+180's threshold is too high, not that sv 120's and sv 90's are both too low.
+`rho(views, tau) = -0.83` within sparse view, not -1.00.
+
+The heading of D90 is left in place with this correction recorded against it, on the
+standing principle that a corrected record has to show what it corrected.
+
+#### 11. The dichotomy: a deployment screen that needs no deployment data
+
+Track 2's `gap_sign_from_thresholds` check: 72/72 on the registry, 934/934 decidable over 13
+splits, 72/72 on the face bank. That is D89's identity, so it had to pass; it is a check on
+the bank, not a finding.
+
+What is worth taking is the split they report beside it. Of D90's 36 pairs with
+`tau_a < tau_b`, **none is below nominal** (lowest 0.904); the other 36 are **all** below.
+A perfect dichotomy, and by the identity it must be: `tau_a < tau_b` forces
+`F_b(tau_a) <= F_b(tau_b)`, hence `coverage(a->b) >= coverage(b->b)`.
+
+The consequence is operational. **Which direction a transfer will fail is readable from the
+two calibration thresholds alone, before any deployment data exists.** Not the magnitude --
+the magnitude needs the density ratio and that is what Section 5 leaves open -- but the
+sign, exactly, with no scores, no labels, and no deployment set. For a coverage claim that
+is the part a user needs first, and it is the strongest thing T1-B has that does not depend
+on a fit.
+
+#### 12. Rulings on Track 2's three items
+
+**(1) The cos-theta guard. I am not taking the default, and I am not setting a tolerance
+either.** T2-A6 shows the excess above 1 does not track the additivity defect
+(rho -0.44 to +0.07, n = 9), and that a region must already be near `cos = 1` to cross. So
+the excess is not a proxy for solver quality and may not be cited as one -- which also means
+no tolerance read off the T2-A6 table would mean anything.
+
+The structural point: `P_N` is linear, so `P_N(x_hat - x) = P_N(x_hat) - P_N(x)` *exactly*,
+and with `e` formed that way the law of cosines gives `|cos| <= 1` by Cauchy-Schwarz
+identically. The excess the bank shows is therefore entirely the three solves failing to be
+linear with each other. Hence:
+
+- The **reported** `cos` is formed from two solves, where it obeys Cauchy-Schwarz by
+  construction. The 1e-3 guard applies there, where it is a real numerical check.
+- The three-solve excess becomes a **logged diagnostic with no gate**, per operator. It is
+  the only thing that measures the solver's linearity defect, so it is kept -- but
+  `err_free` must not *replace* it, because that would make the guard vacuous and hide the
+  defect rather than fix it.
+
+Adopt on the next bank, with both channels emitted. This is consistent with D91's point that
+Cauchy-Schwarz is projector-independent and so T2-A5 cannot set the tolerance.
+
+**(2) The determinacy test.** Not the default. Fixed in the rule -- Section 7, amendment 10.
+
+**(3) T2-E.** Default taken for figures 6-9, and fig 9 stays untouched. Figure 10 should
+gain a second series only after Section 5's open question is settled, not before: a figure
+that shows predicted against measured with a 1.61x miss at the extreme and no account of it
+is a figure that invites the account to be invented. One figure is worth adding and costs
+nothing: coverage against `tau_a - tau_b`, 72 points, with the nominal line and zero line
+making four quadrants of which two are empty by theorem. It is Section 11 drawn, and because
+it cannot fail it is a figure about the mechanism, not evidence for it.
+
+#### 13. Where T1-B stands, and the face bank's reportability
+
+T1-B on the face bank is **reportable as a coverage-transfer result and not as a
+hallucination-detection result.** The face bank's label defect bars T1-A there -- a
+false-safe rate is a detection claim and inherits the label's defects whole. The coverage
+gap is a coverage quantity, and the project's standing scope is that coverage claims survive
+the label's defects while detection claims do not. `GAP_FACE_BANK_PREDICTION` was frozen
+specifically so that bank would be the out-of-sample test, and it is.
+
+Under the frozen criterion the result is **1 of 4**, not a win: the distance beats the
+constant in all four cells and is never beaten, but does not separate from views/arc
+(+0.006 `[-0.001, +0.016]` and +0.011 `[-0.000, +0.024]`). `GAP_PREDICTION_BASELINES`
+requires beating both, so three cells do not report, and that criterion is not relitigated
+here.
+
+Section 9 explains why the ceiling is where it is: on nine operators in two families the
+distance and the knob are nearly collinear, and the knob was two of the four baselines. The
+honest headline for T1-B across both banks is **the signed distance carries information
+about the coverage gap beyond a constant, and none beyond the acquisition knob** -- 1 of 4
+on the face bank, 0 of 4 on CT, with the direction rule accounting for the difference
+between the two.
+
+| Claim | Status |
+|---|---|
+| Transfer coverage law `1 - G_ab(U)` (D92) | Holds, exact, unaffected |
+| Spread ratio `= f_b/f_a` (amendment 9) | Holds, rho +0.977 -- and certifies shape only |
+| Matched Beta band at a transfer cell | Wrong twice: by `G'`, and by the unit |
+| Matched Beta band as a certificate | **Withdrawn**; not a gate at any count |
+| "Regions are not the unit" as a new finding | **Withdrawn** -- already in `reliability.py` |
+| Effective count = 174 from the bootstrap width | **Withdrawn** -- one-term reference |
+| Common-mode correlation >= 0.93 | **Retracted**; `>= 0.738`, measured +0.788 |
+| D86's mechanism | **Closed** -- shared cohort verified |
+| Direction rule on both banks | Holds, face bank out of sample |
+| Transfer *sign* from thresholds alone | Holds as a theorem; a screen needing no deployment data |
+| Extreme-pair compression (1.61x) | **Open**, and not curvature |
+
+Fingerprint `f3b3f1b6aed8` -> `289b0f72f828`. Suite 1,096 passed, 7 skipped.
+
+---
+
+### D94 - The 1.61x triaged: two mechanisms die by sign, and the dimensioned check was already in Track 2's message [T1-D, local, no new bank data; amendment 13]
+
+D93 Sec. 5 left one thing open -- Track 2's extreme pair la 90 -> sv 180 at **3.83 measured
+against 2.38 predicted** -- and recorded one hypothesis for it. This entry closes two of the
+three candidates, both by the same argument, and finds that the number needed to settle the
+other open item had been sitting in Track 2's message all along.
+
+#### 1. The dimensioned check amendment 12 demanded: run, passed, and already reported
+
+Amendment 12 required one dimensioned check beside any dimensionless agreement, and named
+it: the matched cell's across-split spread against its Beta sd at the independent count.
+That check needs no new run. Track 2 had already reported the number, as an aside:
+
+> tau sat between the 0.03 and 0.18 levels of F_a over the splits, wider than your +/-0.02.
+
+`U := F_a(tau_a)` is `Beta(k, n + 1 - k)` **exactly**, for `n` independent calibration
+scores. So the across-split range of `U` carries `n`, which is precisely what the predicted
+spread *ratio* divides out. Thirteen draws, by simulation:
+
+| Reference count | `Beta(k, n+1-k)` | median min | median max | against observed [0.03, 0.18] |
+|---|---|---|---|---|
+| 41 subjects | Beta(4, 38) | **0.034** | **0.177** | matches |
+| 3,157 positives (sv 180) | Beta(315, 2843) | 0.090 | 0.110 | excluded |
+| 21,762 positives (la 90) | Beta(2176, 19587) | 0.097 | 0.103 | excluded |
+
+The check **passes at the subject count and excludes the region count by a factor of order
+300**. The dimensioned companion to a dimensionless pass is therefore no longer pending on
+Track 2's disk; it was in the sentence that flagged the problem.
+
+**And D93 Sec. 3's own reading of it was over-precise.** That section inverted the same span
+to "an effective count near **45**". The statistic does not carry a point estimate.
+`count_from_level_range` compares the observed range against the simulated range of the same
+number of Beta draws and keeps the counts whose central 90% contains it:
+
+```
+observed width 0.15 over 13 splits  ->  bracket (10, 70), no holes
+  consistent: 10 15 20 25 30 35 41 50 60 70
+  excluded:   85 and above, through 50,000
+```
+
+So the honest statement is **a bracket of 10 to 70**. It cannot separate 35 from 50 -- the
+module's figure from the bootstrap and the cohort size are both inside it, and nothing here
+chooses between them -- and it rules out the region count overwhelmingly. The method is
+frozen as `prereg.COUNT_FROM_LEVEL_RANGE`, which fixes that it yields a bracket and never a
+count, before it is applied to the face bank. Two properties of the statistic are recorded
+with it: it is calibration-side only, so it carries no test-set term, which is what makes it
+clean and also what stops it being a coverage certificate; and `k = floor(alpha*(n+1))`
+steps in integers, so the likelihood is not monotone in `n` and the consistent set can have
+holes, which `LevelRangeCount.has_holes` reports rather than hides.
+
+#### 2. Curvature: the conclusion survives, the reasoning did not
+
+D93 Sec. 5 ruled curvature out on gamma populations, at "0.6-0.8%, and still ~1% at n = 41".
+Track 2's remark was a direct criticism of the premise -- `slope` is a central difference at
+half-width 0.02 and tau roams a 0.15-wide band -- so the check was re-run over `U`'s **true**
+Beta spread at 41 units, and across seven score-distribution families rather than one.
+
+| Pair | `slope` | exact at n=41 | exact at n=21,762 | inflation at 41 |
+|---|---|---|---|---|
+| gamma k=2, scale 1.0 -> 0.35 | 3.149 | 3.014 | 3.099 | **0.957** |
+| normal -> bimodal mixture | 2.684 | 2.478 | 2.563 | **0.923** |
+| lognormal s=0.6 -> 1.4 | 0.877 | 0.883 | 0.814 | 1.007 |
+| uniform -> beta(0.5,0.5), crossing | 1.100 | 1.089 | 1.069 | 0.990 |
+| t(3) -> normal, heavy tail | 1.014 | 1.001 | 1.030 | 0.986 |
+| gamma k=2 -> k=6 | 0.246 | 0.375 | 0.275 | 1.525 |
+| lognormal s=1.4 -> 0.6 | 0.053 | 0.176 | 0.054 | **3.315** |
+
+**Curvature has the wrong sign where it would be needed.** In the large-slope regime -- the
+regime the 2.38 pair is in -- it *deflates*, 0.92 to 0.96 across families. It inflates only
+where `|G'|` is far below 1, and such a cell has a spread well under the matched cell's and
+is harmless. A power-law reading says the same thing without a family at all: in the lower
+tails `G(u) = c*u^p`, `c` cancels from every ratio, and the inflation is a function of `p`
+alone -- 0.99 to 1.01 over the whole admissible range `p < 1`, which is the range a pair
+with coverage under nominal must be in.
+
+So the D93 conclusion stands and the number behind it did not generalise: 1% was one family,
+not a bound. This is the third time in two days that a claim of mine was right for a weaker
+reason than I gave, and it is the kind of correction worth making loudly, because a
+right-for-the-wrong-reason claim survives exactly until someone checks it in a different
+family.
+
+#### 3. Amendment 13(a): the spread ratio is not exactly dimensionless
+
+The table above also narrows **amendment 12 itself**, which asserted that "the reference's
+`n` divides out of both sides" without qualification. It does not, quite. `sd_ratio` is
+`sd[1 - G(U)] / sd[U]`; `n` divides out only while `G` is linear across `U`'s range, and
+`U`'s range is itself `sd[U]`, which is set by `n`. Measured: agreement to about 3% where
+`|G'| >= 1`, disagreement up to **3.3x** where `|G'| << 1`.
+
+The remedy amendment 12 froze is unaffected, and the regime it holds in is the regime that
+matters -- the cells where the ratio exceeds 1 are the cells `matched_band_is_too_narrow`
+exists for. `DIMENSIONLESS_PASS_REGIME` records the condition and bars quoting a ratio far
+below 1 without its unit.
+
+**Also checked, because it would have been a real defect:** whether the reference count can
+flip `matched_band_is_too_narrow`, the flag documented as "the case a deployment certificate
+must not get wrong". Over a 49-pair lognormal grid the only flips are the seven diagonal
+cells, where `G` is the identity, the true ratio is exactly 1, and the flag is a tie rather
+than an answer. **No off-diagonal pair flips.** The flag is safe at either count.
+
+#### 4. Test-side noise: refuted by sign, and it makes the gap worse
+
+D93 Sec. 5's "leading remaining candidate" was that the measured spread carries test-set
+noise whose unit is the subject, inflating the measured side worst where the deployment count
+is smallest -- and sv 180 is the smallest count on the bank. **It is wrong, and wrong in the
+direction that matters.** Using the two-term variance `ClusteredCoverage.independent_sd`
+already uses, with `V_U` at 41 subjects and `G' = 2.38`:
+
+| `n_test` | transfer sd | matched sd | predicted ratio | measured / predicted |
+|---|---|---|---|---|
+| 35 | 0.1357 | 0.0676 | **1.995** | 1.92 |
+| 100 | 0.1176 | 0.0539 | **2.182** | 1.76 |
+| 500 | 0.1088 | 0.0467 | 2.329 | 1.64 |
+| infinite | 0.1065 | 0.0448 | 2.380 | 1.61 |
+
+Test noise moves the predicted ratio **down** from 2.38 at every finite test size, so it
+widens the discrepancy from 1.61x to as much as **1.92x** rather than closing it. The reason
+I got the direction wrong is legible: I reasoned about the numerator and forgot the
+denominator gets a test term too, and relative to its own much smaller signal -- `V_U`
+against `G'^2 * V_U` -- the matched cell's term is the **larger** fractional addition. Any
+noise common to both cells pulls a ratio toward 1, and this ratio is above 1.
+
+#### 5. What survives, with its own shape problem stated
+
+One mechanism has the right sign, and it is structural rather than fitted.
+`coverage(a->a) = 1 - F_a(tau_a)` is a **rank statistic of a's own scores**, so it is exactly
+Beta however a refit moves that operator's score distribution. `coverage(a->b) = 1 - F_b(tau_a)`
+is not: it depends on where a's quantile lands in b's distribution, and a per-split refit
+moves the two independently. **That variance enters transfer cells only** -- the matched
+reference is immune by construction, so the ratio's denominator cannot absorb it.
+
+Simulated, with each operator's score scale given an independent per-split wobble:
+
+| refit sigma | measured / predicted |
+|---|---|
+| 0.00 | 0.92 |
+| 0.05 | 0.95 |
+| 0.10 | 1.04 |
+| 0.20 | 1.34 |
+| 0.35 | **1.92** |
+
+It reaches the required size. **But it has the wrong shape.** Track 2's discrepancy is
+concentrated at the extremes -- median 0.97 over 72 pairs, 1.61 at the most distant one --
+and in simulation this mechanism is nearly distance-independent (1.14 at matched scales,
+1.02 to 1.05 across increasing dissimilarity). So it is recorded as **necessary but not
+sufficient**: it is the only candidate left with the right sign, it cannot by itself produce
+a discrepancy that grows with distance, and **no amendment is taken for it**.
+
+The test is cheap and runs on output Track 2 already has: re-estimate `G_ab` from each
+split's own scores and read the across-split spread of `G_ab(u0)`. If that spread grows with
+pair distance, this closes; if it is flat, something fourth is at work.
+
+#### 6. Status
+
+| Claim | Status |
+|---|---|
+| Dimensioned check beside the dimensionless pass | **Run and passed** -- at the subject count, from Track 2's own aside |
+| Effective count "near 45" (D93 Sec. 3) | **Replaced** by a bracket of 10 to 70 |
+| Region count as the Beta's unit | **Excluded** by a factor of order 300 |
+| Curvature as the 1.61x | **Ruled out**, now by sign and across seven families |
+| "1% curvature error" as a general bound | **Withdrawn** -- one family; range is 0.92 to 3.3 |
+| Amendment 12's unqualified "n divides out" | **Narrowed** to `|G'| >= 1` |
+| `matched_band_is_too_narrow` across counts | Safe -- only identity ties flip |
+| Test-side noise as the 1.61x | **Refuted by sign**; it widens the gap to 1.92x |
+| Per-split refit wobble in `G_ab` | Right sign, right size, **wrong shape** -- open |
+| Extreme-pair compression | **Still open**, with one candidate and a stated test |
+
+No new trap is counted here. The tally stands at eleven, eight of them mine: Sec. 2 and
+Sec. 3 are overstatements narrowed by measurement a day later, not statistics chosen to come
+out well, and folding them in would blur the pattern the tally exists to show. The stale
+"five of eight" in `prereg.py`'s own docstring is corrected to eight of eleven in this round,
+along with the claim that every instance was a choice made after seeing a number -- the
+eleventh was not, which is the entire reason amendment 12 exists.
+
+Fingerprint `289b0f72f828` -> `a2ab9a1fdfe4`. Suite 1,106 passed, 7 skipped.

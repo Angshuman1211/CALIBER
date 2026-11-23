@@ -4,6 +4,11 @@ A *non-conformal* detector needs no calibration data, only evaluation data, so t
 on the **test patients only**: it regenerates their posterior draws, measures the
 full-image spread, and scores how well that spread ranks hallucinated regions.
 
+The exception is D73, which gives the dispersion detector a conformal threshold of its own
+and asks whether it transfers across operators (``transfer_baseline.py``). That threshold
+is fitted on calibration patients, so ``generate --splits calib test`` adds their draws to
+the same file; already-generated pairs are skipped, so this extends a test-only table.
+
 Why regenerate: the bank stores ``s_disagree``, which is the spread in the operator's null
 space (a CALIBER score component), not the full-image spread the literature's dispersion
 detector uses. The draws are a pure function of the config and the pair (D-041), so the
@@ -60,7 +65,7 @@ def generate(args) -> int:
     # grid.table() is a list of dicts in region order, the order the runner writes and
     # grid.reduce returns; taking region_id from it keeps the join to the bank exact.
     region_ids = [row["region_id"] for row in grid.table()]
-    dataset = build_dataset({**cfg["data"]["dataset"], "keep_splits": ["test"]})
+    dataset = build_dataset({**cfg["data"]["dataset"], "keep_splits": list(args.splits)})
     n_items = len(dataset) if not args.limit_volumes else min(args.limit_volumes, len(dataset))
     solver = build_solver(exp["solver"])
     n_post = int(exp["n_posterior"])
@@ -71,7 +76,7 @@ def generate(args) -> int:
     rows = pd.read_parquet(out).to_dict("records") if out.exists() else []
     done = {(r["sample_id"], int(r["slice_idx"]), r["operator_id"]) for r in rows}
     total = n_items * len(ops)
-    print(f"[dispersion] {total} test-side pairs, {len(done)} already done; "
+    print(f"[dispersion] {total} pairs on {'+'.join(args.splits)}, {len(done)} already done; "
           f"solver on {getattr(solver, 'device', 'cpu')}")
 
     started, new = time.time(), 0
@@ -178,6 +183,8 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("bank", help="the bank of record, for the reproduction check")
     g.add_argument("--out", required=True)
     g.add_argument("--operators", nargs="*", default=None)
+    g.add_argument("--splits", nargs="+", default=["test"],
+                   help="split sides to regenerate; calib as well for D73's conformal threshold")
     g.add_argument("--limit-volumes", type=int, default=None, help="for a smoke run")
     g.add_argument("--save-every", type=int, default=10)
     g.add_argument("--tolerance", type=float, default=1e-2,

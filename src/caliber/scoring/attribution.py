@@ -331,6 +331,128 @@ def identity_residual(s_free, free_content, err_free) -> dict[str, float]:
     }
 
 
+# -- a label on direction rather than magnitude (D74) -------------------------
+
+#: Design-split quantile of ``cos θ`` below which a region counts as invention.
+#:
+#: 0.25 is pre-registered, not fitted: the least-aligned quarter of candidate regions.
+#: Any quantile makes the positive rate known in advance, which is what P-02's fixed
+#: constant failed to do (it flagged every region).
+ALIGNMENT_QUANTILE = 0.25
+
+#: Below this spread in ``cos θ`` on the design split, direction carries no information
+#: and a quantile cut on it is slicing noise. Measured for context: the M4Raw bank's
+#: ``cos θ`` has sd 0.089 over a range of [-0.34, +0.27], which clears this by a long way.
+MIN_ALIGNMENT_SPREAD = 0.01
+
+
+@dataclass(frozen=True)
+class MisalignmentLabel:
+    """A hallucination label built on ``cos θ``, with what is needed to distrust it."""
+
+    label: np.ndarray
+    cos_theta: np.ndarray
+    threshold: float
+    n_total: int
+    n_defined: int
+    n_positive: int
+    spread: float
+
+    @property
+    def positive_rate(self) -> float:
+        return float(self.n_positive / self.n_total) if self.n_total else float("nan")
+
+    @property
+    def defined_fraction(self) -> float:
+        return float(self.n_defined / self.n_total) if self.n_total else float("nan")
+
+    @property
+    def degenerate(self) -> bool:
+        """Is ``cos θ`` too flat for a cut on it to mean anything?"""
+        return not (np.isfinite(self.spread) and self.spread >= MIN_ALIGNMENT_SPREAD)
+
+    def summary(self) -> str:
+        return (
+            f"cos theta < {self.threshold:.4f} (q={ALIGNMENT_QUANTILE:g} on the design "
+            f"split, D74); {self.n_positive} positives at rate {self.positive_rate:.3f}; "
+            f"cos theta defined on {self.defined_fraction:.1%} of regions, sd {self.spread:.4f}"
+        )
+
+
+def label_misaligned(
+    s_free,
+    free_content,
+    err_free,
+    threshold: float,
+    min_content: float = 1e-3,
+) -> MisalignmentLabel:
+    """Label a region hallucinated when its hidden content points *away* from the truth's.
+
+    Every earlier form of this label thresholded a **magnitude** -- ``err_free``, or
+    ``err_free / free_content`` -- and D67 showed why that cannot work on this bank. By the
+    identity, at ``cos θ ≈ 0``, ``err_free ≈ sqrt(s_free² + free_content²)``, so a
+    magnitude label is a function of the score's own dominant component: measured here,
+    ``spearman(err_free, hypot(s_free, free_content)) = +0.971``. The 0.95-1.00 AUROCs
+    were the identity being measured, not a detector.
+
+    ``cos θ`` is the other coordinate of the same decomposition, and it is **scale-free**:
+    it says which way the invented content points, not how much of it there is. On the
+    M4Raw bank ``spearman(cos θ, s_free) = -0.435``, against the magnitude label's 0.971.
+
+    **The score is not independent of this label either**, and the honest claim is only
+    that the dependence is moderate rather than algebraic. Nothing built from
+    ``(s_free, free_content, err_free)`` can be independent of a score built from
+    ``s_free``, because the identity ties all three. So an AUROC against this label still
+    has to clear the paired anatomy control (:func:`stratified_auc`,
+    :data:`AUC_EXCESS_MIN`) before it is a result. What changes is that it *can* now fail
+    that check, where against a magnitude label it could not.
+
+    **Do not restore the magnitude.** A label like ``s_free · sin θ`` -- invented mass
+    rather than invented direction -- looks more physical and is a trap: ``sin θ ≈ 1``
+    wherever ``cos θ ≈ 0``, which is almost everywhere on this bank, so the product
+    collapses back to ``s_free`` and the tautology returns intact.
+
+    Regions where ``cos θ`` is undefined (either norm below ``min_content``, or the bank
+    failing the identity) are labelled **negative** and counted. They are not dropped:
+    dropping them would make the label's support depend on the score's magnitude, which
+    is the same confound by another route.
+    """
+    cos = content_alignment(s_free, free_content, err_free, min_content=min_content)
+    defined = np.isfinite(cos)
+    label = defined & (cos < threshold)
+    spread = float(np.std(cos[defined])) if defined.any() else float("nan")
+    return MisalignmentLabel(
+        label=label,
+        cos_theta=cos,
+        threshold=float(threshold),
+        n_total=int(cos.size),
+        n_defined=int(defined.sum()),
+        n_positive=int(label.sum()),
+        spread=spread,
+    )
+
+
+def alignment_threshold(
+    s_free, free_content, err_free, quantile: float = ALIGNMENT_QUANTILE
+) -> float:
+    """The ``cos θ`` cut, valued on whatever rows are passed -- **design rows only**.
+
+    Fitting it on calibration or test rows would let the label see the patients whose
+    coverage it is about to score, which is the in-sample shape behind P-19 and P-23.
+    Callers pass the design split; :func:`caliber.evaluation.label_spec` enforces that.
+    """
+    if not 0.0 < quantile < 1.0:
+        raise ValueError(f"quantile must be in (0, 1), got {quantile}")
+    cos = content_alignment(s_free, free_content, err_free)
+    defined = cos[np.isfinite(cos)]
+    if defined.size == 0:
+        raise ValueError(
+            "cos theta is undefined on every design region, so no alignment threshold "
+            "can be set; check identity_residual() on this bank first"
+        )
+    return float(np.quantile(defined, quantile))
+
+
 # -- detail-matched comparison -------------------------------------------------
 
 

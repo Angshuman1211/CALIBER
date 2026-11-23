@@ -36,7 +36,18 @@ from .paired import (
     paired_gap_curve,
     paired_method_gap,
 )
+from .sensitivity import WeightSensitivity, weight_sensitivity
 from .stratified import detection_by_content, stratification_verdict
+from .transfer import (
+    PENALTY_FLOOR,
+    DetectorTransfer,
+    TransferComparison,
+    area_at_matched_coverage,
+    detector_penalty,
+    detector_transfer,
+    transfer_table,
+    transfer_verdict,
+)
 
 __all__ = [
     "CANDIDACY_QUANTILE",
@@ -73,4 +84,16 @@ __all__ = [
     "stratification_verdict",
     "CollapseResult",
     "curve_collapse_test",
+    # Track 1 (T1.1, D76) — is the claim weight-dependent at all?
+    "WeightSensitivity",
+    "weight_sensitivity",
+    # Track 1 (T1.4, D73) — the baseline comparison on the coverage axis
+    "PENALTY_FLOOR",
+    "DetectorTransfer",
+    "TransferComparison",
+    "area_at_matched_coverage",
+    "detector_penalty",
+    "detector_transfer",
+    "transfer_table",
+    "transfer_verdict",
 ]

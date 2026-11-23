@@ -135,3 +135,48 @@ def test_the_patient_is_the_subject_and_the_registry_builds_it(root):
     ds = build_dataset({"name": "totalsegmentator", "root": str(root)})
     assert ds.modality == "ct"
     assert ds.patient_index() == {s: s for s in ds.subjects}
+
+
+# -- the LIDC prior's training normalisation (Week 12, D-070's pre-registration) -----------
+
+
+def _extremes(root, name="s0000"):
+    """A subject whose volume has padding below air and bone above the fixed window, in a
+    slice the loader will not choose -- so the test sees the *volume's* range at work."""
+    ct, _ = _subject(root, name)
+    ct[0, 0, 0] = -1500          # scanner padding, off-slice
+    ct[20, 15, 19] = 3000        # bone, off-slice
+    _write(root / name / "ct.nii.gz", ct)
+    return ct
+
+
+def test_volume_minmax_scales_by_the_volume_and_not_the_slice(tmp_path):
+    """Song et al. normalised each LIDC volume before slicing it. A per-slice min-max
+    would put this slice's soft tissue at 1.0; the volume's range puts it at 1540/4500."""
+    _extremes(tmp_path)
+    ds = TotalSegmentatorDataset(tmp_path, image_shape=(30, 40), intensity="volume_minmax")
+    item = ds[0]
+    assert item.meta["intensity"] == "volume_minmax"
+    assert float(item.image.max()) == pytest.approx((40 + 1500) / 4500, abs=1e-6)
+    assert float(item.image.min()) == pytest.approx((-1000 + 1500) / 4500, abs=1e-6)
+
+
+def test_volume_minmax_pads_with_air_and_not_with_the_volume_minimum(tmp_path):
+    """Zero is the padding value of the scanner here, not air. Padding the crop with zeros
+    would draw a dark frame around every body narrower than the grid."""
+    _extremes(tmp_path)
+    ds = TotalSegmentatorDataset(tmp_path, image_shape=(48, 48), intensity="volume_minmax")
+    img = ds[0].image
+    air = (-1000 + 1500) / 4500
+    assert float(img[0, 0]) == pytest.approx(air, abs=1e-6)   # a padded corner
+    assert float(img.min()) == pytest.approx(air, abs=1e-6)   # nothing darker than air
+
+
+def test_the_fixed_window_stays_the_default_and_an_unknown_mode_is_refused(root):
+    """The banks of record were built on the window; a default that moved would change
+    their config hash's meaning without changing the hash."""
+    assert TotalSegmentatorDataset(root).intensity == "hu_window"
+    assert build_dataset({"name": "totalsegmentator", "root": str(root),
+                          "intensity": "volume_minmax"}).intensity == "volume_minmax"
+    with pytest.raises(ValueError, match="unknown intensity"):
+        TotalSegmentatorDataset(root, intensity="p99")

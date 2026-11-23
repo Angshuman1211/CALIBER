@@ -37,7 +37,7 @@ from torch import Tensor
 
 from ..operators.base import ForwardOperator
 from .base import PosteriorSampler, SolverInfo
-from .denoiser import Denoiser, DiffusersUNetDenoiser, NoiseSchedule
+from .denoiser import Denoiser, NoiseSchedule, build_denoiser
 from .diffusion import _as_real, range_replace
 
 
@@ -72,13 +72,16 @@ class FlowDPSSampler(PosteriorSampler):
         self.consistency_device = consistency_device
         # See _DiffusionSampler: draws per forward batch, 0 = all (P-24, D-044).
         self.max_draws_per_batch = int(max_draws_per_batch)
-        self.schedule = schedule or NoiseSchedule()
         if denoiser is not None:
             self._denoiser: Denoiser | None = denoiser
         elif checkpoint is not None:
-            self._denoiser = DiffusersUNetDenoiser(checkpoint, device=device)
+            self._denoiser = build_denoiser(checkpoint, device=device)
         else:
             self._denoiser = None
+        # A prior that defines its own noise levels (a VE-SDE score model, D79) brings
+        # its schedule; otherwise the DDPM training schedule, as before.
+        self.schedule = (schedule or getattr(self._denoiser, "default_schedule", None)
+                         or NoiseSchedule())
         # SNR of every training index, precomputed once: the flow-time -> diffusion-index
         # map is a lookup rather than a search per step.
         ab = self.schedule.alphas_cumprod

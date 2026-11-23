@@ -497,7 +497,54 @@ annotation-linked evaluation. fastMRI remains required.
 ---
 
 ## D-016 · Natural-image diffusion prior wired before medical priors
-**Date:** Week 1 · **Status:** ACCEPTED · **Proposed by:** Track 2
+**Date:** Week 1 · **Status:** **RESOLVED (Week 10)** — medical priors are in the repository and load · **Proposed by:** Track 2
+
+> ### RESOLUTION, Week 10 (Track 1)
+>
+> **Both medical priors are wired, verified, and admissible.** SegGuidedDiff's
+> *unconditional* models (Konz et al., MICCAI 2024), at
+> `checkpoints/segguided_diffusion/`:
+>
+> | directory | trained on | domain | anatomy |
+> |---|---|---|---|
+> | `ddim-breast_mri-256` | Duke Breast MRI | `mri` | breast |
+> | `ddim-ct_organ_large-256` | CT-ORG (neck to pelvis) | `ct` | neck_to_pelvis |
+>
+> Both are `diffusers` `UNet2DModel`, `sample_size=256`, **`in_channels=1`**, 113.7 M
+> parameters — the same scale as `ddpm-celebahq-256`. Being single-channel, the greyscale
+> replication in `DiffusersUNetDenoiser` is a **no-op** for them rather than the
+> approximation its docstring describes, so one stated narrowing of the method disappears.
+>
+> **No new loader code was needed**, which is what the `PRIOR_DOMAINS` comment promised:
+> adding a key is the whole change. `UNet2DModel.from_pretrained` reads them directly.
+>
+> **The schedule was verified rather than assumed.** They were trained with
+> `DDPMScheduler(num_train_timesteps=1000)` at its defaults — linear betas 1e-4 to 0.02 —
+> which is `denoiser.py`'s `N_TRAIN_STEPS` / `BETA_START` / `BETA_END` exactly. Checked end
+> to end by noising a sample with the project's own `NoiseSchedule` and correlating the
+> model's prediction against the true noise:
+>
+> | t | `alpha_bar` | corr(eps_hat, eps) | std(eps_hat) |
+> |---|---|---|---|
+> | 999 | 0.0000 | **1.0000** | 0.998 |
+> | 800 | 0.0015 | 0.9997 | 0.997 |
+> | 500 | 0.0778 | 0.9858 | 0.994 |
+> | 200 | 0.6563 | 0.7750 | 1.045 |
+> | 50 | 0.9700 | 0.2890 | 1.168 |
+>
+> At `t = 999` the input *is* the noise and the model returns it exactly; the correlation
+> then falls monotonically as signal enters, with `std` held at ~1. A mismatched schedule
+> would show as wrong scaling or non-monotonicity. (The fall at low `t` is expected: the
+> stand-in `x0` is uniform noise, so it is out of distribution precisely where the learned
+> prior starts to matter.)
+>
+> **What this does not resolve** — see D79 for the full list. Briefly: the MRI prior is
+> *breast* and this project's MRI banks are knee and brain, which is recorded as
+> `PRIOR_ANATOMY` rather than folded into admissibility; the native resolution is 256
+> against the project's reduced grid; and the weights carry **no stated licence**, which
+> is an O7 release question rather than a use question.
+>
+> The deferral itself rested on a misreading — see the Week 10 correction below.
 
 `google/ddpm-celebahq-256` (Apache-2.0, 434 MB, 113.7 M params, verified
 loadable) is fetched to `checkpoints/`.
@@ -530,7 +577,46 @@ hobby repos with single-digit downloads and no provenance. So D-016's deferral i
 matter of not having looked: Song et al. remains the reference option, with its licensing
 question unresolved.
 
-*Affects:* T2.2, T2.5, O7, Weeks 2, 10, 12.
+> ### CORRECTION, Week 10 (Track 1) — the licensing blocker does not exist
+>
+> **The claim above that Song et al.'s MRI model is fastMRI-derived is wrong**, and it has
+> been the stated reason this decision stayed deferred since Week 1. From the paper's own
+> Datasets paragraph (§4, arXiv 2111.08005):
+>
+> | prior | trained on | resolution | slices |
+> |---|---|---|---|
+> | CT | **LIDC** (lung) | 320×320 | 130,304 |
+> | CT | **LDCT** (head, chest, abdomen) | 512×512 | 47,006 |
+> | MRI | **BraTS 2021** (brain) | 240×240 | 297,270 |
+>
+> fastMRI appears nowhere in their training data. It is cited only for the *undersampling
+> mask pattern* — "follow Zbontar et al. (2018); Knoll et al. (2020) to undersample the
+> k-space with an equispaced Cartesian mask" — which is almost certainly where the
+> confusion came from. **So the NYU agreement does not reach these checkpoints**, and
+> nothing licensing-related gates adopting them.
+>
+> **The real caveat is different, and smaller.** The checkpoints have **no stated licence
+> at all**: no LICENSE file in `yang-song/score_inverse_problems`, Google Drive hosting
+> only. For a preprint with citation that is ordinary practice; for the open-source release
+> (O7) it is a genuine question and should be raised before packaging. The underlying
+> datasets are standard research-use (LIDC via TCIA, BraTS via registration) — the data
+> terms were never the problem, the weights' terms are simply unstated.
+>
+> **One substrate is a better match than the one we were aiming at.** The MRI prior is
+> **brain**. The fastMRI bank is **knee**, so BraTS is still cross-anatomy there. But
+> `banks/w02_solver_smoke/` is **M4Raw, which is brain MRI on real k-space, already
+> verified end to end**. BraTS → M4Raw is an anatomically matched medical prior, and it is
+> the cleanest genuine medical-prior result available to this project. For CT, LIDC is lung
+> against TotalSegmentator's whole body; LDCT's head/chest/abdomen coverage is closer.
+>
+> **Resolution does not line up and that is Track 2's integration item:** 240×240 (BraTS),
+> 320×320 (LIDC) and 512×512 (LDCT) against the project's reduced-resolution 2D grid. The
+> region definition (D20) is defined on the grid, so a change of working resolution moves
+> the region count and every per-region quantity with it.
+
+*Affects:* T2.2, T2.5, O7, Weeks 2, 10, 12. **Correction affects:** every gated number, T1.7's
+preprint (its one hard blocker), D67's criterion-validity argument, and the `reportable` flag
+on every bank built so far.
 
 ---
 
@@ -2675,6 +2761,365 @@ show no trend in either modality, so a collapse there is two flat lines agreeing
 a law.
 
 *Affects:* O5, T1.4, T1.7, Sec. 21 R5, D-053, D-062, `fig5`.
+
+## D-065 · Six CPU re-analyses are queued against your banks, and one GPU run is the priority
+**Date:** Week 10 · **Status:** ACCEPTED · **Proposed by:** Track 1 · **See:** D73–D77, D68, D-064
+
+Everything on Track 1 is now built and tested. What is left of mine is analysis of runs only
+you can produce, so this is the whole ask in one place. All six are single commands; each has
+fixtures where the answer was planted in **both** directions, so a negative comes back as a
+negative.
+
+**One needs the GPU, and it is the one that matters most.** The solver ablation (D68). Your
+dispersion baseline ties `s_disagree` to within 0.001–0.012 AUROC, and the reason is
+mechanical: DDNM replaces the range component structurally, so the spread is *already* in the
+null space and projecting it there adds nothing. DPS leaves 0.817–0.852 of its error in the
+null space against DDNM's 0.99, so it is the only configuration where the decomposition can
+earn its keep. `scripts/solver_ablation.py` checks that premise first and refuses to proceed
+quietly if the two solvers do not in fact differ.
+
+**Five are CPU re-analysis of banks you already have:** `transfer_baseline.py` (D73, and
+`runs/w05_analysis/dispersion.parquet` already exists), `tool2_holdout.py --exclude-nearest 1`
+(D75), `label_comparison.py` (D74), `weight_sensitivity.py` (D76), and `curve_collapse.py`
+(D-064, still outstanding).
+
+**I fixed a bug of mine that was blocking the last of those.** `ct_distances.py` appended two
+hard-coded CT pairs unconditionally, so pointing it at the MRI bank — which is how
+`curve_collapse.py` gets its MRI distances, and which the manifest makes possible since
+operators are rebuilt generically — wrote the real rows and then died on a `KeyError`, which
+the surrounding `except ValueError` does not catch. Now filtered to what the bank holds, with
+a note on stderr when a named pair is absent.
+
+**One question back to you, and it affects D68's premise.** How were the 0.99 and 0.817–0.852
+null-error shares computed? `P_N` is non-local, so the orthogonal decomposition does **not**
+hold region by region: on the M4Raw bank `err_free² / err_total²` exceeds 1 in **97 of 384
+regions**, up to 1.035. That is expected rather than a bank defect, but it means a mean of
+per-region ratios is biased. `solver_ablation.py` takes it area-weighted per volume, where it
+is the global MSE ratio and exact. If your figures came from per-region ratios the gap may
+move, and the gap is what the ablation's rationale rests on.
+
+**Why D73 is worth your time even before the DPS run.** The dispersion comparison has only
+ever been held on detection AUROC, which D67 disqualified — so the number threatening Track
+1's contribution was measured on the axis we already ruled out, and the axis the project
+actually claims on had never been run against the baseline at all. D73 asks whose *threshold*
+survives an operator change. It is a paired difference of transfer penalties, so each
+detector's scale cancels, and the label's dependence on our score cancels too because it
+moves both of CALIBER's arms together.
+
+*Affects:* O3, O4, T1.1, T1.2, T1.4, T1.7, T2.6, D-053, D-061, D-062, D-064.
+
+## D-066 · The DPS arm of the ablation: ζ = 5, 24 steps, the random1d family, its own bank
+**Date:** Week 10 · **Status:** ACCEPTED · **Proposed by:** Track 2 · **See:** D-065, D68, D-004, D-031, D-033
+
+The DPS bank (`configs/experiments/w10_mri_dps_gpu.yaml`) matches the DDNM bank of record in
+everything except the solver: the same prior, 24 steps, 4 draws, 256², the same fastMRI volumes
+and the same patient split. It runs as its own experiment and is merged afterwards (D-004).
+
+*Guidance ζ = 5.0, the code default, not re-tuned.* D68's premise is the share Track 1 quoted,
+0.817–0.852, which is DPS at ζ = 5 (D-033, Week 3). ζ is not neutral: at 24 steps the share
+rises from 0.627 at ζ = 0.5 to 0.931 at ζ = 20 (D-031 re-measurement), so tuning DPS toward
+its optimum would close most of the gap the ablation needs. The result is a statement about
+DPS at ζ = 5.
+
+*24 steps,* DDNM's budget: an equal budget is the fair comparison, and it is where 0.817 was
+measured.
+
+*random1d at R2 / R4 / R8 only.* DPS costs ~30 s/pair on the RTX 3050 (~2.4× DDNM), so the
+nine-operator grid is ~15 h of GPU against ~5 h for these three. The ablation compares
+detection per operator, never across operators (D60, retracted), so it needs the calibration
+operator (R2) and a spread of accelerations, not every family.
+
+*Premise, measured before the run* on 6 pairs, area-weighted per volume: DPS 0.44–0.50 at R2,
+0.69–0.76 at R4, 0.85–0.90 at R8, against DDNM's 0.96–0.998 on the same pairs.
+
+*Alternative:* all nine operators, for an operator set identical to the DDNM bank's.
+*Reason:* ~10 more hours of GPU for operators the per-operator comparison does not need.
+*Cost:* the ablation says nothing about the cross-family operators. And at R2, the
+calibration operator, DPS sits at or below D-033's 0.5 admissibility line, so the widest
+premise gap is also where DPS's fit is least converged. T2.9 states this beside every R2
+number.
+*Affects:* D68, O4, T2.9.
+
+## D-067 · The medical prior runs as a converted NCSN++ behind an exact VE-to-VP adapter, and waits on a ruling to be reportable
+**Date:** Week 11 · **Status:** ACCEPTED (implementation) — admissibility OPEN, Track 1's · **Proposed by:** Track 2 · **See:** D79, D-016, D-015, D-018, P-18
+
+D79 lifted the licensing objection to Song et al.'s medical score models. This decides how one
+enters the pipeline. Song, Shen, Xing & Ermon (ICLR 2022) published JAX/Flax checkpoints
+(BraTS 2021 brain MRI 240², LIDC 320², LDCT 512²). The project's solvers speak DDPM's VP form.
+
+*How.* NCSN++ is ported to PyTorch (`solvers/ncsnpp.py`), adapted from `score_sde_pytorch`
+(Apache-2.0) to only the configuration the three checkpoints share, without its compiled CUDA
+kernel. `scripts/convert_song_checkpoint.py` reads the Flax `msgpack` with numpy alone, so
+nothing in the file executes. It maps the EMA weights by per-class call order and refuses if
+any layer is left over or unfilled. **Verified against Song et al.'s own Flax model** on the
+BraTS checkpoint: agreement to ~1e-5 of the score's magnitude at sigma = 0.05, 1 and 50,
+correlation 1.00000000. `SongVEScoreDenoiser` turns the score into a noise prediction by the
+exact change of variables, sigma = sqrt((1-a)/a), x_VE = x_t/sqrt(a), eps = -sigma s(x_VE, sigma).
+It brings the prior's own log-uniform sigma schedule (0.01-128), so DDNM, DPS and the flow
+sampler run unchanged.
+
+*The domain is recorded as `mri_brain`, admitted nowhere yet* (`AWAITING_RULING`).
+Recorded as `mri`, the existing table would admit it for every MRI bank, including fastMRI
+**knees**, which is cross-anatomy. Two rulings are Track 1's: whether an anatomy-matched
+prior is admissible, and whether M4Raw, which D-015 made an unreportable substrate, can carry
+a reportable coverage claim when the prior matches it.
+
+*Alternative:* run the checkpoints in JAX. *Reason:* JAX cannot use this machine's GPU natively
+(Windows), and a second framework on the sampling path doubles what can drift. JAX is used once,
+off the path, to verify the port.
+*Cost:* the working grid is fixed by the network: 240² for BraTS, so 15 × 15 regions rather
+than 16 × 16, and every design-split quantile is re-valued, not carried over. BraTS is
+skull-stripped and M4Raw is not. And the weights carry no stated licence (D79), which the O7
+release has to settle.
+*Affects:* D79, D-016, D-018, P-18, T2.10, every reportable flag, O7.
+
+## D-068 · On the medical prior, DPS runs at 100 steps and zeta = 5, not at DDNM's budget
+**Date:** Week 11 · **Status:** ACCEPTED · **Proposed by:** Track 2 · **See:** D-066, D-031, D-033, D68, P-40
+
+D-066 matched the DPS arm to DDNM's 24 steps, as an equal budget. On the BraTS prior that
+budget has **no admissible guidance**. Measured on design patients (8 volumes × the three
+`random1d` operators):
+
+- ζ ≤ 5 leaves most of the error in the range (null-error share 0.09-0.23, failing D-033).
+- ζ ≥ 20 diverges (null error 64-801× the image).
+
+At **100 steps** the sweep is bracketed. The mean data-consistency error is 0.51 at ζ = 2,
+**0.037 at ζ = 5** and 0.064 at ζ = 10, and ζ = 5 passes D-033 at every operator (share
+0.84-0.99). So the DPS arm on this prior is **100 steps, ζ = 5**, chosen by
+`scripts/select_guidance.py` under D-031's rule (one value for every operator, design
+patients only). It runs one draw at a time; D-044 makes that the same bank.
+
+*Alternative:* keep 24 steps and report that DPS is inadmissible on the medical prior.
+*Reason:* that answers "DPS at an unconverged budget", which says nothing about the
+decomposition. D68 asks about a solver that does not pre-confine its error. At 100 steps
+DPS still leaves 0.84 of its error in the null space at R2, against DDNM's 0.99.
+*Cost:* the ablation compares at unequal step budgets (100 against 24), and must say so. The
+bank is ~20 h on this laptop's GPU at one draw at a time, so it is built in stretches,
+resumed from its checkpoint.
+*Affects:* D68, D-066, T2.10.
+
+## D-069 · Two of my scripts were wrong, you caught both; three re-runs
+**Date:** Week 11 · **Status:** ACCEPTED · **Proposed by:** Track 1 · **See:** D80, D81, T2.9, T2.10
+
+Thank you for overturning the two verdicts by hand rather than reporting them. Both defects
+were mine, both are fixed, and **three of your Week 10 runs need redoing** because their
+conclusions came from the broken code. Your *manual* two-sided analysis in T2.9 §2 already
+anticipated the corrected result, so I expect the re-runs to confirm what you wrote, not to
+change it.
+
+**The ruling you asked for (D80): anatomy gates claims, not banks.** A prior is admissible
+for a modality when it is a medical prior of that modality, whatever anatomy it saw. This is
+D67's coverage/detection split applied to the prior: the coverage comparison survives
+cross-anatomy because both arms are scored against the same label on the same
+reconstructions, while the detection claim does not — and detection is already gone for the
+same underlying reason. Blocking the bank would have blocked the coverage result too, which
+is the one we can make. `AWAITING_RULING` is now empty; `mri_brain` is admitted. **M4Raw's
+substrate status (D-015) is untouched** — an anatomy-matched prior does not launder a
+substrate, and if you think the BraTS banks are now reportable, that is a separate case to
+make.
+
+I also registered the five priors anatomy-qualified across both families, including the
+SegGuidedDiff diffusers pair I had wired in parallel. **Keeping both families is
+deliberate**: two independent medical priors turn "does the result depend on which prior?"
+into an ablation instead of an assumption.
+
+**What changed in the code**
+
+1. `evaluation/transfer.py` — the comparison is on **`|penalty|`**, taken inside the
+   bootstrap per replicate. And because `|penalty|` still undercharges over-flagging (it can
+   only ever charge ~0.10, while under-covering costs up to 0.90), a detector whose
+   transferred arm over-flags **cannot be declared the winner**: the verdict returns
+   `winner_over_flags` and counts as undetermined. The row now carries
+   `abs_penalty_*`, `area_naive_*` and `over_flagging`.
+2. `scripts/solver_ablation.py` — **one label per bank**, from that bank's own design split,
+   not one pooled across banks. And a **positive verdict is withheld on a magnitude label**;
+   a negative still stands, since a score that cannot win where the label favours it by
+   construction has lost. Pass `--label alignment` for a verdict that may be positive.
+
+**The three re-runs**
+
+```
+# 1. D73 on CT and MRI -- the verdicts are the ones that flipped
+python scripts/transfer_baseline.py $CT  --low ct.sparse_view.v180.a180.dfull \
+    --high ct.sparse_view.v30.a180.dfull --baseline s_disagree
+python scripts/transfer_baseline.py $MRI --low mri.random1d.R2.c0.08.s0 \
+    --high mri.random1d.R8.c0.08.s0 --dispersion runs/w05_analysis/dispersion.parquet
+
+# 2. D68, both labels, now that each bank gets its own
+python scripts/solver_ablation.py $DDNM $DPS \
+    --calibration-operator mri.random1d.R2.c0.08.s0 --stage2 <stage2 json(s)>
+python scripts/solver_ablation.py $DDNM $DPS \
+    --calibration-operator mri.random1d.R2.c0.08.s0 --label alignment --stage2 ...
+```
+
+**What I expect, written before the runs.** D73 comes back as your manual analysis already
+found: no positive claim for the score on either modality, with the CT cells now reading
+`winner_over_flags` rather than a CALIBER win. D68 comes back `NOT ANSWERED on this label`
+for the magnitude run and negative for the alignment run. If either differs, the difference
+is the finding and I want it before I write anything.
+
+**Not a re-run, but the one I most want:** D75 was vindicated — Tool 2 valid in 6 of 7
+interior CT folds and widening its lead over `nearest` on the sparse grid. That is the only
+positive result the project's primary contribution has. Please keep the artefact.
+
+*Affects:* O3, O4, T1.1, T1.2, T1.4, T1.6, T2.9, T2.10, D-033, D-061, D-065.
+
+## D-070 · The Phase 4 plan: what we run, what we stop, and who owns each piece
+**Date:** Week 12 · **Status:** ACCEPTED · **Proposed by:** Track 1 · **See:** D82, D80, D81, T2.10, `PHASE4_WORK_PLAN.md`
+
+Track 1's strategy review for Phase 4, after a prior-art check and a re-reading of the Week 10
+and Week 11 results. It changes three things materially. The full task division is in
+`Documentation/PHASE4_WORK_PLAN.md`; this entry records the decisions behind it.
+
+**1. The prior-art risk is retired.** Shor & Bronstein (arXiv 2610.26558) was the one unchecked
+paper that could have pre-empted the novelty claim. It does not. Their method is a source-trained
+**ridge regressor** on inference dynamics, not a conformal procedure; split conformal appears only
+in Appendix H and CQR only as a comparator. Their single coverage figure (0.94 at nominal 90%)
+has **no shift in it** — calibration and test are both fresh draws from one setting. They never
+vary the acquisition operator: the text says "fixed nominal acceleration" and **states no
+acceleration factor anywhere**. Their "repeated-mask" study "changes only the sampling realization
+of the same physical volume", with no calibration/test split; their "domain shift" is a *dataset*
+change (fastMRI brain to M4Raw FLAIR). **Coverage under shift is not reported at all.**
+
+Two things follow beyond survival. They list as future work: *"Future work should test additional
+anatomies, field strengths, accelerations, sampling patterns"* — the adjacent paper names our
+contribution as its own open problem, which is better positioning than an absence. And they use
+**M4Raw as an evaluation target**, which bears on D82.
+
+**Write the narrow claim, not a broad one.** They *do* use split conformal. The defensible
+sentence is: *no prior work reports conformal coverage when the acquisition operator differs
+between calibration and deployment.*
+
+**2. The headline contribution is re-framed from a correlation to a decision rule.** rho = +0.976
+on CT is weak evidence on its own: within a family, any monotone function of view count orders
+the gaps. The contribution becomes a **pre-deployment safety rule** — predict "safe to transfer"
+iff signed `null_space_growth` <= 0, scored against measured validity, reported as a confusion
+matrix with the **false-safe rate as the primary endpoint**, over all ordered pairs (K(K-1) = 72
+for 9 CT operators, not 8). The distance earns its keep **across families**, so cross-family and
+leave-one-operator-out prediction are the tests that matter, against a constant predictor and a
+views/arc-fraction predictor as baselines.
+
+**3. Tool 2's comparator was wrong, and that is our error.** T2.9 reported Tool 2 beating
+`nearest` (0.929 against 0.800 on the sparse grid). But `nearest` is **invalid in 3 of 7 interior
+folds**, and D51's own rule is that an area comparison means nothing among arms that are not valid
+in that cell. Beating an invalid baseline on coverage is weak. Tool 2 is re-scored against
+comparators that are always valid: the **max-quantile** rule over calibration operators, **pooled**
+calibration, and **group-conditional as an oracle** that uses labels at the target. The defensible
+headline, if it holds: *Tool 2 attains validity at an unseen operator with X% less flag area than
+the trivially-safe rule.*
+
+**4. The score-as-detector negative is final, and the reason is structural.** Applying `P_N` to
+posterior-sample dispersion is a trivial transform, so the fair baseline already has access to the
+decomposition; on error-magnitude axes the identity favours the score and on direction axes it
+loses. CRC and efficiency re-tests are generalisations, not rescues — a magnitude-based CRC loss
+brings the circularity straight back. Where the decomposition does have value is as an attribution
+diagnostic and as the source of the operator distance. Frame it that way.
+
+**5. The circularity material gets a decisive null control and stays one section.** Grade a
+**scale-only detector** — `||P_N x_hat||` alone, no posterior information — under the same
+magnitude label. If it reaches AUROC close to the "real" detector, the protocol is uninformative.
+That control transfers to other papers' protocols without needing their models. Defer any
+standalone evaluation-critique paper: Jaeger et al. (ICLR 2023) shows those succeed when backed by
+a broad empirical study, which is more than this project can do now.
+
+**Stopped, with reasons.** Score-versus-dispersion re-tests (answered, D68/D73) · curve-collapse
+analyses (the test's own null control also passes, so it has no power here) · new weighting schemes
+· detection AUROCs · an energy-weighted MRI operator distance (a candidate for ordering the
+matched-acceleration failures: it would be chosen after seeing which MRI gaps need explaining,
+which is forking-path risk, and five of this project's eight statistics traps were ours).
+
+**One sequencing constraint, measured rather than estimated.** The LIDC CT bank at 320 squared runs about
+**21 hours** on the card (83 s/pair on the smoke bank, 900 pairs), not the 16 estimated, and the
+DPS medical-prior bank is already queued for about 20 hours on the same GPU. They cannot both
+finish inside the one working window before the examination block (27 Nov – 3 Dec). **The DPS
+bank is deferred**: D68 is already answered negative, and
+the stop list says re-tests of it are not wanted.
+
+**6. The venue is MICCAI 2027, with an arXiv preprint as soon as the CT result lands.** MIDL 2027
+is not targeted: its full paper is due 4 December and abstract registration 30 November, against
+end-semester examinations on 27, 28 and 30 November and 3 December. Four examinations in the eight
+days before a deadline is not a schedule. Nothing is foreclosed — MIDL notifies 12 February, before
+the likely MICCAI deadline — and MICCAI's ~14 weeks is what makes T3.6 achievable at more than its
+minimum, with less forking-path pressure than a two-week deadline creates.
+
+*Affects:* O3, O4, O5, O7, T1.2, T1.4, T1.6, T1.7, T2.10, T3.4, T3.6, T3.7, D-015, D-061.
+
+## D-071 · The LIDC bank's intensities follow the prior's training rule: min-max per volume
+**Date:** Week 12 · **Status:** ACCEPTED · **Proposed by:** Track 2 · **See:** D-070, D-013, D79, T2.11
+
+D-070's pre-registration asks for the LIDC bank's HU mapping to be "fixed to the prior's
+training normalisation before the run". Song et al.'s builder (`ct2d_320/ct2d_320.py`)
+subtracts each volume's minimum and divides by its maximum, over the whole volume, before
+slicing. The bank therefore uses `intensity: volume_minmax`: the same rule, applied
+literally to each TotalSegmentator subject. No clip and no percentile, because neither is in
+the training code.
+
+D-013's fixed window `[-1000, 1000] HU` stays the default, so every earlier CT bank keeps
+its meaning and its config hash.
+
+**What the rule costs.** D-013 chose a fixed window so that a tissue has one value in every
+item. Under min-max the scale follows each volume's extremes: the scanner's padding value
+(the minimum is below −1024 HU in all 100 subjects on disk) and bone or metal (the maximum
+is above 3000 HU in 56). Soft tissue lands between 0.25 and 0.50, median 0.31, where the
+window puts it at 0.52 everywhere. The training volumes had the same property, so this is
+the prior's own input range, and it is a limitation the bank carries.
+
+**Checked, not chosen, on ground truth.** On the 8 design subjects the prior denoises better
+in its training range: median gain 43.5 against 33.3 at σ = 0.1, and better at every σ from
+0.05 to 1 and in the worst subject. The check reads no reconstruction, score or coverage. It
+could have shown the mapping was broken. It did not pick it.
+
+*Alternative:* keep D-013's window, as the 2-subject smoke bank did (T2.10 §8).
+*Reason:* the pre-registration names the training normalisation, and the training code
+states it. A mapping chosen after the bank exists could follow a coverage number.
+*Cost:* the label threshold ε and every `err_free` are in per-volume units, so they do not
+compare across subjects as HU. Coverage is a rank statement within the bank and does not
+need them to. The smoke bank's cos θ (+0.976, window) is not the same measurement as this
+bank's, which T2-C re-measures.
+*Affects:* T2-A, T2-C, T1-A, T1-B, T1-C, T3-A, D-013.
+
+## D-072 · A bank's manifest records the claims it carries; `reportable` means all of them
+**Date:** Week 12 · **Status:** ACCEPTED (implementation of D80, D82) · **Proposed by:** Track 2 · **See:** D80, D82, D-018, P-18, T2.11
+
+D82 asks for `reportable_claims` and a refusal "by construction rather than by memory".
+Implemented as `caliber.reportability`:
+
+- Two claims: `coverage` and `detection`.
+- **Substrate.** A dataset may declare `reportable_claims`. M4Raw declares `{coverage}` and
+  keeps `reportable = False`. A dataset that declares nothing carries all or none by its flag.
+- **Prior.** Not admissible for the modality: nothing. Admissible and of the substrate's
+  anatomy: everything. Admissible and of another anatomy: coverage only (D80). Datasets now
+  declare an `anatomy`; an undeclared one matches no prior, so it fails closed.
+- **Bank.** The intersection, and nothing for a reference sampler. The runner writes
+  `reportable_claims` and `anatomy` into the manifest's provenance.
+- **Reading.** `require_claim(provenance, claim)` raises `ClaimNotCarried`; `carries`,
+  `stamp` and `describe` are what scripts print. A manifest without the field is read by its
+  boolean: all or none.
+
+**One consequence that changes a stamp.** `reportable` now means the unqualified claim: true
+only when the bank carries both. The LIDC CT bank is a chest prior on whole-body slices, so
+by D80 it carries coverage and not detection, and its `reportable` is **false** with
+`reportable_claims = ["coverage"]`. Under the old boolean it would have been stamped `true`,
+and a detection number from it would have gone out as reportable. D82 names this case.
+
+| bank | old stamp | claims now |
+|---|---|---|
+| M4Raw + BraTS prior | false | coverage |
+| TotalSegmentator + LIDC prior | true | coverage |
+| fastMRI + BraTS prior (none built) | true | coverage |
+| any substrate + face prior | false | none |
+
+Scripts ask for the claim they report: `tool2_holdout` and `t1_component_lipschitz` for
+coverage; `select_weights`, `criterion_sweep` and `q6_attribution` for detection;
+`analyse_bank` prints which of the two the bank carries. `scripts/restamp_bank.py` rewrites
+a finished bank's manifest under these rules and keeps the previous values in
+`provenance.restamped`.
+
+*Alternative:* set `M4RawDataset.reportable = True`.
+*Reason:* D82 rules it out: it stamps M4Raw detection numbers reportable, which is P-18.
+*Cost:* a script that checks only the boolean now reports the M4Raw and LIDC banks as not
+reportable. That errs on the safe side; the six scripts that print a stamp are updated.
+*Affects:* D-018, D80, D82, T2-B, every script that reads `provenance`.
 
 ## Template
 

@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+from ..scoring.attribution import ALIGNMENT_QUANTILE, alignment_threshold, label_misaligned
 from ..scoring.labels import RegionTruth, label_hallucinated
 from ..scoring.score import ScoreComponents, ScoreScales, ScoreWeights, combine_components
 
@@ -46,6 +47,7 @@ def derive_score_and_label(
     min_free_content: float | None = None,
     require_annotation: bool = False,
     annotation_min_coverage: float = 0.10,
+    alignment_threshold: float | None = None,
 ) -> pd.DataFrame:
     """Add ``score`` and ``label`` columns to a bank frame, from cache alone.
 
@@ -80,6 +82,21 @@ def derive_score_and_label(
         _components(out), weights or ScoreWeights(), scales
     ).numpy()
 
+    if alignment_threshold is not None:
+        # D74's direction label. It needs `s_free`, which is a score column rather than a
+        # truth column, so it cannot go through RegionTruth; see `label_misaligned` for
+        # why using a score component in the label is not the circularity it looks like.
+        misaligned = label_misaligned(
+            out["s_free"], out["free_content"], out["err_free"], alignment_threshold
+        )
+        out["label"] = misaligned.label
+        out["cos_theta"] = misaligned.cos_theta
+        if require_annotation:
+            out["label"] = out["label"] & (
+                out["ann_coverage"] >= annotation_min_coverage
+            )
+        return out
+
     truth = RegionTruth(
         err_total=torch.tensor(out["err_total"].to_numpy()),
         err_free=torch.tensor(out["err_free"].to_numpy()),
@@ -99,9 +116,11 @@ def derive_score_and_label(
 #: quantile of ``err_free`` on the bank's *own* design split, frozen. D-061 names no quantile;
 #: 0.75 is the one its table tested. Every reporting script defaults to it (P-19).
 LABEL_QUANTILE = 0.75
-#: The labels a script can be asked for. Only ``absolute`` is reported; the other two
-#: reproduce numbers from before D-061, for comparison.
-LABELS = ("absolute", "candidacy", "ratio")
+#: The labels a script can be asked for. ``absolute`` is D-061's reported label;
+#: ``alignment`` is D74's direction-based alternative, which exists because every magnitude
+#: label is near-determined by the score (D67); ``candidacy`` and ``ratio`` reproduce
+#: numbers from before D-061, for comparison.
+LABELS = ("absolute", "alignment", "candidacy", "ratio")
 
 
 @dataclass(frozen=True)
@@ -143,6 +162,31 @@ def label_spec(df: pd.DataFrame, label: str = "absolute", quantile: float | None
             ) from None
         spec = LabelSpec("absolute", f"err_free > {eps:.4f} (q={q:g} of err_free on the "
                          "design split, D-061)", {"threshold": eps, "relative": False})
+    elif label == "alignment":
+        q = ALIGNMENT_QUANTILE if quantile is None else quantile
+        if "split" not in df.columns or not (df["split"] == "design").any():
+            raise ValueError(
+                "no design rows: the alignment cut must come from the design split "
+                "(D-051). Build the bank with data.dataset.design_fraction > 0."
+            )
+        design = df[df["split"] == "design"]
+        for col in ("s_free", "free_content", "err_free"):
+            if col not in design.columns:
+                raise ValueError(
+                    f"the alignment label needs {col!r}, which this bank does not have; "
+                    "it is recoverable only from a bank carrying all three null-space "
+                    "quantities (D74)"
+                )
+        kappa = alignment_threshold(
+            design["s_free"], design["free_content"], design["err_free"], q
+        )
+        spec = LabelSpec(
+            "alignment",
+            f"cos theta < {kappa:.4f} (q={q:g} of cos theta on the design split, D74) -- "
+            "a direction, not a magnitude, because every magnitude label is near-determined "
+            "by the score (D67)",
+            {"alignment_threshold": kappa},
+        )
     elif label == "candidacy":
         q = CANDIDACY_QUANTILE if quantile is None else quantile
         gate = candidacy_gate(df, q)
@@ -164,11 +208,13 @@ def label_spec(df: pd.DataFrame, label: str = "absolute", quantile: float | None
 def add_label_args(ap) -> None:
     """The label options every reporting script takes, so they mean the same everywhere."""
     ap.add_argument("--label", choices=LABELS, default="absolute",
-                    help="D-061's absolute label (default); candidacy and ratio reproduce "
-                         "earlier numbers, for comparison only")
+                    help="D-061's absolute label (default); alignment is D74's direction "
+                         "label; candidacy and ratio reproduce earlier numbers, for "
+                         "comparison only")
     ap.add_argument("--label-quantile", type=float, default=None,
                     help=f"absolute: quantile of err_free on the design split (default "
-                         f"{LABEL_QUANTILE}); candidacy: of free_content ({CANDIDACY_QUANTILE})")
+                         f"{LABEL_QUANTILE}); alignment: of cos theta ({ALIGNMENT_QUANTILE}); "
+                         f"candidacy: of free_content ({CANDIDACY_QUANTILE})")
     ap.add_argument("--tau", type=float, default=1.75,
                     help="the ratio threshold, for the candidacy and ratio labels (D37)")
     ap.add_argument("--require-annotation", action="store_true",

@@ -170,3 +170,53 @@ def split_summary(
         "samples_test": sum(1 for v in per_sample.values() if v == "test"),
         "straddling_patients": verify_no_patient_straddles(sample_to_patient, per_sample),
     }
+
+
+#: The re-cut design the draw-marginal label is averaged over (D86). Split conformal
+#: promises nominal coverage *marginally over the calibration draw*, so reading a label off
+#: one draw measures that draw's displacement as well as the method; T2-A1 showed the
+#: registry draw sitting a near-constant 1.38 SD low at all nine matched operators at once,
+#: which is a bias the 72 ordered pairs cannot average out. Re-salting :func:`split_for` is
+#: how a split becomes a *complete repetition of the protocol* on the same cohort rather
+#: than a reshuffle of one of its sides: the design side moves too, so the label's own
+#: epsilon is re-valued, and that variance component is in the spread.
+#:
+#: The project salt is first because it is one of the draws and not a privileged one. It is
+#: also the arm the mandatory sensitivity table reports, so it has to stay identifiable.
+#: These are literals rather than a generated sequence so that adding a probe is a visible
+#: diff: the salts name the draws, and renaming one silently re-draws it.
+PROBE_SALTS = (DEFAULT_SALT, *(f"probe-{i}" for i in range(12)))
+
+
+def calib_sets_for_salts(
+    patient_keys: Iterable[str],
+    salts: Iterable[str] = PROBE_SALTS,
+    *,
+    calib_fraction: float = 0.5,
+    design_fraction: float = 0.0,
+) -> list[list[str]]:
+    """Calibration-side patient ids under each salt, in the order the salts are given.
+
+    This is the input :func:`caliber.evaluation.reliability.mean_pairwise_overlap` needs to
+    measure how much the re-cuts share, and it is reconstructed rather than stored: the
+    assignment is a pure function of the patient key and the salt, so a per-split coverage
+    table does not have to carry its membership and cannot disagree with it.
+
+    The returned sets are *not* the same size. Under :func:`split_for` each patient lands on
+    a side independently, so the calibration side is binomial around ``calib_fraction``
+    rather than exactly that share, and a fixed-size reshuffle would be a different design
+    with a different overlap. The variation is part of what the label averages over.
+    """
+    keys = sorted({str(k) for k in patient_keys})
+    out = []
+    for salt in salts:
+        out.append([
+            k for k in keys
+            if split_for(
+                k,
+                calib_fraction=calib_fraction,
+                design_fraction=design_fraction,
+                salt=salt,
+            ) == "calib"
+        ])
+    return out
