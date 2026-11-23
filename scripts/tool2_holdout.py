@@ -86,13 +86,17 @@ import pandas as pd
 
 from caliber.calibration import (
     apply_flags,
+    calibrate_group_conditional_oracle,
     calibrate_group_weighted,
+    calibrate_max_quantile,
     calibrate_mondrian,
     calibrate_naive,
+    calibrate_pooled,
     calibrate_weighted,
     certification_note,
 )
 from caliber.evaluation import flag_area, miss_rate, region_fdr
+from caliber.evaluation import prereg
 from caliber.evaluation.bank import (
     add_label_args,
     cluster_bootstrap_coverage,
@@ -149,6 +153,111 @@ def evaluate(frame: pd.DataFrame, flag_col: str, cluster_col: str) -> dict[str, 
     }
 
 
+def t1c_verdict(table: pd.DataFrame, args, notes: list[str]) -> int:
+    """T1-C's reading: Tool 2 against the frozen baselines, on folds where both are valid.
+
+    **The pairing is per fold, not per arm average.** ``TOOL2_REQUIRE_BOTH_VALID`` says
+    area is compared only where both arms are valid, and averaging each arm over the folds
+    it happens to be valid on would compare two different fold sets -- which is the defect
+    that let ``nearest`` post the smallest area in D-070 Sec. 3 while under-covering in
+    three folds of seven. So each comparison is restricted to the folds where both arms
+    cleared nominal, and the number of such folds is printed beside every result: a
+    headline resting on two folds is not the same claim as one resting on seven.
+    """
+    inner = table[table["interior"]]
+    if inner.empty:
+        print("\n[t1c] UNDECIDED -- no interior deployment operator on this bank, so every "
+              "fold asks\n      the weighting to extrapolate (see --exclude-nearest).")
+        for note in notes:
+            print(f"[t1c] {note}")
+        return 0
+
+    nominal = 1.0 - args.alpha
+    valid = inner.pivot_table(index="held_out", columns="arm", values="valid",
+                              aggfunc="first")
+    area = inner.pivot_table(index="held_out", columns="arm", values="flag_area",
+                             aggfunc="first")
+    tool2 = sorted(a for a in area.columns if str(a).startswith("weighted_h"))
+    safe = "max_quantile"
+
+    print(f"\n[t1c] Tool 2 against prereg.TOOL2_BASELINES, {len(valid)} interior fold(s), "
+          f"nominal {nominal:g}.")
+    print("      Every bandwidth reported (TOOL2_REPORT_ALL_WEIGHTINGS); area compared "
+          "only where BOTH arms are valid.")
+
+    if safe not in area.columns:
+        print(f"      CANNOT REPORT: the {safe} arm is missing from the table.")
+        return 1
+
+    # The trivially-safe rule should be valid everywhere. If it is not, the bank or the
+    # label is wrong, and no area comparison against it means anything.
+    safe_folds = int(valid[safe].sum()) if safe in valid.columns else 0
+    if safe_folds < len(valid):
+        print(f"      WARNING: {safe} is valid in only {safe_folds} of {len(valid)} folds. "
+              "It is conservative by\n      construction, so this points at the bank or "
+              "the label, not at the method.")
+
+    rows = []
+    for arm in tool2 + [a for a in ("pooled", "group_conditional_oracle")
+                        if a in area.columns]:
+        if arm not in valid.columns:
+            continue
+        both = valid[arm].fillna(False) & valid[safe].fillna(False)
+        n_both = int(both.sum())
+        saved = (float(((area.loc[both, safe] - area.loc[both, arm])
+                        / area.loc[both, safe]).mean() * 100.0)
+                 if n_both else float("nan"))
+        rows.append({
+            "arm": arm,
+            "folds_valid": int(valid[arm].fillna(False).sum()),
+            "folds_both_valid": n_both,
+            "mean_area": float(area[arm].mean()),
+            "area_vs_safe_pct": saved,
+        })
+    out = pd.DataFrame(rows)
+    print()
+    print(out.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+
+    # The headline is only taken from Tool 2 arms that are valid in EVERY fold.
+    everywhere = [r["arm"] for r in rows
+                  if r["arm"].startswith("weighted_h")
+                  and r["folds_valid"] == len(valid) and r["folds_both_valid"] > 0]
+    if not everywhere:
+        print("\n[t1c] Tool 2 is NOT valid at every unseen operator, so there is no "
+              "efficiency claim to make.\n      Report the validity failure; an area "
+              "number beside it would be the nearest-arm error again.")
+    else:
+        best = max((r for r in rows if r["arm"] in everywhere),
+                   key=lambda r: r["area_vs_safe_pct"])
+        if best["area_vs_safe_pct"] <= 0:
+            print(f"\n[t1c] Tool 2 is valid at every unseen operator and flags NO LESS "
+                  f"area than the trivially-safe\n      rule "
+                  f"({best['area_vs_safe_pct']:.1f}% at {best['arm']}). A negative result, "
+                  "and the honest headline: the\n      weighting buys validity that "
+                  "max_quantile already had, at no saving.")
+        else:
+            print(f"\n[t1c] Validity at an unseen operator with "
+                  f"{best['area_vs_safe_pct']:.1f}% less area than the trivially-safe "
+                  f"rule\n      ({best['arm']}, on {best['folds_both_valid']} of "
+                  f"{len(valid)} interior folds).")
+            if "group_conditional_oracle" in area.columns:
+                print(f"      The oracle flags {area['group_conditional_oracle'].mean():.4f} "
+                      f"against this arm's {best['mean_area']:.4f}, which is the headroom "
+                      "left.")
+        spread = [r["area_vs_safe_pct"] for r in rows if r["arm"].startswith("weighted_h")]
+        print(f"      Across the frozen bandwidth grid the saving spans "
+              f"{min(spread):.1f}% to {max(spread):.1f}%. Report the span, not the best "
+              "point.")
+
+    for note in notes:
+        print(f"[t1c] {note}")
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        table.to_csv(args.out, index=False)
+        print(f"[t1c] wrote {args.out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Leave-one-operator-out Tool 2 comparison")
     ap.add_argument("bank")
@@ -168,6 +277,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="proceed on a bank with one split side. Development only: every "
                          "coverage number is then in-sample and lands on nominal by "
                          "construction (P-23)")
+    ap.add_argument("--t1c", action="store_true",
+                    help="T1-C: score Tool 2 against prereg.TOOL2_BASELINES instead of "
+                         "the Q4 arm set, at every bandwidth in "
+                         "prereg.TOOL2_BANDWIDTH_GRID, and compare area only on folds "
+                         "where BOTH arms are valid (prereg.TOOL2_REQUIRE_BOTH_VALID). "
+                         "The arm set and the grid come from the freeze, not from this "
+                         "flag; the flag only selects which question is being asked")
     ap.add_argument("--bandwidth", type=float, default=None,
                     help="kernel bandwidth; default is the median non-zero distance (D33)")
     ap.add_argument("--exclude-nearest", type=int, default=0, metavar="N",
@@ -385,6 +501,37 @@ def main(argv: list[str] | None = None) -> int:
             split_col="__already_filtered__",
         )
 
+        if args.t1c:
+            # T1-C swaps the question. `nearest` goes (D-070 Sec. 3: it won on area
+            # while invalid), and Tool 2 is scored against the frozen baseline set at
+            # every frozen bandwidth. The `matched` arm stays under its T1-C name
+            # because the oracle is one of the three.
+            arms = {
+                "max_quantile": calibrate_max_quantile(
+                    pool, alpha=args.alpha, split_col="__already_filtered__"),
+                "pooled": calibrate_pooled(
+                    pool, alpha=args.alpha, split_col="__already_filtered__"),
+                "group_conditional_oracle": calibrate_group_conditional_oracle(
+                    calib_side, deployment_group, alpha=args.alpha,
+                    split_col="__already_filtered__"),
+            }
+            # Every bandwidth is reported (TOOL2_REPORT_ALL_WEIGHTINGS). The multiplier
+            # is against D33's default -- the median non-zero distance -- recomputed here
+            # over THIS fold's retained groups, which is the same vector
+            # `distance_weights` would take the median of when bandwidth is None. It is
+            # fold-specific on purpose: a bandwidth fixed across folds would be a single
+            # number chosen over the whole grid, which is the selection scope the freeze
+            # rules out.
+            nonzero = [d for d in distance_of.values() if d > 0]
+            base_h = (args.bandwidth if args.bandwidth is not None
+                      else (float(np.median(nonzero)) if nonzero else 1.0))
+            for mult in prereg.TOOL2_BANDWIDTH_GRID:
+                arms[f"weighted_h{mult:g}"] = calibrate_weighted(
+                    pool, deployment_group=deployment_group, distance_of=distance_of,
+                    alpha=args.alpha, bandwidth=base_h * float(mult),
+                    split_col="__already_filtered__",
+                )
+
         for name, report in arms.items():
             flagged = apply_flags(deploy, report, out_col="flag")
             metrics = evaluate(flagged, "flag", args.cluster)
@@ -438,6 +585,9 @@ def main(argv: list[str] | None = None) -> int:
         ).reindex(order)
         print(f"\n[tool2] {label}  ({folds} fold(s))")
         print(summary.to_string(float_format=lambda v: f"{v:.4f}"))
+
+    if args.t1c:
+        return t1c_verdict(table, args, notes)
 
     # Q4's verdict is taken on the interior folds, among arms that are valid in all of
     # them. An arm that under-covers has not earned a place in the comparison.
