@@ -17,6 +17,7 @@ import pytest
 from caliber.theory.alignment import (
     decompose,
     elasticities,
+    energy_departure,
     log_slope,
     operator_alignment,
     threshold_direction_model,
@@ -104,3 +105,51 @@ def test_the_script_prints_the_model_map(capsys):
     assert script.main(["--model"]) == 0
     out = capsys.readouterr().out
     assert "threshold direction model" in out and "k=1.0" in out
+
+
+# -- T3-D: the departure from the sqrt(null_frac) law, split exactly -------------------------
+
+
+def _bank(kappa: float, invent_amp, truth_amp, n: int = 300, dim: int = 24, seed: int = 0):
+    """Operators with chosen hidden-truth and invention amplitudes; x_hat = kappa x + w."""
+    rng = np.random.default_rng(seed)
+    x0 = rng.normal(size=(n, dim))
+    w0 = rng.normal(size=(n, dim))
+    w0 -= (w0 * x0).sum(1, keepdims=True) / (x0 * x0).sum(1, keepdims=True) * x0
+    frames = []
+    for op in invent_amp:
+        x, w = truth_amp[op] * x0, invent_amp[op] * w0
+        xh = kappa * x + w
+        frames.append(pd.DataFrame({
+            "operator_id": op, "operator_family": "f", "split": "calib",
+            "sample_id": [f"i{i}" for i in range(n)], "slice_idx": 0, "region_id": 0,
+            "s_free": np.linalg.norm(xh, axis=1), "free_content": np.linalg.norm(x, axis=1),
+            "err_free": np.linalg.norm(xh - x, axis=1),
+        }))
+    return pd.concat(frames, ignore_index=True)
+
+
+def test_white_fill_follows_the_law_and_carries_no_aligned_part():
+    nf = {"a": 0.25, "b": 0.5, "c": 0.75}
+    amp = {k: np.sqrt(v) for k, v in nf.items()}  # invention amplitude ~ sqrt(null_frac)
+    t = energy_departure(_bank(0.0, amp, {k: 1.0 for k in nf}), "a", nf).set_index(
+        "operator_id")
+    assert np.allclose(t["quotient_s"], 1.0, atol=1e-9)
+    assert np.allclose(t["aligned_contribution"], 0.0, atol=1e-9)
+    assert np.abs(t["identity_residual"]).max() < 1e-12
+
+
+def test_pure_recovery_departs_exactly_as_the_truths_hidden_energy_does():
+    nf = {"a": 0.25, "b": 0.5}
+    truth = {"a": 1.0, "b": 2.0}  # the truth's hidden energy quadruples, the law says doubles
+    t = energy_departure(_bank(1.0, {"a": 1e-9, "b": 1e-9}, truth), "a", nf).set_index(
+        "operator_id")
+    assert t.loc["b", "R_c"] == pytest.approx(4.0)
+    assert t.loc["b", "aligned_share_ref"] == pytest.approx(1.0, abs=1e-6)
+    assert t.loc["b", "departure"] == pytest.approx(4.0 - 2.0, rel=1e-6)
+    assert t.loc["b", "quotient_s"] == pytest.approx(t.loc["b", "quotient_truth"], rel=1e-6)
+
+
+def test_energy_departure_refuses_an_unknown_reference():
+    with pytest.raises(KeyError, match="reference"):
+        energy_departure(_bank(0.5, {"a": 1.0}, {"a": 1.0}), "zz")

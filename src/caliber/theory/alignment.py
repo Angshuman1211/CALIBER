@@ -244,3 +244,88 @@ def threshold_direction_model(
         "tau_elasticity": log_slope(np.asarray(lams), taus),
         "tau_direction": int(np.sign(rank_correlation(lams, taus))),
     }
+
+
+# -- T3-D: the departure from T3.4's sqrt(null_frac) law, split exactly ---------------------
+
+_KEYS = ["sample_id", "slice_idx", "region_id"]
+
+
+def _quotient(r: float, r_nf: float) -> float:
+    """``sqrt(r / r_nf)``: an energy ratio against the law's, as an amplitude quotient."""
+    if np.isfinite(r) and np.isfinite(r_nf) and r_nf > 0 and r >= 0:
+        return float(np.sqrt(r / r_nf))
+    return float("nan")
+
+
+def energy_departure(
+    df: pd.DataFrame,
+    reference: str,
+    null_fraction: dict[str, float] | None = None,
+    exclude_design: bool = True,
+) -> pd.DataFrame:
+    """How far each operator's hidden-content energy departs from the sqrt(null_frac) law.
+
+    T3.4 Sec. 2 derived ``s_free ~ sqrt(null_frac)`` for white-noise fill, so the law predicts
+    the energy ratio ``R_nf = nf(B) / nf(A)`` between an operator ``B`` and a ``reference``
+    ``A``. Over the same regions at both operators (the bank is crossed), energies add exactly,
+    ``E_s = E_a + E_o``, so the measured ratio splits with no approximation:
+
+        R_s = C_A * R_a + (1 - C_A) * R_o,      C_A = E_a(A) / E_s(A),
+
+    and the departure from the law splits with it:
+
+        R_s - R_nf = C_A (R_a - R_nf) + (1 - C_A) (R_o - R_nf).
+
+    The law can only ever have been about the invented part ``o`` (white fill is orthogonal
+    to the truth by construction); the aligned part ``a`` is recovered truth and follows the
+    truth's own hidden energy, whose ratio ``R_c`` is T3.4 Sec. 1's energy-weighted null
+    fraction. So a real prior's departure is (i) its aligned share ``C_A`` times how far the
+    truth's hidden energy is from the dimension count, plus (ii) its invented share times how
+    far its invention is from white. ``quotient_*`` are the amplitude ratios
+    ``sqrt(R_* / R_nf)``, the form T3.4 and T3.5 quote (1.0 = the law holds).
+    """
+    body = df[df["split"] != "design"] if exclude_design and "split" in df else df
+    parts = {}
+    for op, g in body.groupby("operator_id", sort=True):
+        dec = decompose(g["s_free"], g["free_content"], g["err_free"])
+        t = g[_KEYS].reset_index(drop=True).copy()
+        t["a2"] = dec["aligned"].to_numpy() ** 2
+        t["o2"] = dec["invented"].to_numpy() ** 2
+        t["c2"] = g["free_content"].to_numpy(float) ** 2
+        parts[op] = t.set_index(_KEYS)
+    if reference not in parts:
+        raise KeyError(f"reference {reference!r} is not in the bank; have {sorted(parts)}")
+    fam = (df.drop_duplicates("operator_id").set_index("operator_id")["operator_family"]
+           .astype(str).to_dict() if "operator_family" in df else {})
+    ref = parts[reference]
+    rows = []
+    for op, cur in parts.items():
+        both = ref.join(cur, lsuffix="_A", rsuffix="_B", how="inner")
+        both = both[np.isfinite(both).all(axis=1)]
+        ea, eo, ec = (float(both[f"{k}_A"].sum()) for k in ("a2", "o2", "c2"))
+        ba, bo, bc = (float(both[f"{k}_B"].sum()) for k in ("a2", "o2", "c2"))
+        es_a, es_b = ea + eo, ba + bo
+        nan = float("nan")
+        r_s = es_b / es_a if es_a > 0 else nan
+        r_a = ba / ea if ea > 0 else nan
+        r_o = bo / eo if eo > 0 else nan
+        r_c = bc / ec if ec > 0 else nan
+        c_ref = ea / es_a if es_a > 0 else nan
+        nf_a = (null_fraction or {}).get(reference, nan)
+        nf_b = (null_fraction or {}).get(op, nan)
+        r_nf = nf_b / nf_a if nf_a and np.isfinite(nf_a) and nf_a > 0 else nan
+        rows.append({
+            "operator_id": op, "family": fam.get(op, "?"), "n_regions": int(len(both)),
+            "null_fraction": nf_b, "R_nf": r_nf, "R_s": r_s, "R_a": r_a, "R_o": r_o,
+            "R_c": r_c, "aligned_share_ref": c_ref,
+            "aligned_share": ba / es_b if es_b > 0 else nan,
+            "identity_residual": (r_s - (c_ref * r_a + (1 - c_ref) * r_o)
+                                  if np.isfinite(r_a) and np.isfinite(r_o) else nan),
+            "departure": r_s - r_nf,
+            "aligned_contribution": c_ref * (r_a - r_nf),
+            "invented_contribution": (1 - c_ref) * (r_o - r_nf),
+            "quotient_s": _quotient(r_s, r_nf), "quotient_invented": _quotient(r_o, r_nf),
+            "quotient_truth": _quotient(r_c, r_nf),
+        })
+    return pd.DataFrame(rows)
