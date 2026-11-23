@@ -78,6 +78,7 @@ def operator_alignment(
     alpha: float = 0.10,
     marginal: float = 2.0,
     exclude_design: bool = True,
+    eps: float | None = None,
 ) -> pd.DataFrame:
     """One row per operator: the alignment regime, and where the threshold's positives sit.
 
@@ -85,8 +86,23 @@ def operator_alignment(
     ``derive_score_and_label`` returns them). ``tau`` is the split-conformal threshold on the
     ``calib`` rows (every non-design row if the bank has no split). The **marginal positives**
     are the positives scoring at or below the ``marginal * alpha`` quantile of positive
-    scores: the ones the threshold is fitted on, whose score elasticity decides which way
-    ``tau`` moves when the operator changes (``threshold_direction_model``).
+    scores: the ones the threshold is fitted on.
+
+    With the label's ``eps`` given, two columns locate them against the **orthogonal edge**
+    ``sqrt(max(eps^2 - c^2, 0))``. Since ``err^2 = s^2 + c^2 - 2sc cos(theta)``, a region with
+    ``cos(theta) >= 0`` can be positive only if ``s`` clears that edge, and at
+    ``cos(theta) = 0`` clearing it is also sufficient: the positives are then *exactly* the
+    score law truncated at an edge set by the hidden truth alone. ``marginal_edge_gap`` is
+    the median of ``(s - edge) / s`` over the marginal positives (near 0: the threshold sits on
+    the edge); ``below_edge`` is the share of all positives under it, which only
+    ``cos(theta) < 0`` allows; ``marginal_truth_driven`` is the share of marginal positives
+    whose hidden truth alone exceeds ``eps`` (``c >= eps``: at ``cos(theta) = 0`` they are
+    positive whatever their score).
+
+    ``positive_score_truth_spearman`` is Spearman(score, ``c``) over the positives: how far the
+    score of a positive moves with the hidden truth that made it positive. Under orthogonal
+    fill the two are coupled only through shared region energy; under recovery the aligned
+    part ``a = s cos(theta)`` couples them directly.
     """
     rows = []
     for op, g in df.groupby("operator_id", sort=True):
@@ -128,6 +144,15 @@ def operator_alignment(
                 row["marginal_cos_median"] = _median(dec["cos"].to_numpy()[m])
                 row["marginal_c_over_s"] = _median(c[m] / np.maximum(s[m], 1e-12))
                 row["marginal_invented_share"] = _median(dec["invented_share"].to_numpy()[m])
+                if eps is not None and np.isfinite(eps):
+                    edge = np.sqrt(np.maximum(eps**2 - c**2, 0.0))
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        rel = np.where(s > 0, (s - edge) / s, np.nan)
+                    row["marginal_edge_gap"] = _median(rel[m])
+                    row["below_edge"] = float((s[lab] < edge[lab] - 1e-12).mean())
+                    row["marginal_truth_driven"] = float((c[m] >= eps).mean())
+            if lab.sum() >= 3:
+                row["positive_score_truth_spearman"] = rank_correlation(sc[lab], c[lab])
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -191,9 +216,12 @@ def threshold_direction_model(
     ``err = hypot(a - c, o)``, one global ``eps`` (the ``label_quantile`` of err pooled over
     operators, D-061), and ``tau`` the split-conformal threshold among positives.
 
-    It is a model of the *mechanism*, not of any bank: its parameters are not fitted, and a
-    bank is consistent with it only in the sense of falling in the same region of the
-    ``(cos theta, beta)`` plane.
+    **Scope: the spread-dominated regime.** The per-region spreads here are lognormal and
+    wide, so ``tau`` is set by the bulk of the positive score law and moves with its scale.
+    It omits the other regime, which the white-noise harness is in: when scores are nearly
+    deterministic per region the orthogonal edge ``sqrt(eps^2 - c^2)`` binds and ``tau``
+    falls as the hidden truth grows *whatever* ``beta`` is (T3.6 Part II). It is a model of
+    one mechanism, not of any bank: its parameters are not fitted.
     """
     rng = np.random.default_rng(seed)
     g = rng.lognormal(0.0, 0.8, n)

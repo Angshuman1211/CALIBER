@@ -15,11 +15,12 @@ truth's hidden content ``c`` (the ill-posedness coordinate; defined across famil
 null-space dimension). ``o``'s elasticity is the model's ``beta``.
 
 ``--model`` prints the sign of ``d tau / d ill-posedness`` over a grid of recovery ``kappa``
-and invention elasticity ``beta`` (``threshold_direction_model``). It is the mechanism this
-re-check found: with ``beta < 1`` an orthogonal prior's threshold *falls* as the operator
-hides more (the positives it is fitted on are hidden truth with little invented content, and
-more of them enter) while an aligned prior's *rises* (its marginal positives score like the
-recovered truth, which grows). Which regime a bank is in is read off its own columns.
+and invention elasticity ``beta`` (``threshold_direction_model``), in the regime where the
+positive score law is wide. Read it with the edge columns: when the marginal positives sit
+on the orthogonal edge ``sqrt(eps^2 - c^2)`` (``marginal_edge_gap`` near 0, which needs
+``cos theta ~ 0``) the threshold is pinned to the hidden truth and falls as the operator
+hides more, which the model does not describe. Which regime a bank is in is read off its own
+columns, not assumed.
 """
 
 from __future__ import annotations
@@ -96,14 +97,15 @@ def main(argv=None) -> int:
     d = derive_score_and_label(df, scale, **label.kwargs)
     print(f"[t3c] label: {label.text}; scales frozen on {scale}")
 
-    table = operator_alignment(d, alpha=args.alpha)
+    table = operator_alignment(d, alpha=args.alpha, eps=label.kwargs.get("threshold"))
     fam = (df.drop_duplicates("operator_id").set_index("operator_id")["operator_family"]
            .astype(str))
     table["family"] = table["operator_id"].map(fam)
     show = ["operator_id", "cos_median", "cos_q25", "cos_q75", "undefined", "c_median",
             "aligned_median", "invented_median", "invented_energy_share",
             "orth_rel_err_median", "identity_spearman", "pi", "tau", "marginal_cos_median",
-            "marginal_c_over_s"]
+            "marginal_c_over_s", "marginal_edge_gap", "marginal_truth_driven", "below_edge",
+            "positive_score_truth_spearman"]
     print()
     print(table[[c for c in show if c in table]].to_string(
         index=False, float_format=lambda v: f"{v:.3f}"))
@@ -122,6 +124,10 @@ def main(argv=None) -> int:
            else "rises with the hidden truth" if tau_el > 0 else "falls with the hidden truth")
     print(f"\n[t3c] regime: median cos theta {cos:+.2f}, invention elasticity beta {beta:+.2f}, "
           f"tau elasticity {tau_el:+.2f} ({way})")
+    if "marginal_edge_gap" in table:
+        print(f"[t3c] marginal positives against the orthogonal edge sqrt(eps^2 - c^2): median "
+              f"(s - edge)/s = {np.nanmedian(table['marginal_edge_gap']):.3f} (0 = the "
+              "threshold sits on the edge, set by the hidden truth alone)")
     print(f"[t3c] orthogonal-error approximation: median |hypot(s,c) - err| / err = "
           f"{np.nanmedian(table['orth_rel_err_median']):.3f}; identity Spearman "
           f"{np.nanmin(table['identity_spearman']):.2f}-"
