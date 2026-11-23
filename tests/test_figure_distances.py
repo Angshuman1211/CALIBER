@@ -70,3 +70,17 @@ def test_gap_refuses_a_pair_with_no_matched_cell(figures):
     mean = pd.DataFrame({"calibration": ["a"], "deployment": ["a"], "split_mean": [0.9]})
     with pytest.raises(KeyError, match="no matched cell"):
         figures.gap_table(pairs, mean)
+
+
+def test_quadrants_hold_the_change_against_the_deployment_operators_matched_cell(figures):
+    registry = pd.DataFrame({
+        "calibration": ["a", "a", "b", "b"], "deployment": ["a", "b", "a", "b"],
+        "tau": [1.0, 1.0, 2.0, 2.0], "coverage": [0.90, 0.97, 0.70, 0.88]})
+    t = figures.quadrant_table(registry).set_index(["calibration", "deployment"])
+    assert len(t) == 2
+    assert t.loc[("a", "b"), "tau_difference"] == pytest.approx(-1.0)
+    assert t.loc[("a", "b"), "coverage_change"] == pytest.approx(0.97 - 0.88)
+    assert t.loc[("b", "a"), "tau_difference"] == pytest.approx(1.0)
+    assert t.loc[("b", "a"), "coverage_change"] == pytest.approx(0.70 - 0.90)
+    # a lower threshold carried to b covers more than b's own: the two signs are opposite
+    assert ((t["tau_difference"] * t["coverage_change"]) <= 0).all()
