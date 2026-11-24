@@ -105,7 +105,7 @@ from caliber.evaluation.bank import (
 )
 from caliber.operators.distance import compute_distance
 from caliber.operators.registry import build_operator
-from caliber.reportability import COVERAGE, carries
+from caliber.reportability import COVERAGE, carries, describe
 from caliber.scorebank import read_bank, read_manifest
 
 
@@ -359,7 +359,10 @@ def main(argv: list[str] | None = None) -> int:
         return any(g > 0 for g in growth) and any(g < 0 for g in growth)
 
     print(f"[tool2] bank             {args.bank}")
-    print(f"[tool2] reportable       {provenance.get('reportable')}")
+    # The manifest's old D-018 boolean is true only for a bank carrying EVERY claim,
+    # so it prints False beside a bank that is coverage-reportable -- which is what
+    # this script certifies. Print the claims the bank actually carries (D82, D100).
+    print(f"[tool2] claims           {describe(provenance)}")
     print(f"[tool2] operators        {len(operators)}")
     print(f"[tool2] distance         {args.distance}/{args.normalise} (D19)")
     if args.exclude_nearest:

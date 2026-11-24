@@ -1,6 +1,20 @@
 # CALIBER — Project Status, Results, Problems and Gaps
 
 **Date:** 17 November 2026 · **Week 11** · **Phase 3 of 4**
+**PARTIALLY UPDATED 24 November 2026 (Week 12) through D102.** The body below is the
+17 November text. Eighteen decisions landed after it (D85-D102), including the LIDC bank's
+build and stamp and negative results on all four of Track 1's measurement tasks. Six
+places where the 17 November text is now *inverted* rather than merely stale are marked
+inline: §1 (three rows), §3a, §3b, §3c, §5 and §6 -- §3a and §3b added 24 Nov by sweeping
+what this banner had written off as merely unreviewed. **Both appendices were rewritten the
+same day**: Appendix A was quoting two withdrawn Tool 2 rows, an unlabelled face-prior
+coverage pair and a test count of 836, and Appendix B had the wrong range for every log and
+claimed two Track 3 documents do not exist. §2, §4 and §7 are still unreviewed against
+D85-D102, and **§8 was rewritten the same day** (its first two critical-path items were
+already done and its publication paragraph still listed two withdrawn claims as paper
+content) --
+read the decision log from D85 for anything load-bearing. **D102 withdrew two readings of
+Track 1's own**, so where this file and the decision log disagree, the log is right.
 **Scope:** the whole project, all three tracks, written to be read end to end.
 **Audience:** the three track owners, and anyone who needs the state of the project without reading twenty documents.
 
@@ -21,8 +35,8 @@
 |---|---|
 | **The phenomenon is real and graded** | A conformal threshold calibrated at one acquisition operator loses coverage at another, monotonically with the shift, in MRI and CT |
 | **The fix works** | Group-conditional (Mondrian) calibration restores nominal coverage at every operator in both modalities, at a measured cost in flagged area and FDR |
-| **It is predictable in advance** | On CT the coverage gap is ordered by a signed operator distance computable from the two operators alone, ρ = +0.976 |
-| **Tool 2 earns its keep where it was argued to** | On a sparse CT grid the distance-weighted recalibration beats the nearest-operator baseline, 0.929 coverage against 0.800, valid in 6 of 7 interior folds against 4 |
+| ~~**It is predictable in advance**~~ **REFUTED on the stamped bank, D101/D102** | ρ = +0.976 is 8 pairs of 13-split means on the **face-prior bank**, which carries no claims. On the coverage-stamped LIDC bank the safety rule built on this ordering is **refuted** (D89), gap prediction is reportable on **0 of 4** cells (D91), and D102 goes further: on the 36 cross-family pairs where D97 placed the claim, the **arc ratio read off the operator name beats the geometric distance** against the threshold gap, +0.8524 against **−0.5046** — the distance runs backwards |
+| ~~**Tool 2 earns its keep where it was argued to**~~ **WITHDRAWN, D100/D101** | That run is on the **face-prior bank** against `nearest`, a baseline D-070 §3 retired as contaminated. On the LIDC bank there is no validity claim and no efficiency claim. ~~The undeployable ceiling reaches 4 of 7~~ **that reading is withdrawn too (D102)**: `weighted_h0.25` is valid where the oracle is not, and the valid/invalid flips sort perfectly by *interval width*, so "valid at k of 7" is a sample-size statistic in either direction |
 | **The medical prior changed the regime, as predicted** | `cos θ` rose from +0.07 to +0.60 (MRI) and +0.98 (CT smoke); the identity that made every magnitude label circular weakened from Spearman 0.97 to 0.65 |
 
 ### What is false, or dead
@@ -37,7 +51,7 @@
 ### What does not exist
 
 - **T3.6** (bound against measurement) and **T3.7** (analytical authoring) — two of twenty-one tasks, and the whole of the project's third front.
-- **A single reportable number.** Every bank fails a gate (§5).
+- ~~**A single reportable number.** Every bank fails a gate (§5).~~ **OBSOLETE, D82 and D-072.** The LIDC CT bank carries **coverage** claims. What is true instead, per D101: the core demonstration and the group-conditional fix are supported on that bank at 9 of 9 operators, and **0 of 4** operator-aware refinements are.
 
 ---
 
@@ -100,11 +114,45 @@ matched acceleration.
 0.029 → 0.106; at 90° 0.308 → 0.423 and 0.084 → 0.202. Naive transfer's near-zero FDR is not
 precision — it flags too little and misses a quarter to a third of the positives.
 
-### 3b. The gap is ordered by a quantity available before deployment
+> **The bank above carries no claims; this is the one that does (added D102).** Everything
+> in §3a to this point is the **face-prior** CT bank, correctly labelled but
+> development-only (a natural-image prior is not a medical prior for CT — D80, P-18). The
+> **LIDC medical-prior bank** is the one stamped for coverage, and it shows the same two
+> results:
+>
+> - **The fix holds.** Group-conditional coverage is nominal at **9 of 9** operators,
+>   **0.892–0.905**, mean **0.897**, to within 0.008 — *as the mean over 13 patient
+>   splits*, which is the quantity split conformal actually promises (coverage over the
+>   draw of the calibration set). **Carry that qualifier.** On the single registry split
+>   the bank was built with, the same arm is **0.795–0.856** (mean 0.831) and reaches 0.90
+>   at none of the nine; that split ranks 1–4 of 13 at every operator, and the spread comes
+>   from the 41 calibration subjects a test-side interval never resamples (T2.11 §1e).
+>   **Report the per-draw spread beside the mean:** sd **0.051** by operator, individual
+>   draws spanning 0.795–0.991. The guarantee is marginal over calibration draws, so the
+>   mean is the right estimate of it — but a single deployment draw can sit near 0.80, and
+>   why the spread is wider on this bank than on the face-prior one (0.051 against 0.034)
+>   is **not established**. State it as a limit; do not fill it quietly.
+> - **Naive transfer fails.** Below nominal at **36 of 72** ordered pairs, **22 below
+>   0.80**, worst **0.377** (limited-angle 90° → sparse-view 120), on the across-split mean
+>   (T2.11 §1g).
+>
+> **The direction is the reverse of the face-prior bank's**, and the two banks may not be
+> cited as evidence about each other (`BANK_RESULTS_ARE_NOT_INTERCHANGEABLE`, D101).
+
+### 3b. ~~The gap is ordered by a quantity available before deployment~~ — **WITHDRAWN for the stamped bank (D102)**
+
+> **This section has §3c's defect, one section earlier, and it went unnoticed in the same
+> sweep.** The headline **+0.976** is 8 pairs on the **face-prior bank**, which carries no
+> claims, and the row below did not say so. On the **coverage-stamped LIDC bank the gap is
+> not ordered by the distance at all**: over all 72 ordered pairs ρ(distance, coverage) is
+> **−0.03**, and on the 36 cross-family pairs where D97 placed the claim the **arc ratio
+> read off the operator name beats the geometric distance** against the threshold gap —
+> **+0.8524 against −0.5046**, with the distance running *backwards*. T1-B is refuted on
+> that bank rather than blocked. Treat everything below as a face-prior development result.
 
 | Measure | ρ with the coverage gap |
 |---|---|
-| CT, signed `null_space_growth` | **+0.976** (13-split means, 8 pairs) |
+| CT **face-prior bank**, signed `null_space_growth` | **+0.976** (13-split means, 8 pairs) — *development only* |
 | CT, symmetric measures | +0.762 |
 | MRI, from `random1d R8` | +0.556 |
 | MRI, from `random1d R2` | +0.316 |
@@ -116,9 +164,32 @@ onto one point.
 
 **MRI is reported as a limitation with a mechanism, not as noise.** Its worst failures sit at
 *matched* acceleration across mask families, where any scalar operator distance is ≈ 0. This
-holds on the medical prior too. **The curve claim stays with CT.**
+holds on the medical prior too. ~~**The curve claim stays with CT.**~~ **It does not survive
+on the CT bank that carries claims either (D102)** — see the banner above.
+
+**Six places in this document were inverted rather than stale, not five.** §3b was the sixth
+and was found by sweeping the sections the banner had declared unreviewed.
 
 ### 3c. Tool 2 — the primary contribution — works where it was argued to
+
+> **WITHDRAWN as a claim, D100 and D101 (24 Nov). Kept as development output.** The bank
+> here is `runs/w07_ct_onboarding` — the **face-prior** bank, `claims [] -> none`. Two
+> further defects in the comparison, both found after this was written: the baseline
+> `nearest` was retired by D-070 §3 (it posts the smallest area of any arm at coverage
+> 0.547, so beating it while flagging *more* area is not efficiency), and one `weighted`
+> bandwidth is reported where `TOOL2_REPORT_ALL_WEIGHTINGS` now requires the whole frozen
+> grid. On the coverage-stamped LIDC bank, 24 Nov: weighted valid at **3 of 7**, pooled 3,
+> `max_quantile` 7. ~~Ceiling **4 of 7**.~~ **D102: the arm counts below are not a
+> method ranking.** Each fold has one deployment operator, so every arm is a single
+> threshold there and all eight sit on that fold's own area–coverage curve by
+> construction. The own-operator arm is 4.8 points under nominal at **7 of 7** folds
+> (0.8520 ± 0.0144, families overlapping) — because every cell here is on the **registry
+> split**, a low draw ranked 1–4 of 13 (T2.11 §1e, whose 13-split mean is **0.897**, nominal
+> at all nine). **So 0.90 is the wrong reference for this table.** Against the matched
+> control on the same split the own-operator arm meets or beats it at **7 of 7**, and the
+> arms' ranking is unchanged: `pooled` and `weighted` reach that reference on all three
+> limited-angle folds and **0 of 4** sparse-view. Read the areas and coverages; do not read
+> the `valid` column as a verdict.
 
 CT, 7 interior folds (the two endpoints are outside what weighting can reach):
 
@@ -225,6 +296,15 @@ to be reported as such.
 
 ## 5. The crux: nothing is reportable
 
+> **NO LONGER TRUE, D82 and D-072 (and see D100). Superseded twice over.** A bank now
+> carries a **set of claims**, not a boolean: a defect gates the claims it reaches, not the
+> whole bank. And the full LIDC CT bank (900 pairs, 360,000 regions, built 19 Nov) **carries
+> coverage claims** — so the project does have a quotable bank, for coverage. The boolean
+> in the table below is the pre-D82 model; it reads `False` for a bank that is
+> coverage-reportable, which is the same defect D100 fixed in `tool2_holdout.py`'s header.
+> What D101 establishes is narrower and sharper than this section's claim: the core result
+> *is* on the stamped bank, and the operator-aware refinements are not.
+
 Reportability is a property of the bank (D-018, D-035), gated on three things: the substrate
 is real, the sampler is a generative prior rather than a reference, and **the prior is
 admissible for the modality**. Current state:
@@ -236,6 +316,7 @@ admissible for the modality**. Current state:
 | DPS MRI (597 pairs, 152,832 regions) | fastMRI | face | **No** | prior |
 | M4Raw + BraTS (2,160 pairs) | M4Raw | **medical, admitted (D80)** | **No** | **substrate (D-015)** |
 | CT + LIDC smoke (18 pairs) | TotalSegmentator | **medical, admitted** | smoke only | size |
+| **CT + LIDC, full (900 pairs, 360,000 regions, 19 Nov)** | TotalSegmentator | **medical, admitted (D80)** | **coverage, yes** (D82) | detection only |
 | phantom demo | synthetic | reference | **No** | both, by design |
 
 **So the results in §3 are all development output.** That is why the project can feel like
@@ -276,12 +357,16 @@ normalisation differs from LIDC's per-volume min-max.
 
 ### Track 1 — Methodology, Calibration and Scientific Direction
 
-**All seven tasks delivered.** Log runs to **D81**.
+**All seven tasks delivered.** ~~Log runs to **D81**.~~ **Log runs to D101.** Three of the
+four Phase 4 measurement tasks have since returned **negatives on the coverage-stamped
+bank** — T1-A refuted (D89), T1-B reportable on 0 of 4 cells and then blocked (D91, D100),
+T1-C no validity or efficiency claim (D100) — while the core demonstration and the
+group-conditional fix hold there. See D101 for the split.
 
 | Task | State |
 |---|---|
 | T1.1 score design | Complete. Weights equal by default (D54); D76 measures what that costs |
-| T1.2 shift-robust calibration | Three tools + fallback [7]. Tool 2 positive on sparse CT (§3c); [7] degenerates to `nearest` |
+| T1.2 shift-robust calibration | Three tools + fallback [7]. ~~Tool 2 positive on sparse CT (§3c)~~ **that positive is on the face-prior bank; on LIDC there is no validity or efficiency claim (D100)**; [7] degenerates to `nearest` |
 | T1.3 operator distance | Delivered, amended for direction (D47). CT ρ = +0.976 |
 | T1.4 experimental design | Delivered — paired estimand, grids, ablation matrix, stratified reporting, curve-collapse test, coverage-axis comparison |
 | T1.5 cross-track integration | Standing; the adjudication channel is most of the work now |
@@ -400,21 +485,51 @@ module built to prevent them. The rules that catch them:
 
 ## 8. What to do next
 
+> **Rewritten 24 Nov (D102).** Items 1 and 2 of the old list are **done**, and the
+> publication paragraph listed two things that have since been withdrawn. The old text is
+> preserved in git history.
+
 **Critical path, in order.**
 
-1. **Run the full CT bank on the LIDC prior.** It is a GPU run, it needs no ruling, and it
-   produces the project's first reportable numbers on the modality where the results are
-   strongest. *This replaces the M4Raw deadlock as the critical path.*
-2. **Start T3.6** against the spec Track 3's own documents already give (§6). It is the
-   longest pole and the only track with nothing in flight.
-3. **Finish the DPS medical-prior bank** — completes D68 on the medical prior.
-4. **Write the Phase 3 gate** (T1.6) once (1) lands.
-5. **Final preprint cut** — the text is written; it needs a reportable table.
-6. Decide M4Raw's substrate status at leisure, since it is no longer blocking.
+1. ~~Run the full CT bank on the LIDC prior~~ — **done 19 Nov**, and it carries the coverage
+   stamp. This is the bank every reportable CT number now comes from.
+2. ~~Start T3.6~~ — **done**; T3.6 and T3.7 both exist.
+3. **Write the Phase 3 gate** (T1.6). Still not written, and it is now the oldest open
+   Track 1 deliverable.
+4. **T1-E, the circularity section**, with the scale-only null control. Local, no bank pass.
+5. **Final preprint cut (T1-F).** It now *has* a reportable table — the one in §3a's LIDC
+   block — but see the warning below before drafting a word of it.
+6. **Finish the DPS medical-prior bank** — completes D68 on the medical prior. *Status not
+   re-checked in this sweep; confirm with Track 2 before relying on it.*
+7. Decide M4Raw's substrate status at leisure, since it is no longer blocking.
 
-**Publication outlook.** One paper, not the three the blueprint planned. The failure, the fix,
-Tool 2's sparse-grid win, the distance ordering, and the circularity caution — at a workshop
-or mid-tier methods venue. The second (analytical) paper needs T3.6, which does not exist.
+**Nothing on this list is blocked on a Track 2 run, and nothing is blocked on a new bank.**
+
+**Publication outlook.** One paper, not the three the blueprint planned.
+
+> **The paper's content is not what this section used to say.** It listed *"Tool 2's
+> sparse-grid win, the distance ordering"* — **both withdrawn** (D101, D102), and both
+> measured on the bank that carries no claims. Writing them up is the specific failure D101
+> was logged to prevent, and `BANK_RESULTS_ARE_NOT_INTERCHANGEABLE` exists in code to stop
+> it.
+
+What the paper can actually claim, all of it on stamped banks:
+
+- **The failure**: a conformal threshold calibrated at one acquisition operator loses
+  coverage at another — CT LIDC naive transfer below nominal at 36 of 72 ordered pairs,
+  worst 0.377; MRI with a medical prior at 0.000–0.159, 13/13 in both directions.
+- **The fix**: group-conditional (Mondrian) calibration restores nominal — CT LIDC
+  0.892–0.905 at 9 of 9 operators over 13 patient splits, MRI 0.80–0.91 — at a measured
+  cost in flagged area and FDR.
+- **Two modalities with structurally different operators**, and the cost of the fix
+  quantified rather than asserted.
+- **The circularity caution** (§3d), which is a genuine service to the field.
+- **The operator-aware layer as a negative result**: four refinements, 0 of 4 supported on
+  the stamped bank, with the reasons measured — including that a scalar read off the
+  operator name beats the geometric distance. Scope-limiting is part of the contribution,
+  and this is the honest form of it.
+
+The second (analytical) paper now has T3.6 and T3.7 to build on.
 
 ---
 
@@ -428,31 +543,33 @@ or mid-tier methods venue. The second (analytical) paper needs T3.6, which does 
 | M4Raw + BraTS bank | 2,160 pairs |
 | Patient splits | 13 |
 | Operator grid | 9 MRI · 9 CT |
-| CT coverage, naive, 180 → 30 views | 0.890 → **0.693** |
-| CT coverage, group-conditional | 0.902–0.923 |
+| CT **face-prior** coverage, naive, 180 → 30 views | 0.890 → **0.693** — *development only* |
+| CT **face-prior** coverage, group-conditional | 0.902–0.923 — *development only* |
+| **CT LIDC** (stamped) coverage, group-conditional | **0.892–0.905**, mean 0.897, 9 of 9 — *mean over 13 patient splits*; on the registry split alone 0.795–0.856 |
+| **CT LIDC** (stamped) naive transfer | below nominal at **36 of 72** ordered pairs, 22 below 0.80, worst **0.377** |
 | MRI + medical prior, naive | **0.000–0.159**, 13/13 both directions |
 | MRI + medical prior, group-conditional | 0.80–0.91 |
-| CT distance ordering, signed | **ρ = +0.976** (symmetric +0.762) |
-| Tool 2 vs `nearest`, interior mean coverage | 0.950 vs 0.840 (full) · **0.929 vs 0.800** (sparse) |
-| Tool 2 valid interior folds | 6/7 both settings |
+| CT distance ordering, signed | **ρ = +0.976** on the **face-prior** bank — **refuted on the stamped bank** (D102): arc ratio +0.8524 beats distance −0.5046 |
+| ~~Tool 2 vs `nearest`~~ | **Withdrawn, D101** — retired baseline, face-prior bank, single bandwidth |
+| ~~Tool 2 valid interior folds, 6/7~~ | **Withdrawn, D101/D102** — face-prior bank, and the `valid` flips sort by interval width |
 | D68 null-error share | DDNM 0.991 · DPS 0.694 |
 | D68, direction label | **negative**, 0 of 3 |
 | D73, 32 cells | baseline 12 · CALIBER 1 |
 | `cos θ`, face → medical prior | +0.07 → **+0.60** (MRI) · +0.98 (CT smoke) |
 | Identity Spearman, face → medical | 0.97 → 0.65 (MRI) · 0.99 → 0.49 (CT) |
 | Weight sensitivity | restoration established at 9 of 11 weightings |
-| Tests | 836 (Track 2's machine) · 9 (site) |
+| Tests | **1,230 passing, 7 skipped** (24 Nov) · 9 (site) |
 
 ## Appendix B — where things are written
 
 | Document | Holds |
 |---|---|
-| `problems_and_decisions.md` | Track 1's log, **D1–D81**, open questions, cross-track contracts |
-| `decision_log.md` | Cross-track decisions, **D-001–D-069** |
-| `T2_problems_and_decisions.md` | Track 2's problem log, **P-01–P-40**, plus the index of every cross-track decision |
+| `problems_and_decisions.md` | Track 1's log, **D1–D102**, open questions, cross-track contracts |
+| `decision_log.md` | Cross-track decisions, **D-001–D-072** |
+| `T2_problems_and_decisions.md` | Track 2's problem log, **P-01–P-45**, plus the index of every cross-track decision |
 | `T1.1`–`T1.7` | Track 1's per-task records; `T1.7_preprint_draft.md` is the narrowed paper |
-| `T2.1`–`T2.10` | Track 2's weekly records; `T2.9` is Track 1's Week 10 runs, `T2.10` the medical prior |
-| `T3.1`–`T3.5` | Track 3's records. **T3.6 and T3.7 do not exist** |
+| `T2.1`–`T2.11` | Track 2's weekly records; `T2.9` is Track 1's Week 10 runs, `T2.10` the medical prior, **`T2.11` the LIDC CT bank and its claim stamps** |
+| `T3.1`–`T3.7` | Track 3's records. **T3.6 and T3.7 now exist** (the bound-versus-measurement comparison and the analytical writeup) |
 | `site/` | The presentation site, with two demos that compute rather than recite |
 
 > **Numbering warning.** The two logs number independently: `D12` (Track 1) and `D-012`

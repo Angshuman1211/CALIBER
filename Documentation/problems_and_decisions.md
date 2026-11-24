@@ -3663,9 +3663,453 @@ No amendment: nothing frozen changed. Two tests added.
 |---|---|
 | Why the cross-family fit was inert | **Direction, not range**; work plan's reason corrected |
 | Range on the headline direction | **0% out of span** on both banks |
-| T1-B binding constraint | **The face bank's claim stamp**, nothing else |
-| Cross-family claim behind that gate | **Live, borderline**: 1 of 2 protocols, by 0.0005 |
+| T1-B binding constraint | ~~**The face bank's claim stamp**, nothing else~~ **WITHDRAWN by D100 -- the block is bank disagreement; the stamp was never the only one** |
+| Cross-family claim behind that gate | **Live, borderline**: 1 of 2 protocols, by 0.0005. *D100: on the face-prior bank this is a development value only, not an estimate of the LIDC effect* |
 | Within-family claim | Not identified (D97), and it is the only baseline that fails |
 | Evidence for the frozen direction | **None**, and face cannot provide it (D96) |
 
 Suite 1,193 passed, 7 skipped. Fingerprint unchanged at `f387c2b4f3ab`.
+
+---
+
+### D100 -- The face-prior bank's scope stays as it is, T1-C's ceiling fails, and D99's "single binding constraint" is withdrawn (24 Nov)
+
+Track 2's §1l answered the three questions from the 24 Nov reply and put one rule question
+back with a default. Their work is at `ce6aa56`, pre-registration `cc6bb1e631a7`; this entry
+is written against `f387c2b4f3ab` and leaves `4fdb8e4f658b`.
+
+#### 1. The rule question, and the ruling
+
+`restamp_bank.py runs/w07_ct_onboarding-0389934dc7d7aaed`, show mode:
+`totalsegmentator + natural_image  claims [] -> none (unchanged)`. The important part is
+Track 2's explanation, not the output: this is **not** a stale manifest. The re-stamp
+recomputes the claims from the substrate, the sampler and the checkpoint, and
+`prior_claims` returns nothing because a natural-image prior is not a medical prior for CT
+(D80, P-18). D80's coverage-only case is a medical prior of *another anatomy* -- that is the
+LIDC bank. A face prior is not that case.
+
+So the question is a rule question: should a non-medical prior be admitted for coverage
+claims? Track 2's default was "no change".
+
+**Ruled: no change.** `PRIOR_ADMISSIBILITY_UNCHANGED`. The coverage mathematics is not in
+doubt -- split conformal is distribution-free and does not care what the prior was trained
+on. But a coverage claim is a claim *about a score distribution*, and what a face prior on
+CT changes is what that distribution is. Admitting it would license quoting coverage for a
+distribution that arises only from a prior-modality mismatch.
+
+The reason to record the ruling rather than just make it: the request reached me as what
+looked like the only route to a positive T1-B. A rule relaxed after learning which bank
+holds the result is this project's recurring failure **one level up** -- not a statistic
+chosen after seeing a number, but an admissibility criterion chosen after seeing which bank
+gives the number. The ruling was therefore made at *apparent* cost. Section 3 shows the cost
+was illusory, which is luck and not judgement, and is not a reason to trust the next such
+ruling more.
+
+#### 2. T1-C: the ceiling fails, so this bank cannot answer the question
+
+Both runs D75 asks for, `tool2_holdout.py --t1c` unmodified, Track 2's 320^2 distances:
+
+| run | interior folds | weighted | pooled | oracle | max_quantile |
+|---|---|---|---|---|---|
+| full grid | 7 | 3 | 3 | **4** | 7 |
+| `--exclude-nearest 1` | 6 | 3 | 3 | **4** | 6 |
+
+The script refused the efficiency claim, correctly. Where the arms are valid the weighted
+arm flags 0.476 to 0.518 against pooled's 0.473 (0.501 to 0.515 against 0.500 sparse), so
+the weighting flags **no less** area than pooling at any frozen bandwidth.
+
+**The decisive cell is the oracle's, not the weighted arm's.**
+`group_conditional_oracle` calibrates on the held-out operator's own calibration rows. It
+is not deployable; it exists to show the headroom. It is invalid at 3 of 7 folds. That
+means at least 3 of the 7 folds are shut to *every* operator-aware method, including a
+perfect one, so "weighted reaches 3 where pooled reaches 3" is being read against a ceiling
+of 4 and not of 7.
+
+Three things were checked rather than assumed before reading that as real, because the
+obvious suspicion was that it was my own script's defect:
+
+- `split_threshold` applies the finite-sample correction as `k = floor(alpha * (n + 1))`
+  and the docstring argues the flooring explicitly. It errs **conservative**, so the
+  deficit is not the quantile convention.
+- `valid` is `bool(metrics["hi"] >= nominal)` where `metrics` comes from
+  `cluster_bootstrap_coverage` on `sample_id`. This is a **lenient** criterion on a
+  **subject-clustered** interval: a thin fold has a wider interval and so passes more
+  easily. A fold cannot fail by thinness alone, and failing means the whole clustered
+  interval sits below nominal. This also confirms amendment 17's note that T1-C does not
+  carry the region-count unit error -- it was recorded then and is re-verified here.
+- The harness already refuses a fold whose clusters appear on both sides (line 467).
+
+What is left is a **within-operator** deficit, where there is no operator shift to blame.
+At the design effects this bank carries -- 47 to 186, median 125 -- a region-level
+conformal threshold calibrated on some subjects does not deliver its coverage on others.
+T1-C presumes within-operator calibration transfers across subjects; on this bank it does
+not. `TOOL2_CEILING_FAILS`.
+
+**This is a scope result, not a verdict on distance weighting.** The honest headline is
+that the only arm valid at every unseen operator is `max_quantile`, which is valid by
+construction and buys nothing, and that the comparison T1-C was built to make needs a bank
+whose within-operator calibration holds.
+
+#### 3. Why the stamp was never the only block, which withdraws a D99 finding
+
+D99 §5 recorded "T1-B binding constraint: **the face bank's claim stamp**, nothing else".
+**That is withdrawn.** `BANK_DISAGREEMENT_BLOCKS_T1B`. Track 2's count-match cut table is
+what shows it: the two CT banks do not merely differ in power, they disagree in sign and in
+kind.
+
+| quantity | LIDC (coverage-stamped) | face-prior (unstamped) |
+|---|---|---|
+| rho(distance, tau_b - tau_a) | +0.546 to +1.000 | -0.886 to -0.980 |
+| direction the rule then calls | non-increasing | **non-decreasing** |
+| rho(distance, log spread ratio) by cut | 0.00, 0.00, -0.11, -0.09, +0.12 | +0.60, +0.52, +0.42, +0.28, +0.40 |
+
+The bank that may be quoted and the bank that carries the effect return **opposite**
+direction verdicts, and the spread trend present at every cut on one is absent at every cut
+on the other. Lifting the stamp would have licensed quoting a magnitude measured where the
+sign of the underlying relation is reversed. So the stamp was never the only block, and
+repairing it would not have unblocked T1-B.
+
+Track 3's re-runs corroborate this independently, and the reading is theirs to make: the
+marginal positives' composition is nearly disjoint between the banks -- on LIDC score-free
+0.83, under-recovery 0.12, edge 0.05; on the face-prior bank score-free 0.04,
+under-recovery 0.00, edge 0.96. The positives are not the same kind of object on the two
+banks.
+
+One thing the cut table settles in the other direction: the face-prior **level** is count
+mismatch (median measured/predicted falls 1.28 to 1.05 as counts are matched) while the
+**trend** survives every cut. Only the trend was ever a candidate finding, and it still is
+-- as a development value that motivates a measurement on an admissible bank, never as an
+estimate of the LIDC bank's effect.
+
+#### 4. The header boolean, fixed
+
+`tool2_holdout.py` printed `reportable False` for the LIDC bank. Track 2 identified it
+exactly: that is D-018's old boolean, which is true only for a bank carrying *every* claim,
+so it reads False beside a bank that is coverage-reportable -- which is the certificate this
+script exists to write. The **gate** was always right (line 375 tests
+`carries(provenance, COVERAGE)`); only the header lied. It now prints
+`describe(provenance)`.
+
+This is the fourth naming collision in the family (`max_quantile`'s two readings,
+`reportable`'s statistical and provenance senses, Clopper-Pearson as a Beta band, and now
+the bank boolean against the claim set). Amendment 17's general form covers it: a bar
+written in one vocabulary does not enforce itself over code written in another.
+
+#### 5. Not acted on
+
+The `err_free_two_solve` channel is built and checked -- three-solve reaches 1.0005, the
+two-solve form's largest value is 0.999997 -- and rests on nothing yet, correctly: the LIDC
+reconstructions are not kept so it cannot be back-filled, and the face-prior bank is
+development-only. It becomes usable when a bank carrying coverage is written with it.
+
+#### 6. Status
+
+| Item | State |
+|---|---|
+| Face-prior bank's claims | **None, and the rule stands** (D100) |
+| T1-C validity claim | **None**; 3 of 7, against a ceiling of 4 of 7 |
+| T1-C efficiency claim | **None**; weighting flags no less than pooling at any bandwidth |
+| Why T1-C fails | **Within-operator**, at design effects 47-186 -- a scope result |
+| T1-B binding constraint | **Bank disagreement**, not the stamp (D99 §5 withdrawn) |
+| Face-prior magnitude | Development value motivating a measurement; not an estimate |
+| Face-prior level vs trend | Level is count mismatch (1.28 -> 1.05); trend survives every cut |
+
+Amendment 18; fingerprint `f387c2b4f3ab` -> `4fdb8e4f658b`. Eight tests added.
+
+---
+
+### D101 -- Every operator-aware refinement is positive only on the bank that carries no claims; the core result is not (24 Nov)
+
+D100 ruled on the face-prior bank and withdrew the claim that its stamp was T1-B's only
+block. Following that through the older documents turned up something larger, and it is not
+a new measurement -- every number below was already recorded. Nobody had put them in one
+table.
+
+#### 1. What §3c of `PROJECT_STATUS.md` is actually measured on
+
+Section 3c is titled "Tool 2 -- the primary contribution -- works where it was argued to".
+Its numbers come from `T2.9_track1_week10_runs.md` §3, and that document's command block
+names the bank: `CT=runs/w07_ct_onboarding-<hash>`.
+
+That is the **face-prior bank** -- `totalsegmentator + natural_image`, the bank Track 2
+re-stamped this morning as `claims [] -> none`. The LIDC bank did not exist when §3c was
+written: `PROJECT_STATUS.md` is dated 17 November and T2-A was built on the 19th. Both banks
+have nine operators and therefore seven interior folds, which is why the two tables look
+comparable at a glance and are not.
+
+#### 2. The two banks, on every quantity where both have a value
+
+| quantity | face-prior (`claims: none`) | LIDC (`claims: coverage`) |
+|---|---|---|
+| Tool 2 weighted arm valid at | **6 of 7** folds | **3 of 7** |
+| the ceiling (own-operator calibration) | **6 of 7** | **4 of 7** |
+| coverage-loss direction | loses as views are removed, 0.890 -> 0.693 | **over-covers**, 0.964 at 30 views |
+| rho(distance, tau_b - tau_a) | -0.886 to -0.980 | **+0.546 to +1.000** |
+| direction the rule then calls | non-decreasing | **non-increasing** |
+| rho(distance, spread ratio), by cut | +0.60, +0.52, +0.42, +0.28, +0.40 | 0.00, 0.00, -0.11, -0.09, +0.12 |
+| marginal positives: score-free / edge | 0.04 / **0.96** | **0.83** / 0.05 |
+| coverage spread across 13 splits | 0.034 | 0.051 |
+
+**Where both banks have a value they disagree in sign or in kind, without exception.** Two
+of these were already written down as open puzzles -- T2.11 asks "why the direction reversed
+with the prior" and says of the spread "why it is wider here is not established" -- and D100
+added two more. The pattern is the finding: these two banks do not behave alike on anything
+measured, so a result from one is not evidence about the other in either direction.
+
+#### 3. The part that matters for what Track 1 can claim
+
+Sorting Track 1's results by which bank carries them:
+
+| result | bank | state |
+|---|---|---|
+| coverage fails under operator shift, graded | both | **holds** |
+| group-conditional calibration restores nominal | LIDC | **holds**, 9 of 9 operators, 0.892 to 0.905 |
+| signed distance orders the gap, rho = +0.976 | face-prior | 8 pairs, 13-split means |
+| T1-A safety rule | LIDC | **REFUTED** (D89): pooled false-safe 0.361 [0.09, 0.67] against trivial 0.319 |
+| T1-B gap prediction | LIDC | reportable on **0 of 4** cells (D91); blocked entirely (D100) |
+| T1-C distance-weighted recalibration | LIDC | **no validity claim, no efficiency claim** (D100) |
+| T1-D worst transfer cell | LIDC | catches **26.9%** where it promises 90% |
+
+So the honest statement is narrower than "the project has positives and negatives", and it
+cuts in a specific place:
+
+- **The core result survives on a bank that may be quoted.** Coverage fails under operator
+  shift and group-conditional calibration restores it at all nine LIDC operators. That is
+  the central claim, it is on the coverage-stamped bank, and nothing in D89 to D101 touches
+  it.
+- **Every operator-aware *refinement* beyond that is positive only on the face-prior bank
+  and negative or absent on the LIDC bank.** The distance ordering, the safety rule, the gap
+  prediction and the distance-weighted recalibration are four separate elaborations of the
+  same idea -- that the *amount* of the shift is usable -- and the admissible bank declines
+  all four.
+
+This is a sharper reading of the project's standing scope limit, not a new defect. It says
+the surviving contribution is the demonstration and the fix, and that the operator-aware
+layer is, on present evidence, unsupported where it would count.
+
+#### 4. What §3c's table could not show even on its own bank
+
+Two defects in the comparison itself, both recorded after §3c was written and neither
+carried back to it:
+
+- **The baseline is `nearest`, retired by D-070 §3.** It "posted the smallest flagged area
+  of any arm while averaging coverage 0.547", so beating it on coverage while flagging more
+  area is not an efficiency result. The replacement baselines (`pooled`, `max_quantile`,
+  `group_conditional_oracle`) did not exist yet.
+- **One `weighted` arm is reported, not a bandwidth grid.** `TOOL2_REPORT_ALL_WEIGHTINGS`
+  and D95 exist because reporting a single bandwidth after seeing which one won is
+  cosmetic selection. §3c's 6 of 7 is one bandwidth.
+
+So §3c is not merely measured on the wrong bank for a claim; its comparison would not be
+reportable now on any bank. It is left in place and marked, not deleted -- the run happened
+and the numbers are real development output.
+
+#### 5. Status
+
+| Item | State |
+|---|---|
+| §3c's bank | **The face-prior bank** (`w07_ct_onboarding`), claims none |
+| Banks agreeing on any measured quantity | **None found**, 8 checked |
+| Core claim (failure + group-conditional fix) | **Holds on the coverage-stamped bank** |
+| Operator-aware refinements (T1-A, B, C, distance ordering) | **0 of 4 supported on that bank** |
+| §3c's own comparison | Retired baseline + single bandwidth; unreportable now on any bank |
+| New measurements taken | **None.** Every number here was already recorded |
+
+**Amendment 19, against my own first judgement.** I closed this entry "no amendment:
+nothing frozen changed, and no statistic was computed". The second half is true and the
+conclusion did not follow from it. This narrows what may be claimed -- it bars citing either
+CT bank as evidence about the other -- and the risk it guards is concrete: T1-F is a paper
+draft, and §3c's 6-of-7 is the most attractive Tool 2 number in the project. A banner in a
+markdown file does not stop a draft reaching for it; `BANK_RESULTS_ARE_NOT_INTERCHANGEABLE`
+does, and the bar is written to cut both ways, so T1-C's within-operator failure may not be
+cited as refuting the method either.
+
+Fingerprint `4fdb8e4f658b` -> `ba2ab7d6e338`. Four tests added, one of which asserts the
+§3c banner is still in `PROJECT_STATUS.md` -- a reader reaching for the Tool 2 number opens
+that file, not this one. `PROJECT_STATUS.md` patched at §1 (two rows), §3c, §5 (section
+claim and bank table) and §6.
+
+### D102 -- The falsification I shipped with the ceiling reading fired, and following it took down D97's shelter for T1-B as well (24 Nov)
+
+Track 2 delivered `runs/t1c` with the CSVs and logs (T2.11 §1m, `3a53922`, 1,210 pass,
+merged at `f608eac`), plus a `w13` dry-run grid check I had asked for. Everything below is
+measured off those files. **The face-prior bank was deliberately not consulted**, because
+`BANK_RESULTS_ARE_NOT_INTERCHANGEABLE` binds me while I am the one using it.
+
+#### 1. The ceiling reading is withdrawn, on the test it was issued with
+
+D100 read T1-C's headline as *"the undeployable ceiling reaches only 4 of 7, so at least 3
+folds are shut to every operator-aware method."* I sent it to Track 2 with a falsification
+attached: *if the weighted arm is valid anywhere the oracle is not, the oracle is not a
+per-fold bound and I withdraw the ceiling reading.*
+
+`weighted_h0.25` is valid at **la120** and **la90**, where the oracle is not. So it goes.
+
+Track 2's mechanism is right as far as it goes — the arms pass for opposite reasons, the
+oracle covering 0.859 and 0.848 at those folds while weighted/pooled over-cover at 0.98 to
+1.00 — but it does not say *why* the oracle fails exactly there, and that turns out to be
+the whole story.
+
+#### 2. What replaces it is not the opposite headline either
+
+Track 2's own summary — *"some operator-aware arm is valid at 6 of 7; only sv45 has none"* —
+is read off the same criterion and fails the same way. Four measurements on the delivered
+CSVs:
+
+| what was measured | value |
+| --- | --- |
+| own-operator arm, point coverage across all 7 folds | **0.8520 ± 0.0144**, below nominal at **7 of 7**, one direction |
+| its limited-angle range vs its sparse-view range | 0.8478–0.8666 vs 0.8252–0.8664 — **overlapping** |
+| its valid/invalid flips sorted by interval half-width | the **3 narrowest intervals are exactly the 3 invalid folds** (2 of 2 in the sparse run) |
+| interior cells landing within 0.02 of nominal | **1 of 56**, and from below |
+| valid stamps whose *point* coverage is under nominal | **8 of 29** |
+| sparse-view folds where any of the 8 arms reaches nominal | **0 of 4** (best 0.8959) |
+
+The own-operator arm sits 4.8 points low at every fold, with a spread (sd 0.0144) thirteen
+times tighter than pooled's (0.1857), and with the two operator families overlapping
+completely — so the operator explains none of it.
+
+> **Corrected the same day, before any commit.** I first wrote that this was *"a
+> near-constant offset that the treatment variable does not move, so a calibration defect
+> rather than a shift effect"*, and that no arm's deficit was attributable to operator shift
+> until a cheap same-operator run resolved it. **That run already exists, and Track 2 named
+> the section in the same message that carried the table: T2.11 §1e.** Every T1-C number is
+> on the **registry split**, which ranks 1 to 4 of 13 draws at every operator. The same arm
+> over 13 patient splits averages **0.897 — nominal at all nine to within 0.008.** Split
+> conformal promises coverage over the draw of the calibration set, and the spread comes
+> from the 41 calibration subjects a test-side interval never resamples. My own standing
+> rule covers this exactly: read the partner document that already has the data.
+
+So **nominal 0.90 is the wrong reference for any T1-C cell.** Against the matched control
+measured on the *same* split, the own-operator arm meets or beats it at **7 of 7** (mean
+**+0.0195**, from +0.0005 at la90 to +0.0578 at sv90). The arm is sound; it was being held
+to a level this split does not sit at.
+
+**The verdict survives, which is why this is a correction and not a retraction.** Against
+the same-split matched control, `pooled` and `weighted_h0.25` reach it at **3 of 7** — all
+three limited-angle folds and **0 of 4** sparse-view — while `max_quantile` reaches it at
+7 of 7. No efficiency claim is rescued, and the shape of the T1-C result is unchanged.
+
+What the correction does sharpen is §2's other finding: with a common offset across folds,
+interval width is the only thing left that can vary, which is exactly why the valid/invalid
+flips sort by it.
+
+And the validity criterion is not measuring methods. Its flips sort *perfectly* by interval
+width in both runs. `valid` is `hi >= nominal`, so at fixed point coverage a fold passes or
+fails on how wide its bootstrap interval is — i.e. on n. "Valid at k of 7" is a sample-size
+statistic.
+
+One further thing, recorded so it is not mistaken for a result later: within a fold there is
+**one** deployment operator, so every arm is a single threshold there and all eight lie on
+that fold's own area–coverage curve by construction. Checked anyway — 0 of 42 interior cells
+clear their own interval half-width above the chord of their area-neighbours, the largest gap
+being +0.0135 against a half-width of 0.0614. That is the design, not a finding, and it is
+why **an arm ranking is not available from this experiment at all.**
+
+#### 3. A route to T1-B appeared on existing data, and it is the seventh recurrence
+
+The bank of record has four operators at **120 views** (`sv v120.a180` and the three
+`limited_angle v120.a{90,120,150}`). Across their six pairs the view count and the
+null-space dimension are *both* constant, so a predictor built from "how many views" is
+constant by construction. That is the decorrelated subset T1-B has been missing, and it
+already exists. Direction pre-stated before running: greater distance → larger `|dtau|`.
+
+ρ(distance, `|dtau|`) = **+0.9429**, exact p = 0.0167.
+
+It is not a result, for two independent reasons, and both had to be checked for:
+
+1. **The rival predictor ties it exactly.** ρ(distance, `|log arc ratio|`) = **+1.0000** on
+   those six pairs — the geometric distance and the arc ratio rank them *identically* — and
+   the arc ratio scores the same **+0.9429** against `|dtau|`. Holding views fixed leaves
+   arc as the only thing still moving, so the subset swaps the views confound for the arc
+   confound.
+2. **The number is the statistic's own ceiling.** Six pairs built from four operators are
+   not six independent observations; the null must permute the four operator *labels*
+   (4! = 24), not the six pair values (6! = 720, which is what produced the 0.0167).
+   Under the correct null, +0.9429 is reached by **1 of 24** relabellings and never exceeded.
+   The estimate *is* the attainable maximum and p = 1/24 is the test's floor.
+
+Another recurrence of the statistics trap, and the first caught by a rival-predictor check
+rather than by a sign — worth noting, because a sign check would have passed this one.
+
+#### 4. Following that down took two more of my own entries with it
+
+`BASELINE_COLLINEARITY` said: *"the cross-family cells are where the measure is not
+duplicated by a knob, because no scalar knob is defined there -- those 36 pairs are where
+T1-B's claim has to live."* D97 built on it. It is wrong.
+
+A scalar **is** defined there. Every operator in the grid has both a view count and an
+angular range; it is only the *implemented* `_acquisition_knob` that is undefined across
+families, because it switches meaning by family and so ends up comparing 120 views against
+90 degrees. Read the arc uniformly — sparse-view operators span 180° — and the baseline
+exists on all 36 pairs. Measured there:
+
+| predictor on the 36 cross-family pairs | ρ with `\|dtau\|` |
+| --- | --- |
+| `\|log arc ratio\|` | **+0.8524** |
+| operator distance | **−0.5046** |
+| `\|log views ratio\|` | −0.4592 |
+
+A three-level scalar read off the operator name predicts the threshold gap better than the
+geometric measure, in the direction the hypothesis wants, while **the distance runs
+backwards**. The arc ratio's ties are real and stated — 3 values, 12 pairs each — and its
+group means separate cleanly (0.2395, 0.3682, 0.7250). Transferred coverage is predicted by
+none of the three (−0.05 to +0.09), consistent with the over-covering already recorded.
+
+So **T1-B on this bank is not merely unidentified, it is refuted on its own response
+variable in its own designated cell.** That is stronger than the blockage D97 recorded, and
+it replaces it.
+
+#### 5. The grid: ruled not to be built, and what to build instead
+
+Track 2 fixed my requested operators in a config, dry-ran them, and — the part that matters —
+re-ran the distance statistics before building anything. That discipline is what produced
+this ruling, and it should be the default for every future grid request.
+
+- **w13 is not to be built for this purpose.** Adding `v90/a120` and `v60/a150` moves
+  ρ(distance, null-space dimension difference) from **+0.950** over 72 ordered pairs to
+  **+0.952** over 110. Thirty-eight new pairs and about **25 GPU hours** for 0.002 on the
+  statistic that does the blocking. What they *do* fix — arc duplication inside
+  `limited_angle`, +0.970 → −0.307 — was never the binding confound. My request named the
+  wrong target.
+- They also land next to the sparse-view operators in distance (0.061 from `sv60`, 0.099
+  from `sv90`), so they add weight to the existing views axis rather than opening a new one.
+- **What T1-B needs is a family at the same view count *and* the same angular range,**
+  differing only in which views are taken — uniform, non-uniform, disjoint blocks, half-step
+  offset, all at e.g. 120 views over 180°. There both trivial scalars are constant by
+  construction, so the distance is not a rank-duplicate of anything available for free.
+  Check it on distances first, as w13 was checked.
+- **The single acquisition knob is retired.** `_acquisition_knob` returns arc for
+  `limited_angle` and assumes 120 views, giving knob difference 0 for `v90/a120` against
+  `v120/a120` at 4 of 20 pairs. A knob that collapses distinct operators to zero makes the
+  trivial baseline artificially *weak* and so flatters the distance. Frozen as the tuple
+  **(views, arc, null-space dimension)**. The fix moves against T1-B, which is the only
+  direction a baseline should ever be fixed in.
+- `null_space_projection`, which Track 2 measured without being asked, is the one candidate
+  that is not a restatement of a knob: +0.201 against views and +0.369 against null-space
+  dimension over 110 pairs, against growth's +0.920 and +0.952, and it ranks pairs
+  differently (ρ = +0.317 between the two measures). But its dynamic range is a third of
+  growth's — cv 0.127 against 0.378, max/min 1.94 against 9.36 — so part of that
+  decorrelation is compression. **A candidate to test against the gap, not a fix to adopt.**
+
+#### 6. Status
+
+| item | after D102 |
+| --- | --- |
+| T1-C ceiling reading (D100) | **Withdrawn** on its own pre-issued falsification |
+| T1-C as an operator-shift experiment | **Readable, against the right reference.** Its cells sit on the registry split (low draw, §1e), so they must be compared to the same-split matched control, not to 0.90 |
+| "valid at k of 7", either direction | **Not a method statistic** — the flips sort by interval width |
+| T1-B on the LIDC bank | **Refuted**, not blocked: the arc ratio beats the distance at +0.8524 vs −0.5046 |
+| D97's cross-family shelter | **Withdrawn** — the knob is undefined only as implemented |
+| w13 build | **Ruled out for this purpose**; +0.950 → +0.952 for ~25 GPU h |
+| Acquisition knob | Retired as a scalar; frozen as (views, arc, null-space dimension) |
+| New bank passes requested | **None.** Everything here is off files already delivered |
+
+**Amendment 20.** `GRID_CANNOT_DECORRELATE_DISTANCE` added, `TOOL2_CEILING_FAILS` rewritten,
+`BASELINE_COLLINEARITY` corrected in two places. Fingerprint `ba2ab7d6e338` →
+`979a8dab4176`. Nineteen tests added, including ones that recompute the +1.0000 arc
+duplication and the 1-in-24 ceiling from the stored numbers rather than asserting the prose.
+
+**No run is requested.** The diagnostic this entry originally asked for had already been
+done — T2.11 §1e's 13-split table — which is recorded above as the correction. Nothing in
+D102 waits on Track 2, and nothing waits on a bank pass.
