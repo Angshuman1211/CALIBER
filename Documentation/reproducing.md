@@ -26,7 +26,7 @@ The medical-prior results need M4Raw, TotalSegmentator and the two score models.
 
 ```bash
 pip install -e ".[dev,solvers,convert,figures]"
-python -m pytest -q          # 1,203 passed, 14 skipped at T2.11
+python -m pytest -q          # 1,210 passed, 14 skipped at T2.11
 ```
 
 The banks were built on one laptop GPU (RTX 3050, 6 GB) with `torch 2.13.0+cu126`. Every analysis runs on the CPU from a finished bank (score-bank rule 1). Two things from the problem log save time on Windows:
