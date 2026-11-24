@@ -40,6 +40,10 @@ class RegionTruth:
     err_free: Tensor  # region RMSE restricted to the free (null-space) component
     free_content: Tensor  # ||P_N x_true|| per region / ref -- the A1 denominator
     ann_coverage: Tensor  # fraction of the region covered by an annotation, or zeros
+    #: ``||P_N x_hat - P_N x_true||`` per region / ref: ``err_free`` from the two solves the
+    #: score and ``free_content`` already use, instead of a third. Equal to ``err_free``
+    #: for an exact projector; on CT the stopped CG is not additive and they differ (D94).
+    err_free_two_solve: Tensor | None = None
 
 
 def compute_region_truth(
@@ -70,9 +74,17 @@ def compute_region_truth(
     # free_content > tau) instead of an absolute constant, which D-020 showed
     # transfers neither across modalities nor across substrates within one.
     # Recorded, never thresholded here -- the bank stays re-thresholdable.
-    free_true = operator.project_null(x_true)
-    free_true = free_true.abs() if free_true.is_complex() else free_true.abs()
+    free_true_signed = operator.project_null(x_true)
+    free_true = free_true_signed.abs()
     free_content = grid.reduce(free_true, how="rms") / ref
+
+    # `err_free` above is a third solve, on the difference. This is the same quantity from
+    # the two solves behind `s_free` and `free_content`. With it the three magnitudes are
+    # the sides of one triangle, so the cos theta they give cannot leave [-1, 1]
+    # (Cauchy-Schwarz), whatever the projector's numerics. `project_null(mean_recon)` is
+    # deterministic, so it is the vector `s_free` was reduced from.
+    free_recon = operator.project_null(mean_recon)
+    two_solve = grid.reduce((free_recon - free_true_signed).abs(), how="rms") / ref
 
     if annotation is None:
         ann = torch.zeros(grid.n_regions, dtype=torch.float32)
@@ -84,6 +96,7 @@ def compute_region_truth(
         err_free=err_free.to(torch.float32),
         free_content=free_content.to(torch.float32),
         ann_coverage=ann,
+        err_free_two_solve=two_solve.to(torch.float32),
     )
 
 

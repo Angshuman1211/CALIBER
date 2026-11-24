@@ -31,8 +31,10 @@ the decision id in Part II where one exists, so the two halves cannot drift.
 error term as `P_N(x_hat) - P_N(x)`, and the 1e-3 guard applies to that channel, where
 Cauchy-Schwarz makes a breach a defect. The three-solve form stays as a logged diagnostic
 with no gate, and `err_free` is not replaced. This is for the next bank: the LIDC bank holds
-only the three columns it was written with and its reconstructions are not kept. Not yet
-built; open on Track 2 until the bank writer carries the second channel.
+only the three columns it was written with and its reconstructions are not kept. **Built, 24 Nov:**
+`err_free_two_solve` in `scoring/labels.py`, the schema and the runner, read by
+`label_comparison.py` (T2.11 Sec. 1l). It is on no bank yet, so the entry stays open until
+a bank that carries coverage is written with it.
 
 **Update, D89 and D91 (T2-A6).** Track 1 withdrew the question T2-A5 answered: a ratio
 formed from the same vectors in one solve cannot exceed 1 whatever the solver does, so the
