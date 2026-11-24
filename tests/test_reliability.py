@@ -12,12 +12,15 @@ magnitudes that were measured.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
 
+from caliber.calibration.conformal import split_threshold
 from caliber.evaluation import prereg
 from caliber.evaluation import reliability as R
+from caliber.reportability import COVERAGE, carries, describe
 
 
 # -- the Beta law --------------------------------------------------------------
@@ -1043,8 +1046,11 @@ def test_a_one_sided_partial_correlation_may_not_settle_attribution():
     assert "+0.068" in text and "+0.128" in text, (
         "both directions must be recorded, which is the whole point")
     assert "NOT shown to be explained" in text
-    entry = [t for _, t in prereg.AMENDMENTS if "BASELINE_COLLINEARITY" in t]
-    assert len(entry) == 1
+    entry = [t for _, t in prereg.AMENDMENTS
+             if t.startswith("BASELINE_COLLINEARITY and SPREAD_RESIDUAL_UNATTRIBUTABLE")]
+    assert len(entry) == 1, (
+        "select the amendment that ADDED the constant; a later one corrects it (D102) "
+        "and also names it, so a substring search over all amendments is ambiguous")
     assert "pre-specification was defective" in entry[0], (
         "the defect was in the test design, not the statistic, and must be legible")
     assert "both NARROW" in entry[0]
@@ -1161,3 +1167,434 @@ def test_the_cross_family_scope_is_where_the_knob_baseline_is_undefined():
     collin = " ".join(prereg.BASELINE_COLLINEARITY)
     assert "cross-family" in collin, (
         "and D97 must point at the same scope, or the two findings disagree")
+
+
+def test_the_old_bank_boolean_disagrees_with_the_coverage_claim_it_should_report():
+    """The defect Track 2 found in `tool2_holdout.py`'s header, pinned.
+
+    D-018's boolean is true only for a bank carrying *every* claim, so on a bank that
+    carries coverage and not detection it prints False -- beside the very coverage
+    certificate the script exists to write. The gate was always right; only the header
+    lied. If these two ever agree again, this test is the one to delete.
+    """
+    prov = {"dataset": "lidc_ct", "reportable": False,
+            "reportable_claims": ["coverage"]}
+    assert carries(prov, COVERAGE) is True, "the bank does carry coverage"
+    assert prov["reportable"] is False, "and the old boolean says otherwise"
+    assert "coverage" in describe(prov), "the header must read the claims"
+    assert "NOT REPORTABLE" not in describe(prov)
+
+
+def test_the_holdout_header_no_longer_prints_the_dead_boolean():
+    """A grep test, because the defect was a print and nothing else."""
+    source = (Path(__file__).resolve().parents[1]
+              / "scripts" / "tool2_holdout.py").read_text(encoding="utf-8")
+    assert "describe(provenance)" in source, "the header reads the claims"
+    assert "provenance.get('reportable')" not in source, (
+        "the D-018 boolean must not be printed beside a coverage certificate")
+
+
+def test_the_admissibility_rule_was_held_against_interest():
+    """D100: the rule stands, and the record says what taking the default cost."""
+    rule = " ".join(prereg.PRIOR_ADMISSIBILITY_UNCHANGED)
+    assert "unchanged" in rule
+    assert "looking like the only route to a positive T1-B" in rule, (
+        "the reason the request was tempting has to be in the record, or a later "
+        "reader cannot tell the ruling was not free")
+    assert "it was not even that" in rule, (
+        "and it must not overstate the temptation either: the rule change would not "
+        "have delivered the claim, which only the next day's data showed")
+    assert "APPARENT cost" in rule
+    assert "luck" in rule, (
+        "declining a rule change that would not have worked anyway costs nothing; "
+        "the record must not bank it as virtue")
+    entry = [(d, t) for d, t in prereg.AMENDMENTS
+             if "PRIOR_ADMISSIBILITY_UNCHANGED" in t]
+    assert len(entry) == 1
+    assert entry[0][0] == "2026-11-24"
+    assert "NARROWS" in entry[0][1]
+
+
+def test_d99s_single_binding_constraint_claim_is_withdrawn():
+    """A finding of mine from the previous day, withdrawn by the next day's data."""
+    text = " ".join(prereg.BANK_DISAGREEMENT_BLOCKS_T1B)
+    assert "WITHDRAWN" in text
+    assert "claim stamp" in text
+    assert "does not replicate" in text, (
+        "and the replacement has to name what the real block is")
+    assert "development value" in text, (
+        "the face-prior magnitude keeps a use; it just is not an estimate")
+
+
+def test_the_two_banks_disagree_in_sign_and_not_merely_in_power():
+    """Opposite direction verdicts are why neither bank stands in for the other."""
+    text = " ".join(prereg.BANK_DISAGREEMENT_BLOCKS_T1B)
+    assert "opposite" in text
+    coincidence = " ".join(prereg.FACE_BANK_DIRECTION_COINCIDENCE)
+    assert coincidence, "D96's fence must still exist beside this one"
+
+
+def test_the_tool2_headline_is_neither_arm_count():
+    """T1-C: what survives after the ceiling reading was withdrawn (D102).
+
+    This test asserted the oracle's 4 of 7 was the finding, written the day the two
+    T1-C runs arrived. It was wrong, and the falsification shipped with it is what
+    showed that, so the test is rewritten rather than deleted: the refusal and the
+    scope framing stand, the arm count does not.
+    """
+    text = " ".join(prereg.TOOL2_CEILING_FAILS)
+    assert "no validity claim and no efficiency claim" in text
+    assert "ceiling reaches only 4 of 7" not in text, (
+        "the withdrawn reading must not survive in the constant it was written into")
+    assert "SCOPE result" in text, (
+        "a within-operator failure is not a verdict on distance weighting")
+    assert "0.547" in text, (
+        "the retired nearest arm's defect is why an invalid arm's area may not be quoted")
+
+
+def test_the_tool2_validity_criterion_is_lenient_and_subject_clustered():
+    """Why the ceiling's failure reads as real rather than as low power.
+
+    `valid` is `hi >= nominal`: a wider interval makes a fold *easier* to pass, so a
+    thin fold cannot fail by thinness alone. Failing it means the whole clustered
+    interval sits below nominal.
+    """
+    source = (Path(__file__).resolve().parents[1]
+              / "scripts" / "tool2_holdout.py").read_text(encoding="utf-8")
+    assert 'bool(metrics["hi"] >= nominal)' in source, (
+        "if this becomes lo >= nominal the ceiling reading has to be redone")
+    assert 'ap.add_argument("--cluster", default="sample_id")' in source, (
+        "and the interval must stay subject-clustered, or amendment 17's unit error "
+        "is back in a second script")
+
+
+def test_the_conformal_threshold_errs_conservative_so_the_deficit_is_not_the_quantile():
+    """`split_threshold` floors, so under-coverage cannot be blamed on the rounding."""
+    rng = np.random.default_rng(0)
+    scores = rng.normal(size=400)
+    labels = np.ones(400, dtype=bool)
+    res = split_threshold(scores, labels, alpha=0.1)
+    k = int(np.floor(0.1 * (400 + 1)))
+    assert res.threshold == float(np.sort(scores)[k - 1])
+    assert k / 401 <= 0.1, "the realised miss rate is at or below the budget"
+
+
+def test_the_two_ct_banks_are_barred_as_interchangeable_evidence():
+    """D101: the bar exists because the best Tool 2 number is on the unstamped bank."""
+    text = " ".join(prereg.BANK_RESULTS_ARE_NOT_INTERCHANGEABLE)
+    assert "EITHER direction" in text, (
+        "the bar has to cut both ways or it is just a complaint about one bank")
+    assert "may not be cited as the Tool 2 result" in text
+    assert "nor may the LIDC bank's negatives be cited as refuting a method" in text, (
+        "T1-C's failure is within-operator; reading it as a refutation is the same "
+        "error with the sign flipped")
+
+
+def test_the_bar_does_not_pass_itself_off_as_a_measurement():
+    """Eight recorded numbers put in one table is not eight new findings."""
+    text = " ".join(prereg.BANK_RESULTS_ARE_NOT_INTERCHANGEABLE)
+    assert "adds no measurement" in text
+    assert "already recorded as open" in text, (
+        "two of the eight were open puzzles before today and must not be reclaimed")
+    entry = [(d, t) for d, t in prereg.AMENDMENTS
+             if "BANK_RESULTS_ARE_NOT_INTERCHANGEABLE" in t]
+    assert len(entry) == 1
+    assert "No measurement was made for this entry" in entry[0][1]
+    assert "NARROWS" in entry[0][1]
+
+
+def test_the_bar_records_what_still_stands_and_not_only_what_fell():
+    """A bar that lists only losses would misreport the project's state."""
+    text = " ".join(prereg.BANK_RESULTS_ARE_NOT_INTERCHANGEABLE)
+    assert "9 of 9 operators" in text, "the core result holds on the stamped bank"
+    assert "0.892 to 0.905" in text
+    assert "0 of 4 supported" in text, "and the refinements built on it do not"
+
+
+def test_the_withdrawn_headline_is_marked_where_someone_would_read_it():
+    """The §3c banner has to be in the status document, not only in the decision log.
+
+    A reader reaching for the project's Tool 2 number opens PROJECT_STATUS.md, not
+    problems_and_decisions.md. If the banner is lost in an edit, this fires.
+    """
+    status = (Path(__file__).resolve().parents[1]
+              / "Documentation" / "PROJECT_STATUS.md").read_text(encoding="utf-8")
+    assert "WITHDRAWN as a claim, D100 and D101" in status
+    assert "w07_ct_onboarding" in status, (
+        "the banner must name the bank, because naming it is the whole finding")
+    assert "NO LONGER TRUE, D82 and D-072" in status, (
+        "and the 'nothing is reportable' crux must be marked too")
+
+
+# -- D102: what the T1-C grid can and cannot answer ----------------------------
+
+
+def _spearman(a, b):
+    """Rank correlation, written out because scipy does not import in this environment."""
+    def rank(x):
+        order = sorted(range(len(x)), key=lambda i: x[i])
+        rk = [0.0] * len(x)
+        i = 0
+        while i < len(order):
+            j = i
+            while j + 1 < len(order) and x[order[j + 1]] == x[order[i]]:
+                j += 1
+            for t in range(i, j + 1):
+                rk[order[t]] = (i + j) / 2.0 + 1
+            i = j + 1
+        return rk
+
+    ra, rb = rank(a), rank(b)
+    n = len(ra)
+    ma, mb = sum(ra) / n, sum(rb) / n
+    num = sum((x - ma) * (y - mb) for x, y in zip(ra, rb))
+    den = (sum((x - ma) ** 2 for x in ra) * sum((y - mb) ** 2 for y in rb)) ** 0.5
+    return num / den
+
+
+#: The four operators of the bank of record that sit at 120 views, so that view count and
+#: null-space dimension are both constant across their six pairs. Arc in degrees, the
+#: calibration threshold as delivered in the T1-C per-pair table, and the measured
+#: null_space_growth distance for each pair.
+_ARC = {"a90": 90.0, "a120": 120.0, "a150": 150.0, "a180": 180.0}
+_TAU = {"a90": 0.0, "a120": 0.3567, "a150": 0.4854, "a180": 0.8412}
+_DIST = {
+    ("a150", "a180"): 0.1177,
+    ("a120", "a150"): 0.1189,
+    ("a90", "a120"): 0.1598,
+    ("a120", "a180"): 0.1685,
+    ("a90", "a150"): 0.2004,
+    ("a90", "a180"): 0.2217,
+}
+
+
+def test_the_decorrelated_subset_is_a_rank_duplicate_of_the_arc():
+    """The 120-view subset does not free the distance from the trivial scalars.
+
+    Holding the view count fixed leaves arc as the only thing that still varies among
+    those four operators, and on their six pairs the geometric distance ranks the pairs
+    exactly as the raw arc ratio does. So the subset swapped one confound for another.
+    """
+    pairs = list(_DIST)
+    dist = [_DIST[p] for p in pairs]
+    arc = [abs(math.log(_ARC[q] / _ARC[p])) for p, q in pairs]
+    dtau = [abs(_TAU[q] - _TAU[p]) for p, q in pairs]
+
+    assert _spearman(dist, arc) == pytest.approx(1.0), (
+        "distance and arc ratio must rank these six pairs identically")
+    r_dist = _spearman(dist, dtau)
+    r_arc = _spearman(arc, dtau)
+    assert r_dist == pytest.approx(0.9429, abs=5e-4)
+    assert r_arc == pytest.approx(r_dist), (
+        "the trivial scalar scores exactly what the distance scores, so the distance "
+        "adds nothing on the one decorrelated subset the bank offers")
+
+
+def test_the_subset_statistic_sits_at_its_own_attainable_maximum():
+    """+0.9429 is the ceiling of the statistic, not a draw from a wide null.
+
+    Six pairs built from four operators are not six independent observations, so the
+    null must permute the four operator labels, not the six pair values. Under that null
+    the observed value is the largest reachable and is reached once in 24.
+    """
+    import itertools
+
+    pairs = list(_DIST)
+    dist = [_DIST[p] for p in pairs]
+    ops = sorted(_ARC)
+    observed = _spearman(dist, [abs(_TAU[q] - _TAU[p]) for p, q in pairs])
+
+    reached = []
+    for perm in itertools.permutations(ops):
+        relab = dict(zip(ops, perm))
+        reached.append(
+            _spearman(dist, [abs(_TAU[relab[q]] - _TAU[relab[p]]) for p, q in pairs]))
+
+    assert max(reached) == pytest.approx(observed), (
+        "no relabelling beats the observed value, so it is the attainable maximum")
+    n_ge = sum(1 for r in reached if r >= observed - 1e-12)
+    assert n_ge == 1
+    assert len(reached) == 24
+    assert n_ge / len(reached) == pytest.approx(1.0 / 24.0), (
+        "p = 1/24 is this test's floor; it cannot report anything smaller")
+
+
+def test_the_720_ordering_null_is_the_anti_conservative_one():
+    """Permuting pair values instead of operator labels understates the p-value.
+
+    Recorded because the first version of this analysis used it and got p = 0.0167.
+    """
+    import itertools
+
+    pairs = list(_DIST)
+    dist = [_DIST[p] for p in pairs]
+    dtau = [abs(_TAU[q] - _TAU[p]) for p, q in pairs]
+    observed = _spearman(dist, dtau)
+
+    naive = [_spearman(dist, [dtau[i] for i in perm])
+             for perm in itertools.permutations(range(len(dtau)))]
+    p_naive = sum(1 for r in naive if abs(r) >= abs(observed) - 1e-12) / len(naive)
+    assert len(naive) == 720
+    assert p_naive < 1.0 / 24.0, (
+        "the pair-value null reports a smaller p than the label null, which is why it "
+        "is the wrong one here")
+
+
+def test_the_ceiling_reading_is_withdrawn_on_the_test_it_was_given():
+    """I set the falsification in advance and it fired, so the reading goes."""
+    text = " ".join(prereg.TOOL2_CEILING_FAILS)
+    assert "WITHDRAWN" in text
+    assert "not a per-fold bound" in text
+    assert "la120 and la90" in text, (
+        "the withdrawal must name the folds that did it, so it cannot be softened later")
+    assert "at least 3 folds are shut" not in text, (
+        "the withdrawn claim must not survive anywhere in the constant")
+
+
+def test_the_replacement_is_not_the_opposite_headline():
+    """Track 2's 'valid at 6 of 7' is read off the same criterion and fails the same way."""
+    text = " ".join(prereg.TOOL2_CEILING_FAILS)
+    assert "valid at 6 of 7" in text, (
+        "the constant has to name the rival headline it also refuses")
+    assert "8 have POINT" in text and "interval width alone" in text
+
+
+def test_the_own_operator_offset_is_attributed_to_the_registry_draw():
+    """The offset is a known low calibration draw, not an unexplained defect.
+
+    An earlier version of this test asserted "calibration defect" and that T1-C was
+    uninterpretable until it was resolved. T2.11 1e had already measured and explained
+    it, and Track 2 named that section in the message carrying the table. The constant
+    now has to hold the attribution and the correction together.
+    """
+    text = " ".join(prereg.TOOL2_CEILING_FAILS)
+    assert "0.8520 +/- 0.0144" in text
+    assert "0.8478-0.8666" in text and "0.8252-0.8664" in text, (
+        "the two family ranges must be quoted, because their overlap is the argument")
+    assert "REGISTRY split" in text and "rank" in text
+    assert "0.897" in text and "within 0.008" in text, (
+        "the 13-split mean is what shows the arm is sound")
+    assert "calibration defect and declared T1-C uninterpretable" in text, (
+        "the withdrawn reading must stay visible; it was sent to Track 2 before it "
+        "was caught")
+    assert "WRONG reference" in text
+
+
+def test_the_own_operator_arm_is_sound_against_the_right_reference():
+    """Compared to the matched control on its own split, the arm meets it everywhere."""
+    text = " ".join(prereg.TOOL2_CEILING_FAILS)
+    assert "meets or beats it at 7 of 7" in text
+    assert "+0.0195" in text
+    assert "0 of 4 sparse-view" in text, (
+        "and the verdict must be shown to survive, or the correction reads as a rescue")
+    assert "No efficiency claim is rescued" in text
+
+
+def test_validity_on_this_grid_tracks_interval_width():
+    """The valid/invalid flips sort perfectly by n, so they are not about the operator."""
+    text = " ".join(prereg.TOOL2_CEILING_FAILS)
+    assert "3 narrowest" in text and "EXACTLY the 3 invalid" in text
+    assert "detects n, not the method" in text
+
+
+def test_the_arms_cannot_be_ranked_from_this_design():
+    """One deployment operator per fold makes every arm a single threshold there."""
+    text = " ".join(prereg.TOOL2_CEILING_FAILS)
+    assert "ONE deployment operator" in text
+    assert "0 of 42" in text
+    assert "That is the design, not a result" in text, (
+        "the curve collapse must be labelled structural, or it reads as a measurement")
+
+
+def test_w13_is_ruled_out_with_the_number_that_rules_it_out():
+    """A build refusal has to carry its own evidence or it is only a preference."""
+    text = " ".join(prereg.GRID_CANNOT_DECORRELATE_DISTANCE)
+    assert "w13 is NOT to be built" in text
+    assert "+0.950" in text and "+0.952" in text, (
+        "the refusal rests on the blocking statistic barely moving")
+    assert "25 GPU hours" in text
+    assert "was never the binding confound" in text, (
+        "and on what the new operators do fix not being the thing in the way")
+
+
+def test_the_replacement_grid_design_is_named_and_not_merely_demanded():
+    text = " ".join(prereg.GRID_CANNOT_DECORRELATE_DISTANCE)
+    assert "SAME view count AND the same angular range" in text
+    assert "constant by construction" in text
+    assert "before building anything" in text, (
+        "the distance check comes before the build, which is what worked for w13")
+
+
+def test_the_single_acquisition_knob_is_retired_for_a_tuple():
+    """A knob that collapses distinct operators to zero flatters the thing it tests."""
+    text = " ".join(prereg.GRID_CANNOT_DECORRELATE_DISTANCE)
+    assert "_acquisition_knob" in text
+    assert "4 of 20 pairs" in text
+    assert "(views, arc, null-space dimension)" in text
+    assert "moves AGAINST T1-B" in text, (
+        "the direction of the fix is the point: it strengthens the baseline")
+
+
+def test_the_projection_measure_is_a_candidate_and_not_a_fix():
+    """Its decorrelation is partly compression, so it may not be adopted on those numbers."""
+    text = " ".join(prereg.GRID_CANNOT_DECORRELATE_DISTANCE)
+    assert "null_space_projection" in text
+    assert "cv 0.127 against" in text and "0.378" in text, (
+        "the range compression must be quoted next to the decorrelation")
+    assert "candidate to TEST against the gap, not a fix to adopt" in text
+
+
+def test_the_recurrence_is_logged_without_inventing_an_ordinal():
+    """The trap log needs the instance, not a count nothing in the repo substantiates.
+
+    An earlier draft wrote "Seventh recurrence". No project counter exists and the
+    standing ledger already held eight, so the ordinal was asserting a number it could
+    not support -- which is the same error the constant is about.
+    """
+    text = " ".join(prereg.GRID_CANNOT_DECORRELATE_DISTANCE)
+    assert "Another recurrence of the statistics trap" in text
+    assert "Seventh" not in text
+    assert "rival-predictor check" in text
+    entry = [(d, t) for d, t in prereg.AMENDMENTS
+             if "GRID_CANNOT_DECORRELATE_DISTANCE" in t]
+    assert len(entry) == 1
+    assert "WITHDRAWS A READING OF MY OWN ON THE TEST I SET FOR IT" in entry[0][1]
+    assert "rival-predictor check" in entry[0][1], (
+        "what caught it this time is worth recording, since a sign check would not have")
+
+
+def test_the_cross_family_shelter_is_withdrawn():
+    """D97 put T1-B's claim where no scalar knob was defined. One is defined there."""
+    text = " ".join(prereg.BASELINE_COLLINEARITY)
+    assert "WITHDRAWN 24 Nov (D102)" in text
+    assert "A scalar IS defined there" in text
+    assert "switches meaning by family" in text, (
+        "the undefined knob is an implementation artefact, which is the whole point")
+    assert "those 36 pairs are where T1-B's claim has to live'" in text, (
+        "the withdrawn sentence must be quoted, not paraphrased away")
+
+
+def test_the_knob_beats_the_distance_and_the_numbers_are_both_there():
+    """A refutation needs the rival's number beside its own or it is an assertion."""
+    text = " ".join(prereg.BASELINE_COLLINEARITY)
+    assert "+0.8524" in text and "-0.5046" in text
+    assert "REFUTED on its own response" in text
+    assert "3 values, 12 pairs each" in text, (
+        "the tie structure is a real weakness of the rival and must be stated with it")
+    assert "0.2395, 0.3682, 0.7250" in text, (
+        "and the group means, which is what makes the coarse predictor credible anyway")
+
+
+def test_the_within_family_collinearity_entries_still_stand():
+    """The correction must not take down the parts that were right."""
+    text = " ".join(prereg.BASELINE_COLLINEARITY)
+    assert "+0.92 to" in text and "+0.97 on both banks" in text
+    assert "no reanalysis of the existing 72 pairs can" in text, (
+        "the one forward-looking clause that survived has to survive explicitly")
+
+
+def test_the_face_bank_was_not_consulted_for_this_ruling():
+    """The non-interchangeability bar applies to me while I am using it."""
+    entry = [t for _, t in prereg.AMENDMENTS if "GRID_CANNOT_DECORRELATE_DISTANCE" in t]
+    assert len(entry) == 1
+    assert "face-prior bank was deliberately not consulted" in entry[0]
