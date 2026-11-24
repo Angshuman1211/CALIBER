@@ -1,0 +1,66 @@
+# Week 13 - the CT grid with interior operators (Track 1's D97, grid request).
+#
+#   D:/venvs/caliber-gpu/Scripts/python.exe -u -m caliber.runner \
+#       configs/experiments/w13_ct_lidc_interior_gpu.yaml --dry-run
+#
+# NOT BUILT. This file fixes the grid before a bank exists, which is what D97 asks for.
+#
+# w12_ct_lidc_gpu's grid is two one-dimensional arms: sparse view turns the view count at
+# a full arc, limited angle turns the arc at 120 views. Within an arm the operator distance
+# is close to a monotone function of the one knob that moved (+0.92 to +0.97), so the
+# views/arc baseline of T1-B is a near-duplicate of the distance and the within-family
+# comparison is not identified. No reanalysis of the 72 existing pairs recovers a contrast
+# the grid never varied.
+#
+# This grid is w12's nine operators, unchanged, plus two that move both knobs at once:
+# 90 views over 120 degrees and 60 views over 150 degrees. Everything else is w12's, so
+# the nine shared operators give the same draws as the bank of record (D-041) and the two
+# banks can be compared operator by operator.
+#
+# 11 operators x 100 subjects = 1,100 pairs; at w12's 83 s/pair about 25 h on the RTX 3050.
+# It is the first bank that would carry `err_free_two_solve` (T2.11 Sec. 1l).
+
+include: base
+
+experiment:
+  name: w13_ct_lidc_interior_gpu
+  solver:
+    name: ddnm
+    checkpoint: checkpoints/song_inverse_problems/ct2d_320_ncsnpp_ve
+    n_steps: 24
+    device: cuda
+    consistency_device: cuda
+  n_posterior: 4
+  operators:
+    - modality: ct
+      n_views: [180, 120, 90, 60, 45, 30]
+      angular_range_deg: 180.0
+    - modality: ct
+      n_views: 120
+      angular_range_deg: [150.0, 120.0, 90.0]
+    # interior: both knobs moved (D97)
+    - modality: ct
+      n_views: 90
+      angular_range_deg: 120.0
+    - modality: ct
+      n_views: 60
+      angular_range_deg: 150.0
+
+data:
+  image_shape: [320, 320]
+  dataset:
+    name: totalsegmentator
+    root: data/raw/totalsegmentator
+    split: auto
+    image_shape: [320, 320]
+    slices_per_volume: 1
+    intensity: volume_minmax
+    calib_fraction: 0.5
+    design_fraction: 0.10
+
+run:
+  limit: null
+  cache_reconstructions: 6
+  checkpoint_every: 10
+  scoring_device: cuda
+  skip_memory_check: true   # fitted to the 113M-parameter UNet, not this 4.1M NCSN++
