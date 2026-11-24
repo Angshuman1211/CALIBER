@@ -14,6 +14,15 @@ was low. :func:`worst_operator_coverage` therefore reports a Bonferroni-correcte
 bound that holds across all cells at once, which is the only one of the three numbers a
 certificate can be written from.
 
+**And that bound is in units of the design effect, which must be passed in (D98).** For six
+days this function fed Clopper-Pearson the raw region counts. A Clopper-Pearson bound is a
+Beta band -- the same object under its other name -- so it was the thing
+``prereg.BETA_REGION_COUNT_USE`` already forbade as a certificate, and the two names are why
+that went unnoticed. On the CT bank the design effects in the same frames are 47 to 186, and
+the shipped bound was too high by 0.20 to 0.38. ``design_effect_col`` now has no default and
+the function refuses to guess, exactly as ``TransferBetaReference.interval`` refuses without
+a unit, and for the same reason.
+
 **Calibration-conditional reliability.** Split conformal does not promise 0.90 on every
 calibration draw; it promises 0.90 on average over draws, and the spread around it is known
 exactly. With ``n`` positive calibration scores and ``k = floor(alpha(n+1))``, the threshold
@@ -434,7 +443,15 @@ def clopper_pearson_lower(caught: int, total: int, alpha: float) -> float:
 
 @dataclass(frozen=True)
 class WorstCell:
-    """The three numbers, kept apart on purpose."""
+    """The three numbers, kept apart on purpose.
+
+    **All three are in units of the design effect supplied (D98).** Before 24 November
+    2026 this class fed Clopper-Pearson the raw region counts, which treats every
+    hallucinated region as an independent Bernoulli trial. ``BETA_REGION_COUNT_USE``
+    already forbade that -- a Clopper-Pearson bound *is* a Beta band, under the other of
+    its two names, which is why nobody caught it for six days. The design effects sitting
+    in the same frames are 47 to 186, and the shipped bound was too high by 0.20 to 0.38.
+    """
 
     cell: str
     n_cells: int
@@ -446,6 +463,13 @@ class WorstCell:
     simultaneous_lower: float
     n_positives: int
     nominal: float
+    #: Design effect at the worst cell, and the median over cells. Carried so the bound
+    #: cannot be quoted without the quantity that sets its width.
+    design_effect_at_worst: float = 1.0
+    design_effect_median: float = 1.0
+    #: The independent-regions value, kept only to be SHOWN as the idealisation it is
+    #: (``BETA_REGION_COUNT_USE``). Never the certificate.
+    simultaneous_lower_regions: float = float("nan")
 
     @property
     def certifiable_at_nominal(self) -> bool:
@@ -463,6 +487,10 @@ class WorstCell:
             "n_positives_at_worst": self.n_positives,
             "nominal": self.nominal,
             "certifiable_at_nominal": self.certifiable_at_nominal,
+            "design_effect_at_worst": self.design_effect_at_worst,
+            "design_effect_median": self.design_effect_median,
+            "simultaneous_lower_regions": self.simultaneous_lower_regions,
+            "unit": prereg.BETA_REFERENCE_UNIT,
             "prereg": prereg.fingerprint(),
         }
 
@@ -473,15 +501,37 @@ def worst_operator_coverage(
     caught_col: str = "n_caught",
     total_col: str = "n_hallucinated",
     family_wise_alpha: float = FAMILY_WISE_ALPHA,
+    design_effect_col: str | None = None,
 ) -> WorstCell:
     """Minimum coverage over cells, with a bound a certificate can actually cite.
 
     ``per_cell`` carries one row per cell with the count of hallucinated regions and how
     many of them were flagged. Counts, not rates: an exact bound needs the denominator.
+
+    ``design_effect_col`` has **no default and must be named** (D98). Regions are not
+    independent -- this project measured 47 to 186 regions per effective unit on the CT
+    bank -- and a Clopper-Pearson bound on raw region counts is the Beta band that
+    ``prereg.BETA_REGION_COUNT_USE`` forbids as a certificate, under its other name. Pass
+    the column holding each cell's design effect; counts are divided by it before the
+    bound is taken. To get the independent-regions idealisation deliberately, pass
+    ``design_effect_col="__regions__"``, which is read from
+    :attr:`WorstCell.simultaneous_lower_regions` and is not a certificate.
     """
     for col in (cell_col, caught_col, total_col):
         if col not in per_cell.columns:
             raise KeyError(f"per-cell frame has no {col!r} column")
+    if design_effect_col is None:
+        raise ValueError(
+            "worst_operator_coverage needs design_effect_col named explicitly: regions are"
+            " not independent (47 to 186 per unit on the CT bank), so a bound on raw"
+            " region counts is the Beta band prereg.BETA_REGION_COUNT_USE bars from"
+            " certifying. Pass the design-effect column, or '__regions__' to ask for the"
+            " independent-regions idealisation on purpose."
+        )
+    regions_only = design_effect_col == "__regions__"
+    if not regions_only and design_effect_col not in per_cell.columns:
+        raise KeyError(f"per-cell frame has no {design_effect_col!r} column")
+
     usable = per_cell[per_cell[total_col] > 0].reset_index(drop=True)
     if usable.empty:
         raise ValueError("no cell has any hallucinated region, so there is no coverage to report")
@@ -492,19 +542,37 @@ def worst_operator_coverage(
     m = int(len(usable))
     worst = int(np.argmin(cov))
 
+    if regions_only:
+        deff = np.ones(m, dtype=float)
+    else:
+        deff = np.clip(usable[design_effect_col].to_numpy(dtype=float), 1.0, None)
+        if not np.all(np.isfinite(deff)):
+            raise ValueError(
+                f"{design_effect_col!r} holds a non-finite design effect; a certificate"
+                " cannot be written from a width that is not known"
+            )
+
+    def bound(i: int, level: float, scale: np.ndarray) -> float:
+        return clopper_pearson_lower(
+            int(round(caught[i] / scale[i])), int(round(total[i] / scale[i])), level
+        )
+
+    ones = np.ones(m, dtype=float)
     return WorstCell(
         cell=str(usable[cell_col].iloc[worst]),
         n_cells=m,
         observed_min=float(cov[worst]),
-        pointwise_lower=clopper_pearson_lower(
-            int(caught[worst]), int(total[worst]), family_wise_alpha
-        ),
+        pointwise_lower=bound(worst, family_wise_alpha, deff),
         simultaneous_lower=min(
-            clopper_pearson_lower(int(c), int(t), family_wise_alpha / m)
-            for c, t in zip(caught, total, strict=True)
+            bound(i, family_wise_alpha / m, deff) for i in range(m)
         ),
         n_positives=int(total[worst]),
         nominal=prereg.NOMINAL,
+        design_effect_at_worst=float(deff[worst]),
+        design_effect_median=float(np.median(deff)),
+        simultaneous_lower_regions=min(
+            bound(i, family_wise_alpha / m, ones) for i in range(m)
+        ),
     )
 
 

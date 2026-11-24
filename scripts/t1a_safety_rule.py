@@ -731,13 +731,22 @@ def main(argv: list[str] | None = None) -> int:
                 _cell=usable["calibration"] + " -> " + usable["deployment"]
             )
             cell_col = "_cell"
-        worst = worst_operator_coverage(usable, cell_col=cell_col)
+        # design_effect_col is required (D98): the bound is in effective units, not
+        # regions. Both frames carry design_effect per cell from the same bootstrap.
+        worst = worst_operator_coverage(
+            usable, cell_col=cell_col, design_effect_col="design_effect"
+        )
         print(f"  {name:<9} worst={worst.cell}")
         print(f"            observed_min={worst.observed_min:.4f} "
               f"pointwise_lower={worst.pointwise_lower:.4f} "
               f"simultaneous_lower={worst.simultaneous_lower:.4f} "
               f"over {worst.n_cells} cells -> certifiable_at_0.90="
               f"{worst.certifiable_at_nominal}")
+        print(f"            in EFFECTIVE UNITS at design effect "
+              f"{worst.design_effect_at_worst:.1f} (median "
+              f"{worst.design_effect_median:.1f}); the independent-regions "
+              f"idealisation would read "
+              f"{worst.simultaneous_lower_regions:.4f} and is not a certificate")
 
     if args.out:
         out = Path(args.out)
