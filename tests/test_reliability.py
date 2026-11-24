@@ -92,23 +92,28 @@ def _cells(coverages, n=100):
 
 def test_the_three_bounds_are_ordered_as_claimed():
     """simultaneous <= pointwise <= observed. Reversing any of these would be a bug."""
-    w = R.worst_operator_coverage(_cells([0.95, 0.92, 0.86, 0.91]))
+    w = R.worst_operator_coverage(_cells([0.95, 0.92, 0.86, 0.91]),
+                                  design_effect_col="__regions__")
     assert w.cell == "op2"
     assert w.observed_min == pytest.approx(0.86)
     assert w.simultaneous_lower <= w.pointwise_lower <= w.observed_min
 
 
 def test_a_well_covered_grid_certifies_and_a_poor_one_does_not():
-    good = R.worst_operator_coverage(_cells([0.99, 0.99, 0.985, 0.99], n=4000))
+    good = R.worst_operator_coverage(_cells([0.99, 0.99, 0.985, 0.99], n=4000),
+                                     design_effect_col="__regions__")
     assert good.certifiable_at_nominal
-    bad = R.worst_operator_coverage(_cells([0.95, 0.92, 0.72, 0.91]))
+    bad = R.worst_operator_coverage(_cells([0.95, 0.92, 0.72, 0.91]),
+                                    design_effect_col="__regions__")
     assert not bad.certifiable_at_nominal
 
 
 def test_more_cells_lower_the_simultaneous_bound_at_fixed_coverage():
     """The Bonferroni price for scanning a bigger grid, which must be visible."""
-    few = R.worst_operator_coverage(_cells([0.90] * 3))
-    many = R.worst_operator_coverage(_cells([0.90] * 30))
+    few = R.worst_operator_coverage(_cells([0.90] * 3),
+                                    design_effect_col="__regions__")
+    many = R.worst_operator_coverage(_cells([0.90] * 30),
+                                     design_effect_col="__regions__")
     assert many.simultaneous_lower < few.simultaneous_lower
 
 
@@ -121,7 +126,7 @@ def test_cells_with_no_positives_are_dropped_not_scored_as_zero():
             {"operator_id": "b", "n_caught": 0, "n_hallucinated": 0},
         ]
     )
-    w = R.worst_operator_coverage(frame)
+    w = R.worst_operator_coverage(frame, design_effect_col="__regions__")
     assert w.n_cells == 1 and w.cell == "a"
 
 
@@ -1052,3 +1057,107 @@ def test_the_sixteenth_amendment_keeps_the_single_widening_entry_unique():
     assert len(widening) == 1, "still exactly one amendment has moved an endpoint"
     for key in ("baseline_collinearity", "spread_residual_unattributable"):
         assert key in prereg.as_dict(), f"{key} must be exported in the fingerprint"
+
+
+# -- D98: the certificate number was in the wrong units ------------------------
+
+
+def test_the_worst_cell_bound_refuses_to_guess_the_unit():
+    """Same refusal TransferBetaReference.interval makes, for the same reason."""
+    with pytest.raises(ValueError, match="design_effect_col"):
+        R.worst_operator_coverage(_cells([0.95, 0.90, 0.88]))
+
+
+def test_the_design_effect_moves_the_certificate_and_regions_flatter_it():
+    """The defect's direction: regions give a HIGHER bound than effective units."""
+    frame = _cells([0.95, 0.92, 0.86, 0.91], n=2000).assign(design_effect=100.0)
+    eff = R.worst_operator_coverage(frame, design_effect_col="design_effect")
+    reg = R.worst_operator_coverage(frame, design_effect_col="__regions__")
+    assert eff.simultaneous_lower < reg.simultaneous_lower, (
+        "clustering must widen the bound downwards, which is what makes the old "
+        "region-count version anti-conservative")
+    assert eff.simultaneous_lower_regions == pytest.approx(reg.simultaneous_lower), (
+        "the idealisation is carried on the result so it can be shown, never cited")
+    assert eff.design_effect_at_worst == 100.0
+    assert eff.as_row()["unit"] == prereg.BETA_REFERENCE_UNIT
+
+
+def test_a_grid_that_certifies_on_regions_can_fail_on_effective_units():
+    """The live failure mode: a false certificate, not just a wrong number."""
+    frame = _cells([0.99, 0.99, 0.985, 0.99], n=4000).assign(design_effect=120.0)
+    assert R.worst_operator_coverage(
+        frame, design_effect_col="__regions__").certifiable_at_nominal
+    assert not R.worst_operator_coverage(
+        frame, design_effect_col="design_effect").certifiable_at_nominal, (
+        "this is the bug's teeth: the same grid certifies at 0.90 on independent "
+        "regions and does not once the measured clustering is carried")
+
+
+def test_a_non_finite_design_effect_is_refused():
+    frame = _cells([0.95, 0.90], n=500).assign(design_effect=[float("nan"), 50.0])
+    with pytest.raises(ValueError, match="non-finite"):
+        R.worst_operator_coverage(frame, design_effect_col="design_effect")
+
+
+def test_the_bar_names_the_aliases_it_has_to_cover():
+    """A bar in one vocabulary did not enforce itself over code in another."""
+    text = " ".join(prereg.EXACT_BINOMIAL_IS_A_BETA_BAND)
+    assert "Clopper-Pearson" in text, "the alias that slipped through must be named"
+    for alias in ("Wilson", "Jeffreys", "Agresti-Coull"):
+        assert alias in text, f"{alias} is the same error and must be barred by name"
+    assert "no\n default" in text or "no default" in text
+    entry = [t for _, t in prereg.AMENDMENTS if "EXACT_BINOMIAL_IS_A_BETA_BAND" in t]
+    assert len(entry) == 1
+    assert "FALSE CERTIFICATE" in entry[0], (
+        "the live failure mode, not just the wrong number, must be in the record")
+    assert "T1-C is unaffected" in entry[0], (
+        "what was checked rather than assumed must be recorded as checked")
+
+
+# -- D99: why the cross-family fit was inert, and which baselines bind there ----
+
+
+def test_the_frozen_direction_returns_the_training_mean_on_reversed_data():
+    """D91 called the cross-family fit 'inert' and the work plan blamed RANGE.
+
+    It is the direction. PAVA's non-decreasing fit to a decreasing truth is the
+    constant, exactly -- so every predictor ties at the training mean and the
+    deltas come out at zero. IsotonicFit's own docstring says so; this measures it,
+    because the remedy differs: a range problem needs a denser grid, a direction
+    problem is what amendment 7's rule already addresses.
+    """
+    from caliber.evaluation.gap import isotonic
+
+    rng = np.random.default_rng(0)
+    d = np.linspace(-0.5, 0.5, 30)
+    falling = -0.12 * d + 0.01 * rng.standard_normal(30)
+
+    frozen = isotonic(d, falling, direction="increasing").predict(d)
+    assert np.allclose(frozen, falling.mean(), atol=1e-12), (
+        "the frozen direction must collapse to the training mean exactly, which is "
+        "what makes every predictor tie and the delta vanish")
+    assert frozen.max() - frozen.min() == pytest.approx(0.0, abs=1e-12)
+
+    ruled = isotonic(d, falling, direction="decreasing").predict(d)
+    assert ruled.max() - ruled.min() > 0.9 * (falling.max() - falling.min()), (
+        "the rule's direction recovers nearly the whole response span, so the "
+        "signal was there and the frozen form could not see it")
+
+
+def test_the_cross_family_scope_is_where_the_knob_baseline_is_undefined():
+    """The scoped reading T1-B's claim rests on was pre-registered on 20 November."""
+    assert prereg.BASELINE_SCOPE["acquisition_parameter"] == (
+        "within-family pairs only; undefined across families")
+    assert "all pairs" in prereg.BASELINE_SCOPE["null_space_dimension"]
+    entry = [(d, t) for d, t in prereg.AMENDMENTS
+             if "GAP_PREDICTION_BASELINES scoped by family" in t]
+    assert len(entry) == 1, "the scoping amendment must be findable in the trail"
+    date, text = entry[0]
+    assert date == "2026-11-20", "and dated, because when it was fixed is the point"
+    assert "undefined on cross-family pairs" in text
+    assert "no coverage number in existence" in text, (
+        "the cross-family scope's baseline set was fixed before any coverage number, "
+        "which is the only reason a result may be read on that scope now")
+    collin = " ".join(prereg.BASELINE_COLLINEARITY)
+    assert "cross-family" in collin, (
+        "and D97 must point at the same scope, or the two findings disagree")

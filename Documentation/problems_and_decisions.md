@@ -3454,3 +3454,218 @@ disclose beside them -- as a hypothesis with a surviving falsifier, which is mor
 | Merge of Track 3's T3-A..T3-D | Clean; suite **1,183 passed, 7 skipped** |
 
 Amendment 16; fingerprint `9c0221cae495` -> `cc6bb1e631a7`. Suite 1,183 passed, 7 skipped.
+
+### D98 - T1-D's last blocked item was already run, and its certificate number was in the wrong units [T1-D, both banks, off Track 2's D94 logs; amendment 17]
+
+T1-D's remaining piece was worst-operator coverage -- *the minimum over cells, what a
+deployment certificate needs* -- recorded as blocked on Track 2's per-cell output. It was
+not blocked. `t1a_safety_rule.py` has called `worst_operator_coverage` since it was
+written, and the numbers were sitting in the `t1a_d94.log` files in the archive, under a
+heading that says `== T1-D worst cell ==`. Nobody read them, mine included; the work plan
+went on listing the row as T2-A dependent.
+
+#### 1. The number a certificate would have been written from was computed on independent regions
+
+`worst_operator_coverage` fed Clopper-Pearson the raw `n_hallucinated` count, which treats
+every hallucinated region as an independent Bernoulli trial. The design effects are in the
+same dataframe, in a column the function did not read: **47 to 186** on the CT bank.
+
+`BETA_REGION_COUNT_USE` has barred this since 22 November -- *no Beta band may set a gate;
+the clustered bootstrap is the only certificate path*. The function violated a bar that was
+already in force, for six days, because it called its band a **Clopper-Pearson interval**.
+An exact binomial bound *is* a Beta quantile; the implementation calls `_beta_ppf` on the
+next line. The bar and the violation were the same object under two names.
+
+Recomputed in effective units, both banks, matched and transfer:
+
+| bank | cell set | worst cell | observed min | shipped (regions) | corrected (effective units) | too high by |
+|---|---|---|---|---|---|---|
+| CT | matched, 9 | sv 120 | 0.7948 | 0.7725 | **0.3968** | 0.376 |
+| CT | transfer, 72 | la 90 -> sv 120 | 0.2690 | 0.2398 | **0.0365** | 0.203 |
+| face | matched, 9 | la 90 | 0.8551 | 0.8423 | **0.5185** | 0.324 |
+| face | transfer, 72 | sv 180 -> sv 30 | 0.6660 | 0.6423 | **0.4286** | 0.214 |
+
+**No verdict flips.** `certifiable_at_0.90` was already False in all four cases, so nothing
+published is wrong today. But the numbers would have been quoted, and the failure mode is
+live rather than hypothetical: a fixture that certifies at 0.90 on independent regions
+**stops certifying** once the measured clustering is carried. That is a false certificate,
+and it is now
+`test_a_grid_that_certifies_on_regions_can_fail_on_effective_units`.
+
+`design_effect_col` now takes no default and the function refuses rather than assumes --
+the same refusal `TransferBetaReference.interval` makes, for the same reason, after the same
+error. The independent-regions value is still computed and carried as
+`simultaneous_lower_regions`, labelled as the idealisation, so the gap between the two is
+visible instead of being a choice someone has to remember.
+
+**T1-C is unaffected, and this was checked rather than assumed.** Its per-fold validity runs
+through `cluster_bootstrap_coverage`, not through this function, so the thing built two days
+ago does not share the defect.
+
+#### 2. The third naming defect in three days
+
+- **D95:** `max_quantile`, one name with two opposite readings -- with flags at `score >= tau`
+  the largest and smallest per-group thresholds are different arms.
+- **D96:** `reportable`, one word with two orthogonal senses -- statistical and provenance --
+  which disagreed on all 72 face rows.
+- **D98:** Beta band and Clopper-Pearson, two names over one object, where a bar on the first
+  did not reach code that used the second.
+
+The lesson is not to choose better names. It is that **a rule stated in one vocabulary does
+not enforce itself over code written in another**, so a bar on a quantity has to name that
+quantity's aliases. `EXACT_BINOMIAL_IS_A_BETA_BAND` now does: Clopper-Pearson by name, and
+Wilson, Jeffreys and Agresti-Coull as the same error by whatever interval, since what is
+barred is treating regions as independent trials rather than any particular formula.
+
+#### 3. What T1-D now says, which is the project's thesis stated as a number
+
+On the **reportable** bank, with clustering carried:
+
+- At the **worst matched** operator, the simultaneous lower bound on coverage is **0.397**
+  against a nominal 0.90. Conformal calibration on its own operator cannot be certified at
+  0.90 here -- 41 subjects and a design effect of 186 at that cell leave the bound that
+  wide. This is a statement about the bank's power, not about conformal prediction.
+- At the **worst transfer** cell it is **0.0365**, with an observed minimum of **0.269**.
+
+The 0.269 is the number that matters and it is not a width artefact: a threshold calibrated
+on limited-angle 90 degrees and deployed on sparse-view 120 catches **27%** of
+hallucinated regions where it promises 90%. That is a 63-point shortfall, measured, on the
+bank whose coverage claims are reportable.
+
+**That is the project's motivating claim, stated as the thing it was always supposed to be:
+not that transfer degrades gracefully, but that a naive transferred certificate is wrong by
+enough to be dangerous.** It is also exactly the gap Tool 2 (T1-C) has to close, which makes
+T1-C's blocked bank pass the most valuable run outstanding -- there is now a measured
+63-point hole for it to be measured against.
+
+#### 4. Status
+
+| Item | State |
+|---|---|
+| T1-D worst-operator coverage | **DONE on both banks**; was never blocked, only unread |
+| Certificate bound's units | **Fixed**; design effect required, no default, refuses to guess |
+| Worst transfer cell, CT, reportable | **0.269 observed**, 0.0365 simultaneous, against 0.90 |
+| Worst matched cell, CT | 0.7948 observed, 0.397 simultaneous -- bank power, not a method failure |
+| Any verdict changed by the fix | **No**; all four were already not certifiable |
+| False-certificate path | **Closed**, and pinned by a test that fails if it reopens |
+| T1-C | Unaffected, checked; its validity is clustered |
+
+Amendment 17; fingerprint `cc6bb1e631a7` -> `f387c2b4f3ab`. Suite 1,191 passed, 7 skipped.
+
+### D99 - T1-B's cross-family fit was inert for the wrong recorded reason, and there is a claim behind the face bank's stamp [T1-B, local reconstruction, face bank DEVELOPMENT ONLY]
+
+D97 narrowed T1-B's claim onto the 36 cross-family pairs. The obvious objection is that
+this is where D91 recorded the estimator as **inert** -- *"distance = constant = views/arc =
+null-dim at MAE 0.0707 with delta exactly 0"* -- so the scope D97 points at would be the
+scope where nothing can be measured. That objection is wrong, for a reason the work plan
+had recorded incorrectly.
+
+#### 1. The inertness is the direction, not the range
+
+The work plan's caveat blames range: *"fitting on the 6 within-limited-angle pairs leaves
+78-93% of the held-out points outside the training range, where a monotone fit is clamped
+and is therefore a constant."* True for that one direction, and measured here on both
+banks:
+
+| train -> predict | CT, outside training span | face |
+|---|---|---|
+| sv->sv -> la->la | **0 of 6 (0%)** | **0 of 6 (0%)** |
+| la->la -> sv->sv | 28 of 30 (93%) | 26 of 30 (87%) |
+| sv->la -> la->sv | 5 of 18 (28%) | 4 of 18 (22%) |
+| la->sv -> sv->la | 5 of 18 (28%) | 4 of 18 (22%) |
+
+So range explains one of four directions and not the headline one: training on the 30
+sparse-view pairs leaves **nothing** out of range.
+
+The actual cause is the frozen direction. Measured on synthetic data with the CT bank's
+shape -- the gap *falls* with the signed distance (D89) -- PAVA's non-decreasing fit
+returns the training mean to machine precision:
+
+| direction | fitted span | equals training mean |
+|---|---|---|
+| increasing (frozen) | **0.000000** | **yes, to 1e-12** |
+| decreasing (the rule's call on CT) | 0.120984 of a 0.122199 response span | no |
+
+`IsotonicFit`'s own docstring already said this would happen. Nobody connected it to the
+"inert" verdict, and the work plan wrote down the wrong remedy as a result. **The remedies
+differ:** a range problem needs a denser grid, and a direction problem is what amendment 7's
+threshold-ordering rule already fixed. Pinned by
+`test_the_frozen_direction_returns_the_training_mean_on_reversed_data`.
+
+#### 2. So T1-B is blocked four ways, each for a different structural reason
+
+| scope / bank | state | why |
+|---|---|---|
+| CT, frozen direction | inert | direction refuted; PAVA returns the mean exactly |
+| CT, rule direction | barred | `GAP_DIRECTION_BANKS_BARRED` names `lidc_ct` |
+| face, rule direction | live | but the bank is `DEVELOPMENT ONLY` for coverage (D96) |
+| any bank, within-family | not identified | knob and distance +0.92 to +0.97 collinear (D97) |
+
+The binding constraint is therefore **the face bank's claim stamp** -- not the grid, not the
+estimator, not the distance measure. That makes the `restamp_bank.py` request from D96 the
+gate on T1-B's only live magnitude claim, which is a stronger reason to prioritise it than
+the one I gave Track 2.
+
+#### 3. Is there a claim behind that gate? Indicatively yes, and it is fragile
+
+Run on the face bank -- **DEVELOPMENT ONLY, no number here may be written up** -- to decide
+whether the restamp is worth prioritising, which is a legitimate use of a development bank
+and not a claim. Driven through `gap.py`'s own `folds`, `held_out` and `compare_to_baseline`
+rather than a reimplementation, with `meta` rebuilt from the operator ids and D93's resolved
+`null_space_dim = 102400 - 320*views`. The scope split comes out at 45 within-family and 36
+cross-family, matching `BASELINE_SCOPE` exactly, and `acquisition_parameter` is NaN on
+exactly those 36.
+
+Cross-family scope, `delta = mae_baseline - mae_method`, so positive favours the distance:
+
+| protocol | baseline | delta | interval | verdict |
+|---|---|---|---|---|
+| cross_family | constant | +0.0290 | [+0.0041, +0.0497] | distance_better |
+| cross_family | null_space_dimension | +0.0228 | [+0.0118, +0.0342] | distance_better |
+| cross_family | acquisition_parameter | -- | -- | undefined here (all 72 dropped) |
+| leave_one_operator_out | constant | +0.0295 | [+0.0023, +0.0541] | distance_better |
+| leave_one_operator_out | null_space_dimension | +0.0111 | **[-0.0005, +0.0246]** | indistinguishable |
+
+**One protocol passes and the other fails, by a lower bound of -0.0005.** That is a hair,
+and a hair is not a result. `GAP_PREDICTION_PROTOCOLS` freezes both protocols, so the
+honest summary is: the cross-family claim is **live, borderline and protocol-dependent**,
+and it would be decided by the real pipeline run rather than by this reconstruction.
+
+Two reasons not to lean on these numbers harder than that. **The reconstruction is not the
+run:** I set the matched diagonal's signed distance to 0.0 and rebuilt `meta`, both of which
+touch the training sets. Its `acquisition_parameter` deltas come out at +0.0042 and +0.0101
+against D93's recorded +0.006 [-0.001, +0.016] and +0.011 [-0.000, +0.024] -- same sign,
+same magnitude, same verdict, which validates the shape and not the digits. **And the
+within-family failure is the one D97 disqualified:** `acquisition_parameter` is the only
+baseline the distance does not separate from, at [-0.0002, +0.0080] and [-0.0015, +0.0190],
+and that comparison is exactly the unidentified one.
+
+The scoped reading this rests on was **not** chosen now. Amendment 2, 20 November: *"
+GAP_PREDICTION_BASELINES scoped by family and extended with null_space_dimension: the
+acquisition parameter is undefined on cross-family pairs. Found from the completed distance
+matrix, no coverage number in existence."* Verified in the trail rather than from the
+constant's docstring, and pinned by a test that asserts the date and the
+no-coverage-number stamp.
+
+#### 4. What this does not license
+
+D96's `FACE_BANK_DIRECTION_COINCIDENCE` still holds: on the face bank the rule's direction
+and the refuted `GAP_PREDICTION_DIRECTION` are the same shape, so none of the above is
+evidence for the frozen direction. It is a **magnitude** claim -- does the distance predict
+the gap better than the baselines defined on this scope -- which is a different question
+from the direction claim, and the two must not be run together in the write-up.
+
+No amendment: nothing frozen changed. Two tests added.
+
+#### 5. Status
+
+| Item | State |
+|---|---|
+| Why the cross-family fit was inert | **Direction, not range**; work plan's reason corrected |
+| Range on the headline direction | **0% out of span** on both banks |
+| T1-B binding constraint | **The face bank's claim stamp**, nothing else |
+| Cross-family claim behind that gate | **Live, borderline**: 1 of 2 protocols, by 0.0005 |
+| Within-family claim | Not identified (D97), and it is the only baseline that fails |
+| Evidence for the frozen direction | **None**, and face cannot provide it (D96) |
+
+Suite 1,193 passed, 7 skipped. Fingerprint unchanged at `f387c2b4f3ab`.

@@ -254,6 +254,29 @@ AMENDMENTS = (
         "is built, because no reanalysis of the existing 72 pairs can recover a "
         "contrast the grid never varied independently.",
     ),
+    (
+        "2026-11-24",
+        "EXACT_BINOMIAL_IS_A_BETA_BAND added; NARROWS. T1-D's worst-operator coverage -- "
+        "the number reliability.py's own docstring calls 'the only one of the three a "
+        "certificate can be written from' -- was computing Clopper-Pearson on raw REGION "
+        "counts, i.e. treating every hallucinated region as an independent Bernoulli "
+        "trial. BETA_REGION_COUNT_USE has barred exactly that since 22 November; the "
+        "function violated a bar that was already in force, for six days, because an "
+        "exact binomial bound IS a Beta quantile under a different name. Measured on both "
+        "banks, matched and transfer: the shipped bound was too high by 0.20 to 0.38, "
+        "against design effects of 47 to 186 sitting in the same frames. No published "
+        "verdict flips -- certifiable_at_0.90 was already False in all four cases -- but "
+        "the numbers were wrong and the failure mode was live: a fixture that certifies "
+        "at 0.90 on independent regions fails once the measured clustering is carried, "
+        "which is a FALSE CERTIFICATE and is now a test. design_effect_col takes no "
+        "default and the function refuses rather than assumes, as "
+        "TransferBetaReference.interval does. T1-C is unaffected: its validity runs "
+        "through cluster_bootstrap_coverage, which was checked rather than assumed. This "
+        "is the third naming defect in three days (max_quantile's two readings, "
+        "reportable's two senses, now two names over one object), so the entry also "
+        "records the general form: a bar written in one vocabulary does not enforce "
+        "itself over code written in another.",
+    ),
 )
 
 #: Miss-rate budget. Unchanged since Week 2; restated here so one import gives the
@@ -660,6 +683,34 @@ BETA_REGION_COUNT_USE = (
     " because the value is a property of the bank and assuming one is how regions got in",
 )
 
+#: **Every name the forbidden band travels under (D98, 24 November 2026).**
+#:
+#: ``BETA_REGION_COUNT_USE`` has barred a region-count Beta band from certifying since 22
+#: November. ``worst_operator_coverage`` went on computing one for six days, because it
+#: called it a Clopper-Pearson interval -- which is the same object: the exact binomial
+#: bound *is* a Beta quantile, and the implementation literally calls ``_beta_ppf``. The
+#: bar was in force, the code violated it, and the two names are the entire reason nobody
+#: saw it. The shipped bound was too high by 0.20 to 0.38 on both banks.
+#:
+#: **Third instance in three days of one concept under two names, or one name over two
+#: concepts.** ``max_quantile`` was one name with two opposite readings (D95). ``reportable``
+#: was one word with two orthogonal senses, statistical and provenance, which disagreed on
+#: all 72 face rows (D96). This is two names over one object. The lesson is not "choose
+#: better names": it is that a rule stated in one vocabulary does not enforce itself over
+#: code written in another, so a bar on a quantity has to name the quantity's aliases.
+EXACT_BINOMIAL_IS_A_BETA_BAND = (
+    "a Clopper-Pearson or exact binomial bound on region counts IS the Beta band"
+    " BETA_REGION_COUNT_USE bars from certifying; the names differ and the object does not",
+    "so is any Wilson, Jeffreys or Agresti-Coull interval taken over regions: what is"
+    " barred is treating regions as independent trials, by whatever interval",
+    "a bound that a certificate will cite must take its unit as an argument with no"
+    " default, and refuse rather than assume -- as TransferBetaReference.interval does",
+    "the independent-regions value may be carried and SHOWN beside it, labelled as the"
+    " idealisation, which is what makes the gap between them legible",
+    "a bar written in one vocabulary does not enforce itself over code written in"
+    " another; a bar on a quantity must name that quantity's aliases",
+)
+
 #: **The form of the failure mode this project had not yet seen.** Frozen before the
 #: follow-up number exists, because the warning is worth nothing after it does.
 #:
@@ -1029,6 +1080,7 @@ def as_dict() -> dict[str, object]:
         "transfer_spread_prediction": list(TRANSFER_SPREAD_PREDICTION),
         "gap_barred_predictors": list(GAP_BARRED_PREDICTORS),
         "gap_face_bank_prediction": list(GAP_FACE_BANK_PREDICTION),
+        "exact_binomial_is_a_beta_band": list(EXACT_BINOMIAL_IS_A_BETA_BAND),
         "baseline_collinearity": list(BASELINE_COLLINEARITY),
         "spread_residual_unattributable": list(SPREAD_RESIDUAL_UNATTRIBUTABLE),
         "face_bank_direction_coincidence": list(FACE_BANK_DIRECTION_COINCIDENCE),
