@@ -66,6 +66,7 @@ COLUMNS: dict[str, str] = {
     "err_total": "float32",
     "err_free": "float32",
     "free_content": "float32",
+    "err_free_two_solve": "float32",
     "ann_coverage": "float32",
     "ref_intensity": "float32",
 }
@@ -85,7 +86,16 @@ COLUMNS: dict[str, str] = {
 # needs no ground truth and is therefore available at deployment. Added by the
 # same additive, nullable mechanism, so every bank written before it still
 # validates and no SCHEMA_VERSION bump is needed (spec section 6).
-NULLABLE_COLUMNS = frozenset({"free_content", "s_range"})
+#
+# `err_free_two_solve` = ||P_N x_hat - P_N x_true|| per region / ref_intensity: the same
+# quantity as `err_free`, formed as the difference of the two null-space solves that
+# `s_free` and `free_content` already come from, instead of a third solve on the
+# difference (T2.11 Sec. 1j, D94). An exact projector makes the two equal. The CT
+# projector is a stopped CG and is not additive, so `err_free` breaks the law of cosines
+# that ties the three columns and `cos theta` can leave [-1, 1]; with this column it
+# cannot, by Cauchy-Schwarz. `err_free` is unchanged and stays the label's column. Banks
+# written before this column existed carry it as NaN.
+NULLABLE_COLUMNS = frozenset({"free_content", "s_range", "err_free_two_solve"})
 
 # Uniquely identifies a row; duplicates indicate a double-write.
 KEY_COLUMNS = (

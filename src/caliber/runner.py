@@ -348,6 +348,7 @@ def run(cfg: dict[str, Any], dry_run: bool = False) -> Path:
                     "err_total": truth.err_total.tolist(),
                     "err_free": truth.err_free.tolist(),
                     "free_content": truth.free_content.tolist(),
+                    "err_free_two_solve": truth.err_free_two_solve.tolist(),
                     "ann_coverage": truth.ann_coverage.tolist(),
                 },
             )

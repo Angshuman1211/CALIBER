@@ -71,7 +71,25 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
-    residual = identity_residual(raw["s_free"], raw["free_content"], raw["err_free"])
+    # D94: the reported cos theta is formed from two solves, and the guard applies there,
+    # where Cauchy-Schwarz makes a breach a defect. The three-solve form is logged, ungated.
+    # `raw` keeps err_free as written: the absolute label thresholds it and is not touched.
+    cos_bank = raw
+    two = raw["err_free_two_solve"] if "err_free_two_solve" in raw.columns else None
+    if two is not None and two.notna().all():
+        s3, c3, e3 = (raw[k].to_numpy(dtype=float) for k in ("s_free", "free_content", "err_free"))
+        ok = (s3 > 1e-3) & (c3 > 1e-3)
+        cos3 = (s3[ok] ** 2 + c3[ok] ** 2 - e3[ok] ** 2) / (2.0 * s3[ok] * c3[ok])
+        print(f"[label] three-solve cos theta (diagnostic, no gate): {int((np.abs(cos3) > 1).sum()):,} "
+              f"of {int(ok.sum()):,} regions outside [-1, 1], largest excess "
+              f"{max(float(np.abs(cos3).max()) - 1.0, 0.0):.4f}")
+        cos_bank = raw.assign(err_free=two)
+        print("[label] cos theta below is the two-solve channel (err_free_two_solve)")
+    else:
+        print("[label] this bank has no two-solve channel; cos theta is the three-solve form, "
+              "which a non-additive projector can push outside [-1, 1] (T2.11 Sec. 1j)")
+    residual = identity_residual(cos_bank["s_free"], cos_bank["free_content"],
+                                 cos_bank["err_free"])
     print(f"[label] identity check on {int(residual['n']):,} regions: median relative "
           f"residual {residual['median_relative']:.2e}, max {residual['max_relative']:.2e}")
     if not np.isfinite(residual["max_relative"]) or residual["max_relative"] > 1e-3:
@@ -91,11 +109,12 @@ def main(argv: list[str] | None = None) -> int:
     rows = []
     for name in COMPARED:
         try:
-            spec = label_spec(raw, name)
+            source = cos_bank if name == "alignment" else raw
+            spec = label_spec(source, name)
         except ValueError as exc:
             print(f"[label] {name}: {exc}", file=sys.stderr)
             continue
-        scored = derive_score_and_label(raw, args.calibration_operator, **spec.kwargs)
+        scored = derive_score_and_label(source, args.calibration_operator, **spec.kwargs)
         if name == "alignment":
             cos = scored["cos_theta"].to_numpy(dtype=float)
             defined = np.isfinite(cos)
