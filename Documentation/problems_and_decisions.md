@@ -3863,7 +3863,7 @@ Sorting Track 1's results by which bank carries them:
 | result | bank | state |
 |---|---|---|
 | coverage fails under operator shift, graded | both | **holds** |
-| group-conditional calibration restores nominal | LIDC | **holds**, 9 of 9 operators, 0.892 to 0.905 |
+| group-conditional calibration restores nominal | LIDC | **holds**, 9 of 9 operators, 0.892 to 0.905 **as the mean over 13 patient splits** (0.795–0.856 on the registry split alone, 0 of 9 at nominal; per-draw sd 0.051) |
 | signed distance orders the gap, rho = +0.976 | face-prior | 8 pairs, 13-split means |
 | T1-A safety rule | LIDC | **REFUTED** (D89): pooled false-safe 0.361 [0.09, 0.67] against trivial 0.319 |
 | T1-B gap prediction | LIDC | reportable on **0 of 4** cells (D91); blocked entirely (D100) |
@@ -4113,3 +4113,147 @@ duplication and the 1-in-24 ceiling from the stored numbers rather than assertin
 **No run is requested.** The diagnostic this entry originally asked for had already been
 done — T2.11 §1e's 13-split table — which is recorded above as the correction. Nothing in
 D102 waits on Track 2, and nothing waits on a bank pass.
+
+---
+
+### D103 — A frozen declaration's justification was wrong by 8×, the declaration was right, and the banner's "merely unreviewed" sections were the ones carrying inversions (26 Nov)
+
+**No bank pass, no new run.** Everything here is off `ordered_pairs.csv` and
+`matched_control.csv` as delivered in `d94_results_for_angshuman.zip`, plus T2.11 §1e's
+published table and the repository's own documents. The face-prior bank was not consulted.
+
+#### 1. What prompted it
+
+D101's banner on `PROJECT_STATUS.md` said six sections were *inverted* and that §2, §4 and
+§7 were "still unreviewed". Reading them is what this entry is. **Stale and inverted are not
+the same thing, and only reading finds out which a section is** — on 24 Nov the same banner
+had written §3a and §3b off the same way, and both turned out to be inversions.
+
+| section | what it said | state |
+|---|---|---|
+| §4c | the surviving cross-domain claim includes "the distance ordering demonstrated where the distance is a genuine scalar" | **inverted.** That is the clause D102 refuted: arc ratio +0.8524 against the distance's −0.5046 |
+| §4d | weight sensitivity "established at 9 of 11 weightings" | **unlabelled face-prior number.** `random1d R2 → R8`, T2.9 §5. Never run on a stamped bank |
+| §5a | the M4Raw deadlock is "stuck, neither has moved in three weeks" | **resolved by D82**, which is in this log |
+| §5b | "CT is where the results are strongest anyway: ρ = +0.976, the Tool 2 win, the graded failure" | **two of three withdrawn** — by the run this section successfully argued for |
+| §7a | "Eight times now… five of the eight were Track 1's own" | **miscounted its own table** (six of eight), and was missing D102's instance |
+| §7c | four live risks | **three closed, one obsolete.** T3.6/T3.7 exist, the deadlock is resolved, the licence is settled, "nothing reportable" went with D82 |
+| §1 | T3.6 and T3.7 "do not exist" | **contradicted Appendix B of the same file**, which was corrected on 24 Nov and says they do |
+| §2 | Tool 2 is "the primary novel contribution" | kept, with a pointer: that is a statement about *ambition*. On the stamped bank Tool 1 is 9 of 9 and Tool 2 is 0 of 2 claims |
+| §3d, §4b, §6, §7b | — | **survived review unchanged** |
+
+#### 2. The measurement: `GAP_DEFINITION_SENSITIVITY`'s reason
+
+`GAP_DEFINITION` was declared in advance (D88) and the module justified naming it then:
+
+> On T2-A's bank the two differ by the matched-cell spread (0.892 to 0.905, so at most about
+> 0.013) against gaps reaching 0.5, so the choice should not change the verdict.
+
+`0.892 to 0.905` is **the 13-split mean**, and every T1-B and T1-C number is on the registry
+split. The two definitions differ by exactly `matched(b) − 0.90`, so:
+
+| estimator | offset range | max \|offset\| | one-signed? | share of the median gap |
+|---|---|---|---|---|
+| 13-split mean | −0.0080 to +0.0050 | 0.0080 | 7 of 9 negative | ~6% |
+| **registry split** | **−0.1052 to −0.0441** | **0.1052** | **9 of 9 negative** | **~55%** |
+
+**Eight times the quoted bound, and one-signed at every operator.** The docstring argued the
+choice was harmless *because the difference was small*; on the split the analyses actually ran
+on, it is not small.
+
+**The conclusion was already established, by this log, before I measured anything.** This is
+rule 7 again — *read the document that already has the data* — and it narrows what is left of
+this entry to a documentation defect. Three things were already recorded:
+
+- **D88 §(sensitivity) runs all four arm × definition combinations "every time"**, and D91
+  reports T1-B's verdict as the **same in all four**. The empirical question was answered.
+- **D88 recorded the prediction before the fit:** *"the registry arm and the across-split arm
+  will agree far more closely for the gap than they do for the level."* That is exactly what
+  the rank agreement below shows. A confirmed pre-registered prediction, not a discovery.
+- **D86 already had the magnitude:** Track 2's numbers put the registry displacement at a
+  median **−0.061** on transfer cells "and a comparable amount on matched ones". My measured
+  median matched offset is **0.0626**, which agrees — so the project held a number eight times
+  the docstring's bound and the docstring was never updated.
+
+**So the finding is narrow and it is real: a frozen module states a bound its own project had
+already measured to be eight times larger.** Not a measurement discovery. The reason survives
+being wrong only because the rank structure saves it, and that structure is recorded in D88,
+not in the docstring that needed it.
+
+The offset barely moves the *ranks*, so the two definitions order the 72 pairs almost
+identically — which is the confirmation of D88's prediction, now with the pair-level numbers:
+
+| | all 72 | within-family 36 | cross-family 36 |
+|---|---|---|---|
+| ρ(gap_matched, gap_nominal), registry split | +0.9945 | +0.9755 | +0.9951 |
+| ρ(gap_matched, gap_nominal), 13-split mean | +0.9975 | +0.9972 | +0.9892 |
+| largest shift in ρ(signed_distance, gap) | 0.0220 | 0.0497 | 0.0273 |
+
+No cell changes sign under either definition on either estimator. So `GAP_DEFINITION` stands
+and its *argument* is replaced — **a frozen choice whose justification was wrong while the
+choice itself was right.** Recording that distinction is the point; the alternative is to
+discover later that a declaration rests on an eight-fold arithmetic error and have to decide
+in a hurry whether the choice goes with it.
+
+**What I actually contributed here, stated plainly:** the correction to the docstring, the
+qualifier moving into code behind a test, and the pair-level rank numbers that D88 had
+predicted but not tabulated at this granularity. Not the conclusion, which D91 had, and not
+the displacement magnitude, which D86 had. The honest summary is that **a third reading of my
+own found the same registry-split confusion in a third place, and this time the project's own
+log had already corrected the arithmetic and nobody had carried it into the module.**
+
+#### 3. What this is NOT
+
+- **Not a result about the declared predictor.** `signed_distance` is the column the bank
+  ships; `GAP_PREDICTION_DISTANCE` is `null_space_growth`, which is **not in
+  `ordered_pairs.csv`**. Nothing here evaluates it.
+- **Not a new refutation.** The within-family ρ(signed_distance, gap) ≈ **−0.70** on both
+  estimators is the downhill-over-covers / uphill-under-covers asymmetry already listed in
+  `GAP_DECLARATION_KNEW`. It is not D102's finding again and must not be quoted as one.
+- **Not an eighth disagreement.** The operator-name → id mapping for §1e's table was verified
+  against `matched_control.csv`'s independent registry column at 9 of 9 operators *before*
+  anything was computed from it. Had it failed, every number above would be a different
+  operator's.
+- **Not a new empirical result at all.** See §2: D91 had the verdict, D88 had the prediction,
+  D86 had the magnitude. Anyone citing D103 as evidence that the gap definition does not
+  matter should cite **D91** instead, which tested it.
+
+#### 4. The qualifier is now in code, not only in prose
+
+The 24 Nov correction established that `0.892 to 0.905` must always carry "as the mean over 13
+patient splits". It was then applied to `PROJECT_STATUS.md` and nowhere else. Two frozen
+constants still quoted it bare — `BANK_RESULTS_ARE_NOT_INTERCHANGEABLE`, which is the constant
+that states *what survives*, and `GAP_DECLARATION_KNEW`. Both now carry both estimators, and
+`test_no_frozen_string_quotes_the_headline_bare` fails on any frozen string that mentions
+0.892 without naming an estimator. **This is the third place the registry-split/13-split
+confusion has appeared** (the others: D102 §2's "calibration defect", and this entry's §2), so
+the rule is now a test rather than a habit.
+
+**And it has to be a test, because the fingerprint cannot see either defect.** `as_dict()`
+stores amendments as `[date for date, _ in AMENDMENTS]` — dates only, no prose — and `#:`
+docstring comments are not in it at all. So **both of the things this entry corrects are
+invisible to `fingerprint()`**: a module whose stated reasoning is wrong by 8× fingerprints
+identically to one whose reasoning is right. That is the correct design — the fingerprint
+identifies the *configuration*, so that two result tables with the same stamp were produced
+under the same choices — but it means the stamp is no guarantee that the recorded *reasons*
+are sound, and nothing but a test will catch a reason that rots. Worth knowing before anyone
+treats a matching fingerprint as a clean bill of health.
+
+#### 5. Two counting errors of my own, in the same session
+
+`PROJECT_STATUS.md` §7a said "five of the eight were Track 1's own" where its own table shows
+six, and the memory ledger carried "six of the nine" where its table shows seven. Both are the
+ordinal D102 added a rule against — *check an ordinal before writing it* — broken twice more
+while writing the rule's enforcement. §7a now has an **owner column**, so the count is
+checkable against the table instead of asserted beside it. The fix is structural, because the
+rule by itself has now failed three times.
+
+#### 6. Status
+
+| item | state |
+|---|---|
+| `GAP_DEFINITION`, `GAP_DEFINITION_SENSITIVITY` | **unchanged.** Reason replaced, declaration kept |
+| 13-split qualifier | in `prereg`, enforced by test |
+| `PROJECT_STATUS.md` | every section now read against D85–D102; four sections survived unchanged |
+| Amendment | **21**, fingerprint `979a8dab4176` → `65e39284b403` |
+| Tests | **1,237 passing, 7 skipped**; 7 added, all recomputing from the stored table |
+| New run requested | **None**, of either partner |

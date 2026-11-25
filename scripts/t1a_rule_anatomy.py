@@ -65,7 +65,16 @@ QUOTED_COVERAGE = {
 }
 
 #: The matched arm, all nine operators, same source. A range, not a point.
+#:
+#: **Estimator, spelled out here because this constant gets imported alone (D103):** this is
+#: the mean over **13 patient splits**. On the registry split -- the reporting split, and the
+#: one every T1-B and T1-C number is on -- the same arm is **0.795 to 0.856**, mean 0.831,
+#: with 0 of 9 operators at nominal. Comparing a registry-split coverage against this range
+#: compares two different estimators and will read as a defect that is not there; that is
+#: exactly what D102 2 did.
 MATCHED_RANGE = (0.892, 0.905)
+MATCHED_RANGE_ESTIMATOR = "across_split_mean"
+MATCHED_RANGE_REGISTRY_SPLIT = (0.795, 0.856)
 
 #: The one bit, and where it comes from. ``limited_angle`` sits above every sparse-view
 #: operator in threshold order; read off the sv->la cell, which holds no unsafe pair.

@@ -1,20 +1,29 @@
 # CALIBER — Project Status, Results, Problems and Gaps
 
-**Date:** 17 November 2026 · **Week 11** · **Phase 3 of 4**
-**PARTIALLY UPDATED 24 November 2026 (Week 12) through D102.** The body below is the
-17 November text. Eighteen decisions landed after it (D85-D102), including the LIDC bank's
-build and stamp and negative results on all four of Track 1's measurement tasks. Six
-places where the 17 November text is now *inverted* rather than merely stale are marked
-inline: §1 (three rows), §3a, §3b, §3c, §5 and §6 -- §3a and §3b added 24 Nov by sweeping
-what this banner had written off as merely unreviewed. **Both appendices were rewritten the
-same day**: Appendix A was quoting two withdrawn Tool 2 rows, an unlabelled face-prior
-coverage pair and a test count of 836, and Appendix B had the wrong range for every log and
-claimed two Track 3 documents do not exist. §2, §4 and §7 are still unreviewed against
-D85-D102, and **§8 was rewritten the same day** (its first two critical-path items were
-already done and its publication paragraph still listed two withdrawn claims as paper
-content) --
-read the decision log from D85 for anything load-bearing. **D102 withdrew two readings of
-Track 1's own**, so where this file and the decision log disagree, the log is right.
+**Date:** 17 November 2026 · **Week 11** · **Phase 3 of 4**  · *reviewed through D103, 26 November*
+**UPDATED 24-26 November 2026 (Week 12) through D102. Every section has now been read
+against D85-D102.** The body below is still the 17 November prose; the eighteen decisions
+that landed after it (D85-D102, the LIDC bank's build and stamp, and negative results on all
+four of Track 1's measurement tasks) are marked inline rather than rewritten, so that what
+was claimed stays visible beside what replaced it.
+
+**Sections carrying an inversion mark:** §1 (three rows and the "does not exist" list), §2,
+§3a, §3b, §3c, §4a, §4c, §4d, §5, §5a, §5b, §6, §7a, §7c. §8 and both appendices were
+rewritten outright. **Only §3d, §4b and §7b survived their review unchanged** — the three
+named here, and no count is given of the rest because the two lists above are the count.
+§6 is in the list because it still said "log runs to D101" and called T1-B
+*blocked*, which D102 upgraded to *refuted*; it had been marked on 24 Nov and went stale
+again within two days, which is what a file of this age does between readings.
+
+**The sweep was worth more than the banner it replaces.** On 24 Nov it had written §2, §4
+and §7 off as "merely unreviewed" — and §4c turned out to state the D102-refuted distance
+ordering as the project's surviving cross-domain claim, §4d to quote a face-prior number
+with no bank label, §5a to describe a deadlock D82 had already resolved, §5b to justify the
+LIDC run by two claims that run withdrew, §7a to miscount its own table, and §7c to list
+four risks of which three are closed and one is obsolete. **Stale and inverted are not the
+same thing, and only reading finds out which a section is.** Read the decision log from D85
+for anything load-bearing. **D102 withdrew two readings of Track 1's own**, so where this
+file and the decision log disagree, the log is right.
 **Scope:** the whole project, all three tracks, written to be read end to end.
 **Audience:** the three track owners, and anyone who needs the state of the project without reading twenty documents.
 
@@ -50,7 +59,16 @@ Track 1's own**, so where this file and the decision log disagree, the log is ri
 
 ### What does not exist
 
-- **T3.6** (bound against measurement) and **T3.7** (analytical authoring) — two of twenty-one tasks, and the whole of the project's third front.
+- ~~**T3.6** (bound against measurement) and **T3.7** (analytical authoring) — two of
+  twenty-one tasks, and the whole of the project's third front.~~ **OBSOLETE (26 Nov).**
+  Both documents exist and both tasks are run; Appendix B of this same file already said so
+  while this line said the opposite. T3.6 reports the bound holding at **72 of 72** ordered
+  pairs on the **stamped LIDC bank**, close to attained where under-coverage is real
+  (tightness median 0.72). What does not exist is now only the *positive* form of T3.6's
+  row 5: within family the operator distance does not order the score-law shift (ρ −0.16
+  to +0.18 on 66 of 72 pairs), which is the same verdict D102 reached from the other side.
+- **Nothing else.** All twenty-one tasks have a document; what is missing is claims, not
+  deliverables.
 - ~~**A single reportable number.** Every bank fails a gate (§5).~~ **OBSOLETE, D82 and D-072.** The LIDC CT bank carries **coverage** claims. What is true instead, per D101: the core demonstration and the group-conditional fix are supported on that bank at 9 of 9 operators, and **0 of 4** operator-aware refinements are.
 
 ---
@@ -73,7 +91,15 @@ limited-angle CT). III — theory (an operator-distance coverage bound, staged L
 
 **Three tools, in increasing ambition.** 1 — group-conditional calibration (guaranteed
 backbone, exact for a known finite operator set). 2 — operator-distance weighted
-recalibration (the primary novel contribution). 3 — the coverage-gap bound.
+recalibration (the primary novel contribution *as designed*). 3 — the coverage-gap bound.
+
+> **Read "primary novel contribution" as a statement about ambition, not about results
+> (D101, D102).** It is what the project set out to contribute and it is why the design is
+> shaped this way. On the one bank that carries claims, Tool 1 is supported at 9 of 9
+> operators and **Tool 2 has no positive result at all** — no validity claim and no
+> efficiency claim (§3c). Tool 3's bound holds at 72 of 72 pairs but its ordering row is
+> negative. A reader who takes this sentence as a results summary gets the project exactly
+> backwards, which is the error §3c sat in for a week.
 
 **Architecture.** A score bank: reconstructions and non-conformity scores computed once on
 GPU across the operator grid and cached. Every calibration experiment, coverage curve and
@@ -170,7 +196,7 @@ on the CT bank that carries claims either (D102)** — see the banner above.
 **Six places in this document were inverted rather than stale, not five.** §3b was the sixth
 and was found by sweeping the sections the banner had declared unreviewed.
 
-### 3c. Tool 2 — the primary contribution — works where it was argued to
+### 3c. ~~Tool 2 — the primary contribution — works where it was argued to~~ — **WITHDRAWN (D100/D101)**
 
 > **WITHDRAWN as a claim, D100 and D101 (24 Nov). Kept as development output.** The bank
 > here is `runs/w07_ct_onboarding` — the **face-prior** bank, `claims [] -> none`. Two
@@ -265,7 +291,9 @@ confirmed independently by Stage 2:
 transfers better at **12** and CALIBER at **1** — and that one interval clears zero by 0.002.
 
 **On the medical prior it is no better**: the score beats the anatomy control at 1 of 8
-operators, and `s_disagree` alone out-ranks the combined score.
+operators, and `s_disagree` alone out-ranks the combined score. That is the **M4Raw + BraTS
+MRI** bank, 8 operators (T2.10). §4b's *0 of 9* is the **CT** bank's 9 operators (T2.9 §4) —
+two banks, not a disagreement.
 
 ### 4b. Detection is not reportable
 
@@ -276,9 +304,15 @@ magnitude label — which is the identity asserting itself).
 ### 4c. The cross-domain claim is the weak form only
 
 The strong form — both modalities' gap-versus-distance curves collapsing onto one — is
-measured and fails (D70, D72). The claim is: *the same failure and the same fix appear in
+measured and fails (D70, D72). ~~The claim is: *the same failure and the same fix appear in
 both modalities, with the distance ordering demonstrated where the distance is a genuine
-scalar.* **Do not write "collapse".**
+scalar.*~~ **The second half of that is REFUTED, D101/D102 (26 Nov).** The surviving claim
+is: *the same failure and the same fix appear in both modalities* — and nothing about the
+distance. Where the distance is a genuine scalar is exactly where D102 measured it and the
+**arc ratio read off the operator name beat it**, +0.8524 against −0.5046 on the 36
+cross-family pairs, the distance running backwards; the one subset that looked decorrelated
+is a rank duplicate of the arc at ρ = +1.0000. **Do not write "collapse", and do not write
+"ordered by the distance" either.**
 
 **And the collapse test itself is currently uninformative.** It reports "collapses" in all
 three readings — but so does the `group_conditional` control, which by construction should
@@ -291,6 +325,13 @@ default**. D76's sweep then asked whether the result needs them: the restoration
 established at **9 of 11** weightings (+0.075 at equal weights). So it is *mostly* insensitive
 but **not at every weighting** — which is a weaker statement than the one hoped for, and has
 to be reported as such.
+
+> **Bank label, added 26 Nov.** That sweep is `random1d R2 → R8` on the **fastMRI
+> face-prior** bank (T2.9 §5), which carries **no claims**. It has never been run on a
+> stamped bank, and `BANK_RESULTS_ARE_NOT_INTERCHANGEABLE` (D100) forbids carrying it over
+> in either direction — including this negative direction. So the honest statement is
+> narrower still: **weight sensitivity is unmeasured on any bank that may be quoted.** The
+> limitation goes in the paper as unmeasured, not as measured-and-mostly-fine.
 
 ---
 
@@ -322,7 +363,17 @@ admissible for the modality**. Current state:
 **So the results in §3 are all development output.** That is why the project can feel like
 nothing has landed when a great deal has.
 
-### 5a. The M4Raw deadlock
+### 5a. ~~The M4Raw deadlock~~ — **RESOLVED by D82**
+
+> **Resolved, and this section is the pre-D82 text (noted 26 Nov).** **D82 — "M4Raw is
+> reportable for coverage claims and not for detection"** made the call that this section
+> says nobody was making. It applies D80's structure to the *substrate* instead of the
+> prior: the defect gates which claims the bank can carry, not whether the bank exists.
+> M4Raw lacks pathology annotations, so it cannot carry detection; coverage under operator
+> shift uses no annotation, so it can carry that. The two rulings are now one principle with
+> two instances. The `reportable` boolean became a scoped claim set rather than being
+> flipped, because flipping it would have let an M4Raw *detection* number be stamped — the
+> exact error of P-18. The table above still shows the old boolean for this bank.
 
 D80 ruled the prior admissible — anatomy gates *claims*, not banks. That left D-015's
 substrate question as the only gate on the BraTS bank. And it is **stuck**: T2.10 §10 says the
@@ -345,8 +396,13 @@ model, registered as `ct_chest`, and admitted for CT under D80**. A smoke bank e
 > **A full CT bank on the LIDC prior yields the project's first reportable numbers — with no
 > ruling, no deadlock and no M4Raw argument. It is a GPU run, not a decision.**
 
-And CT is where the results are strongest anyway: ρ = +0.976, the Tool 2 win, the graded
-failure. Two caveats to state rather than hide: LIDC is **chest** CT against
+~~And CT is where the results are strongest anyway: ρ = +0.976, the Tool 2 win, the graded
+failure.~~ **Two of those three are withdrawn (26 Nov)** — ρ = +0.976 is 8 pairs on the
+face-prior bank (§3b) and the Tool 2 win is §3c, and the run this section argued for is
+what withdrew them. The conclusion held anyway and for a better reason: **the graded failure
+and its group-conditional fix are stamped on CT at 9 of 9 operators.** This is the §8 defect
+in miniature — a correct decision justified by numbers that did not survive the thing it
+decided to build. Two caveats to state rather than hide: LIDC is **chest** CT against
 TotalSegmentator's whole body (cross-anatomy — under D80 that is coverage-reportable,
 detection not, which is exactly the claim wanted), and the project's fixed-HU-window
 normalisation differs from LIDC's per-volume min-max.
@@ -357,9 +413,12 @@ normalisation differs from LIDC's per-volume min-max.
 
 ### Track 1 — Methodology, Calibration and Scientific Direction
 
-**All seven tasks delivered.** ~~Log runs to **D81**.~~ **Log runs to D101.** Three of the
+**All seven tasks delivered.** ~~Log runs to **D81**.~~ ~~**Log runs to D101.**~~ **Log runs
+to D103** (26 Nov). Three of the
 four Phase 4 measurement tasks have since returned **negatives on the coverage-stamped
-bank** — T1-A refuted (D89), T1-B reportable on 0 of 4 cells and then blocked (D91, D100),
+bank** — T1-A refuted (D89), T1-B reportable on 0 of 4 cells and then ~~blocked~~
+**refuted on its own response variable in its own designated cell (D91, D100, and D102:
+arc ratio +0.8524 against the distance's −0.5046)**,
 T1-C no validity or efficiency claim (D100) — while the core demonstration and the
 group-conditional fix hold there. See D101 for the split.
 
@@ -425,22 +484,26 @@ re-checking on that bank**. That one invalidates an assumption, not just a numbe
 
 ### 7a. The one that keeps recurring
 
-**Eight times now: a statistic returns the number someone hoped for, because of an artefact in
-the framing.**
+**Nine times now: a statistic returns the number someone hoped for, because of an artefact in
+the framing.** The owner column is there so the count below can be checked against the table
+instead of being taken on trust — see rule 10, which this section broke.
 
-| Instance | Returned | Why |
-|---|---|---|
-| P-19 | a script "working" for two weeks | nothing executed it |
-| P-23 | coverage exactly 0.900 | thresholds fitted in-sample |
-| `tool2_holdout` | matched arm exactly 0.900 | same patients both sides |
-| D60 gate | anatomy AUROC 0.499, "chance" | **pooled** across operators; 0.662 within R8 |
-| D65 verdict | score beats anatomy by +0.329 | direction-sensitive measure scored one way |
-| D72 F-test | p = 0.031, "no collapse" | slopes 0.3025 vs 0.3029 |
-| D73 interval | null \|delta\| to 0.128 vs a 0.02 floor | bootstrap held the threshold fixed |
-| D74 first read | excess +0.097, "beats anatomy" | **pooled**; −0.152 at R4, +0.100 at R8 |
+| Instance | Owner | Returned | Why |
+|---|---|---|---|
+| P-19 | Track 2 | a script "working" for two weeks | nothing executed it |
+| P-23 | Track 2 | coverage exactly 0.900 | thresholds fitted in-sample |
+| `tool2_holdout` | Track 1 | matched arm exactly 0.900 | same patients both sides |
+| D60 gate | Track 1 | anatomy AUROC 0.499, "chance" | **pooled** across operators; 0.662 within R8 |
+| D65 verdict | Track 1 | score beats anatomy by +0.329 | direction-sensitive measure scored one way |
+| D72 F-test | Track 1 | p = 0.031, "no collapse" | slopes 0.3025 vs 0.3029 |
+| D73 interval | Track 1 | null \|delta\| to 0.128 vs a 0.02 floor | bootstrap held the threshold fixed |
+| D74 first read | Track 1 | excess +0.097, "beats anatomy" | **pooled**; −0.152 at R4, +0.100 at R8 |
+| **D102 subset** | Track 1 | ρ = +0.9429, p = 0.0167, on a direction stated in writing first | the **rival predictor ties it exactly** (arc ratio, also +0.9429, a rank duplicate at +1.0000), and the null permuted 6 pair values drawn from **4 operators** as if independent; permuting the 4 labels instead gives p = 1/24 and shows +0.9429 is the statistic's **attainable maximum** |
 
-**Five of the eight were Track 1's own**, and two were written in the same session as the
-module built to prevent them. The rules that catch them:
+**Seven of the nine are Track 1's own** — count the owner column; the previous text said
+"five of the eight" and was wrong about its own table, which is why the column now exists.
+Two were written in the same session as the module built to prevent them. The rules that
+catch them:
 
 1. **Never report a pooled statistic across operators.** Show the per-cell table.
 2. **Assert the frames are disjoint on the clustering unit** — the patient, not the region.
@@ -451,7 +514,26 @@ module built to prevent them. The rules that catch them:
 5. **Equivalence needs the interval inside the floor**, not the estimate inside it.
 6. **Check direction-sensitive measures both ways.**
 7. **Read the partner document before predicting.** The D-033 question was asked when the
-   answer was already in `operators/decomposition.py`.
+   answer was already in `operators/decomposition.py`. **Broken a second time in D102 §2**
+   (24 Nov): T1-C's flat own-operator coverage was called an unexplained calibration defect
+   and a run was requested to explain it, when Track 2 had attributed it in the same message
+   that carried the table — "the registry-split matched shortfall of §1e" — and the run
+   already existed as T2.11 §1e. The line was quoted and then reasoned past. Corrected the
+   same day, before any commit.
+8. **Run the rival predictor, not just the null.** D102's +0.9429 had the right sign, a
+   direction pre-stated in writing and an exact p-value, and it was still nothing — a
+   scalar readable straight off the operator name scored *identically*. A sign check and a
+   permutation test both passed it. Ask what the dumbest thing that would do this well is,
+   and compute that too.
+9. **Permute the right objects.** Pairwise data from `n` items has far fewer degrees of
+   freedom than it has pairs. Permuting D102's 6 pair values gave p = 0.0167; permuting the
+   4 operator labels gave p = 1/24, the test's floor. **If a statistic's observed value is
+   the largest its null can produce, it has no resolution** — and that is a stronger
+   refutation than a non-significant p.
+10. **Check an ordinal before writing it.** "Seventh recurrence" went into a frozen constant
+   with nothing in the repo supporting the count. This table had already held eight, and its
+   own prose miscounted its own rows. Counts of this project's own history are hand-written
+   every time; derive them from a table or do not assert them.
 
 ### 7b. Standing scope limits
 
@@ -472,10 +554,12 @@ module built to prevent them. The rules that catch them:
 
 | Risk | Severity |
 |---|---|
-| **Nothing reportable** — every bank fails a gate | **Blocking the paper.** Mitigated by §5b |
-| **T3.6/T3.7 absent** — the third front has no output | High; longest pole, nothing in flight |
-| **The M4Raw deadlock** — both tracks believe it is the other's move | High, and purely organisational |
-| Checkpoints carry **no stated licence** | Fine for a cited preprint; real for the O7 release |
+| ~~**Nothing reportable** — every bank fails a gate~~ | **OBSOLETE** (D82, D-072). The LIDC CT bank carries coverage |
+| **One stamped layer, and it is the unsurprising one** — on the bank that may be quoted, Tool 1 holds at 9 of 9 operators and **0 of 4** operator-aware refinements are supported (D101, D102) | **This is now the paper risk**, and it replaces the row above. It is a scope result, not a dead end (§8) |
+| **Every negative result Track 1 has is on one bank** — a single registry split of one 900-pair LIDC bank, with a per-draw coverage sd of 0.051 | Medium, and unmitigated. `BANK_RESULTS_ARE_NOT_INTERCHANGEABLE` cuts both ways: it forbids generalising the refutations too |
+| ~~**T3.6/T3.7 absent** — the third front has no output~~ | **CLOSED.** Both documents exist and both tasks are run, T3.6 on the stamped bank (bound holds 72 of 72). Its row 5 is negative, which is a result, not an absence |
+| ~~**The M4Raw deadlock** — both tracks believe it is the other's move~~ | **RESOLVED by D82** — coverage yes, detection no. §5a is the pre-ruling text |
+| ~~Checkpoints carry **no stated licence**~~ | **RESOLVED** (T2.11). The repository carries `LICENSE` (Apache-2.0) and a `NOTICE`; **the release contains no weights**, so there is nothing to relicense. The converter and the download command ship instead |
 | The DPS medical-prior bank is **partial** (~20 h GPU, resumed in stretches) | Medium |
 | BraTS is skull-stripped; M4Raw is not — skull and scalp are outside the prior's training distribution | Medium, stated |
 | `equispaced1d R2` has **no positives** under ε, so one grid cell is undefined | Low, dropped from rank correlations |
@@ -557,14 +641,14 @@ The second (analytical) paper now has T3.6 and T3.7 to build on.
 | D73, 32 cells | baseline 12 · CALIBER 1 |
 | `cos θ`, face → medical prior | +0.07 → **+0.60** (MRI) · +0.98 (CT smoke) |
 | Identity Spearman, face → medical | 0.97 → 0.65 (MRI) · 0.99 → 0.49 (CT) |
-| Weight sensitivity | restoration established at 9 of 11 weightings |
-| Tests | **1,230 passing, 7 skipped** (24 Nov) · 9 (site) |
+| Weight sensitivity | restoration established at 9 of 11 weightings — **face-prior fastMRI bank, unmeasured on any stamped bank** (§4d) |
+| Tests | **1,237 passing, 7 skipped** (26 Nov) · 9 (site) |
 
 ## Appendix B — where things are written
 
 | Document | Holds |
 |---|---|
-| `problems_and_decisions.md` | Track 1's log, **D1–D102**, open questions, cross-track contracts |
+| `problems_and_decisions.md` | Track 1's log, **D1–D103**, open questions, cross-track contracts |
 | `decision_log.md` | Cross-track decisions, **D-001–D-072** |
 | `T2_problems_and_decisions.md` | Track 2's problem log, **P-01–P-45**, plus the index of every cross-track decision |
 | `T1.1`–`T1.7` | Track 1's per-task records; `T1.7_preprint_draft.md` is the narrowed paper |

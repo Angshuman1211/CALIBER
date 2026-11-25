@@ -371,6 +371,42 @@ AMENDMENTS = (
         "My own standing rule covers it: read the partner document that already "
         "has the data.",
     ),
+    (
+        "2026-11-26",
+        "GAP_DEFINITION_SENSITIVITY's stated reason corrected, and the 13-split "
+        "qualifier put on the two constants that quoted 0.892 to 0.905 bare "
+        "(BANK_RESULTS_ARE_NOT_INTERCHANGEABLE, GAP_DECLARATION_KNEW); "
+        "CORRECTS REASONING, CHANGES NO DECLARATION. Found by sweeping the "
+        "remaining sections of PROJECT_STATUS.md against D85-D102 -- the three "
+        "the 24 Nov banner had written off as merely unreviewed. "
+        "GAP_DEFINITION_SENSITIVITY justified naming the gap definition in advance "
+        "by saying the two candidate definitions differ by 'at most about 0.013'. "
+        "That is the 13-split mean, and every T1-B and T1-C number is on the "
+        "registry split, where the two differ by 0.0441 to 0.1052 -- eight times "
+        "the quoted bound, one-signed at 9 of 9 operators, about 55% of the median "
+        "gap against the 6% the docstring implies. Measured on the delivered 72 "
+        "ordered pairs the conclusion holds anyway, and it was ALREADY ESTABLISHED "
+        "before this correction, which narrows the entry to a documentation defect: "
+        "D88's sensitivity design runs all four arm x definition combinations every "
+        "time, D91 reports T1-B's verdict as the same in all four, D88 recorded the "
+        "prediction that the two arms would agree far more closely for the gap than "
+        "for the level, and D86 already held the registry displacement at a median "
+        "-0.061 -- eight times this docstring's bound, never carried into it. Rule 7 "
+        "again: read the document that already has the data. What is contributed is "
+        "the correction, the qualifier moving into code behind a test, and the "
+        "pair-level numbers: the offset barely moves the RANKS, so the two definitions agree "
+        "at rho +0.9755 to +0.9975 on every estimator and family scope, and "
+        "rho(signed_distance, gap) shifts by at most 0.050 with no sign change in "
+        "any cell. So the declaration is kept and its argument is replaced -- a "
+        "frozen choice whose justification was wrong by 8x while the choice itself "
+        "was right. The same registry-split-against-13-split-mean confusion as "
+        "D102 2, in a third place, which is why the qualifier is now written into "
+        "the constants and not only into the status document. Not claimed: this "
+        "says nothing about GAP_PREDICTION_DISTANCE (null_space_growth), which is "
+        "not a column of ordered_pairs.csv; the within-family -0.68 on "
+        "signed_distance is the downhill/uphill asymmetry GAP_DECLARATION_KNEW "
+        "already lists, not a new result.",
+    ),
 )
 
 #: Miss-rate budget. Unchanged since Week 2; restated here so one import gives the
@@ -1188,7 +1224,14 @@ BANK_RESULTS_ARE_NOT_INTERCHANGEABLE = (
     "the eight disagreements are not eight findings; two were already recorded as open"
     " puzzles and the pattern is what is new, so this constant adds no measurement",
     "what survives on the stamped bank is the demonstration and the group-conditional fix:"
-    " nominal coverage at 9 of 9 operators, 0.892 to 0.905. The operator-aware refinements"
+    " nominal coverage at 9 of 9 operators, 0.892 to 0.905 AS THE MEAN OVER 13 PATIENT"
+    " SPLITS (mean 0.897). The qualifier is not optional: on the single registry split the"
+    " bank was built with, the same arm is 0.795 to 0.856 (mean 0.831) and 0 of 9 operators"
+    " reach nominal, because that split ranks 1 to 4 of 13 everywhere (T2.11 1e). Split"
+    " conformal promises coverage over the draw of the calibration set, so the 13-split"
+    " figure is the one it promises -- and the per-draw sd is 0.051, with individual draws"
+    " from 0.795 to 0.991, so a single deployment draw can sit near 0.80. The operator-aware"
+    " refinements"
     " -- distance ordering, safety rule, gap prediction, distance-weighted recalibration --"
     " are 0 of 4 supported there",
 )
@@ -1266,6 +1309,35 @@ GAP_DEFINITION = "matched_minus_transfer"
 #: the matched-cell spread (0.892 to 0.905, so at most about 0.013) against gaps reaching
 #: 0.5, so the choice should not change the verdict -- which is precisely why it is safe to
 #: name now and would not have been safe to name after fitting.
+#:
+#: **The declaration stands and that reason does not (26 Nov 2026).** ``0.892 to 0.905`` is
+#: the 13-split mean. Every T1-B and T1-C number is on the registry split, where the matched
+#: cells are 0.795 to 0.856, so the offset between the two definitions is **0.0441 to
+#: 0.1052** there -- eight times the quoted bound, one-signed at **9 of 9** operators
+#: (against 7 of 9 and at most 0.0080 on the 13-split mean), and about **55% of the median
+#: gap** rather than 6%. A perturbation that size is not self-evidently harmless, and the
+#: docstring argued it was harmless *because it was small*.
+#:
+#: The conclusion survives anyway -- and it was already established before this correction,
+#: which is what narrows this to a documentation defect. D88's own sensitivity design runs
+#: all four arm x definition combinations "every time", D91 reports T1-B's verdict as the
+#: same in all four, D88 recorded the prediction that the two arms "will agree far more
+#: closely for the gap than they do for the level", and D86 already held the registry
+#: displacement at a median -0.061. **The project had a number eight times this docstring's
+#: bound and the docstring was never updated.** Cite D91 for the verdict, not this note.
+#:
+#: The mechanism, at pair level: the offset varies little in *rank* across deployment
+#: operators, so the two definitions order the pairs almost identically --
+#: ``rho(gap_matched, gap_nominal)`` is **+0.9755 to +0.9975** across both estimators and
+#: all three family scopes, and ``rho(signed_distance, gap)`` moves by at most **0.050**
+#: (within family on the registry split, -0.6842 to -0.7338) with **no sign change in any
+#: cell**. So the choice does not change the verdict, including on the reporting split.
+#:
+#: What is NOT established from this file: ``signed_distance`` is the column the bank
+#: ships, and it is not ``GAP_PREDICTION_DISTANCE`` (``null_space_growth``), which is absent
+#: from ``ordered_pairs.csv``. The within-family -0.68 is the known downhill/uphill
+#: asymmetry already listed in ``GAP_DECLARATION_KNEW``, not a new refutation; do not quote
+#: it as one.
 GAP_DEFINITION_SENSITIVITY = ("matched_minus_transfer", "nominal_minus_transfer")
 
 #: Mean absolute error, and **not** the criterion isotonic regression optimises.
@@ -1303,7 +1375,8 @@ GAP_CLUSTER_UNIT = "operator"
 GAP_DECLARATION_KNEW = (
     "naive transfer below nominal at 36 of 72 ordered pairs, 22 of them below 0.80",
     "worst single pair 0.377, at limited-angle 90 deg -> sparse-view 120",
-    "matched arm 0.892 to 0.905 across the nine operators",
+    "matched arm 0.892 to 0.905 across the nine operators, on the 13-split mean -- on the"
+    " registry split, which is the reporting split, the same arm is 0.795 to 0.856",
     "downhill transfers over-cover: from sparse-view 180, 0.964 at sv 30 and 0.994 at la 90",
     "uphill transfers under-cover: from sparse-view 30, 0.731 at sv 180 and 0.676 at sv 120",
     "sv 120 is out of order -- hardest to cover from almost every row (a known violation)",
