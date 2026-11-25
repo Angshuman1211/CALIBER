@@ -1296,8 +1296,10 @@ def test_the_bar_does_not_pass_itself_off_as_a_measurement():
     assert "adds no measurement" in text
     assert "already recorded as open" in text, (
         "two of the eight were open puzzles before today and must not be reclaimed")
+    # Precise, not loose: amendment 21 mentions this constant too, and the entry
+    # wanted here is the one that ADDED it.
     entry = [(d, t) for d, t in prereg.AMENDMENTS
-             if "BANK_RESULTS_ARE_NOT_INTERCHANGEABLE" in t]
+             if t.startswith("BANK_RESULTS_ARE_NOT_INTERCHANGEABLE added")]
     assert len(entry) == 1
     assert "No measurement was made for this entry" in entry[0][1]
     assert "NARROWS" in entry[0][1]
@@ -1598,3 +1600,116 @@ def test_the_face_bank_was_not_consulted_for_this_ruling():
     entry = [t for _, t in prereg.AMENDMENTS if "GRID_CANNOT_DECORRELATE_DISTANCE" in t]
     assert len(entry) == 1
     assert "face-prior bank was deliberately not consulted" in entry[0]
+
+
+# -- D103: the 13-split qualifier, and a frozen reason that was wrong by 8x -----
+#
+# The `#:` docstrings of `prereg` are not reachable at runtime, so the two tests that
+# check a corrected *reason* read the module source. Reading it is the point: a reason
+# nobody can assert on is a reason that rots.
+#
+# T2.11 1e's per-operator table, both columns. Stored so the offsets below are
+# recomputed rather than asserted; the mapping between the two columns was verified
+# against the delivered ``matched_control.csv`` at 9 of 9 operators before use.
+_MATCHED_13SPLIT = {
+    "sv180": 0.898, "sv120": 0.901, "sv90": 0.895, "sv60": 0.894, "sv45": 0.892,
+    "sv30": 0.895, "la150": 0.897, "la120": 0.899, "la90": 0.905,
+}
+_MATCHED_REGISTRY = {
+    "sv180": 0.8035, "sv120": 0.7948, "sv90": 0.8086, "sv60": 0.8333, "sv45": 0.8374,
+    "sv30": 0.8470, "la150": 0.8504, "la120": 0.8559, "la90": 0.8473,
+}
+
+
+def _prereg_source() -> str:
+    """The frozen module's own text, docstring comments included."""
+    return (Path(__file__).resolve().parents[1] / "src" / "caliber" / "evaluation"
+            / "prereg.py").read_text(encoding="utf-8")
+
+
+def test_the_two_matched_estimators_are_not_one_number():
+    """Recomputed, so the qualifier cannot drift away from what it qualifies."""
+    across = sorted(_MATCHED_13SPLIT.values())
+    registry = sorted(_MATCHED_REGISTRY.values())
+    assert (across[0], across[-1]) == (0.892, 0.905)
+    assert round(registry[0], 3) == 0.795 and round(registry[-1], 3) == 0.856
+    assert sum(1 for v in across if v >= prereg.NOMINAL - 0.008) == 9, (
+        "the 13-split claim is nominal at all nine to within 0.008")
+    assert sum(1 for v in registry if v >= prereg.NOMINAL) == 0, (
+        "and 0 of 9 reach nominal on the registry split, which is the reporting split")
+    assert set(_MATCHED_13SPLIT) == set(_MATCHED_REGISTRY)
+
+
+def test_the_survival_statement_carries_the_thirteen_split_qualifier():
+    """0.892 to 0.905 is the one number a paper draft reaches for first."""
+    text = " ".join(prereg.BANK_RESULTS_ARE_NOT_INTERCHANGEABLE)
+    assert "0.892 to 0.905" in text
+    assert "MEAN OVER 13 PATIENT SPLITS" in text
+    assert "0.795 to 0.856" in text, "the other estimator has to travel with it"
+    assert "0 of 9 operators" in text and "1 to 4 of 13" in text
+
+
+def test_no_frozen_string_quotes_the_headline_bare():
+    """The rule is only a rule if nothing in the module breaks it."""
+    import json
+
+    offenders = []
+    for key, value in prereg.as_dict().items():
+        blob = json.dumps(value)
+        if "0.892" in blob and "13" not in blob:
+            offenders.append(key)
+    assert offenders == [], (
+        "these quote the matched arm with no estimator named: %s" % offenders)
+
+
+def test_the_gap_definition_offset_is_eight_times_its_declared_bound():
+    """The declaration's reason, recomputed from the table it should have used."""
+    across = [v - prereg.NOMINAL for v in _MATCHED_13SPLIT.values()]
+    registry = [v - prereg.NOMINAL for v in _MATCHED_REGISTRY.values()]
+
+    assert max(abs(o) for o in across) == pytest.approx(0.008, abs=5e-4)
+    assert sum(1 for o in across if o < 0) == 7
+
+    worst = max(abs(o) for o in registry)
+    assert worst == pytest.approx(0.1052, abs=5e-4)
+    assert min(abs(o) for o in registry) == pytest.approx(0.0441, abs=5e-4)
+    assert sum(1 for o in registry if o < 0) == 9, (
+        "one-signed on the reporting split, so it displaces every cell the same way")
+    assert worst / max(abs(o) for o in across) > 8.0, (
+        "the docstring's 'at most about 0.013' is the wrong estimator's spread")
+
+
+def test_the_gap_definition_declaration_is_kept_and_its_reason_replaced():
+    """A wrong justification for a right choice is corrected, not withdrawn."""
+    assert prereg.GAP_DEFINITION == "matched_minus_transfer"
+    assert prereg.GAP_DEFINITION_SENSITIVITY == (
+        "matched_minus_transfer", "nominal_minus_transfer")
+    doc = _prereg_source()
+    assert "The declaration stands and that reason does not (26 Nov 2026)" in doc
+    assert "+0.9755 to +0.9975" in doc, "what the conclusion actually rests on"
+    assert "no sign change in any" in doc
+    assert "0.0441 to" in doc and "0.1052" in doc
+
+
+def test_the_minus_oh_point_six_eight_is_not_claimed_as_a_refutation():
+    """signed_distance is not GAP_PREDICTION_DISTANCE, and the asymmetry was known."""
+    doc = _prereg_source()
+    assert "What is NOT established from this file" in doc
+    assert "absent" in doc and "ordered_pairs.csv" in doc
+    assert "do not quote" in doc
+    known = " ".join(prereg.GAP_DECLARATION_KNEW)
+    assert "downhill transfers over-cover" in known and "uphill transfers under-cover" in known
+
+
+def test_amendment_21_names_the_recurrence_without_inventing_a_count():
+    """D102 2 was the same confusion. This is a third place, and says so."""
+    entry = [(d, t) for d, t in prereg.AMENDMENTS
+             if t.startswith("GAP_DEFINITION_SENSITIVITY's stated reason corrected")]
+    assert len(entry) == 1
+    date, text = entry[0]
+    assert date == "2026-11-26"
+    assert "CORRECTS REASONING, CHANGES NO DECLARATION" in text
+    assert "in a third place" in text
+    assert "wrong by 8x while the choice itself" in text
+    assert "Not claimed:" in text, "the boundary of the finding belongs in the amendment"
+    assert "Seventh" not in text and "ninth" not in text.lower()
