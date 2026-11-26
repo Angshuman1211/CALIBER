@@ -2311,10 +2311,70 @@ The score combines null-space structure with cross-sample disagreement, so it ne
 
 **Two caveats, both real.** (a) This is measured against a mock with a known 10x spread contrast between hallucinating and clean regions; a real prior's contrast is unknown, so **re-measure once T2.2 lands**. (b) The first attempt at this measurement used a *spatially uniform* mock spread and produced a meaningless plateau at ~0.9 — with homogeneous noise `s_disagree` estimates the same constant in every region, carries no ranking signal, and the correlation then measures the mock rather than the score. The mock's spread must be heteroscedastic or the experiment is void. Recorded because the same trap applies to any future re-measurement.
 
-### Q4 — What experiment shows weighted recalibration beating the Mondrian backbone? [OPEN, owned by T1.4]
+### Q4 — What experiment shows weighted recalibration beating the Mondrian backbone? — **ANSWERED 26 November 2026 (D108): no experiment in this project's design can, and the one that could is specified below and will not be run here**
 D3 makes Mondrian the guaranteed backbone and D4 makes operator-distance weighted recalibration the headline contribution. But Mondrian is *exact* in the known-finite-operator regime and weighted CP is only approximate there (D6), so a reviewer will reasonably ask why the approximate method is the contribution. The background research reached the same conclusion independently, calling group-conditional CP "a serious competitor to the whole merger, and arguably the honest primary method."
 
 The answer exists and is defensible — weighting buys what Mondrian structurally cannot: (a) **thin groups**, where per-regime calibration data is too scarce for a stable threshold, exactly the high-acceleration regimes D10 warns about; and (b) **continuous operator change**, where there is no finite group to calibrate within. But neither case is currently an explicit line in the blueprint's experimental protocol (§16), which means the paper's headline method has no experiment that demonstrates its advantage over its own baseline. T1.4 must name that experiment: sweep calibration-set size per regime down to where Mondrian's thresholds become noisy and weighting wins, and include off-grid deployment operators that no group covers. Report both, not just the coverage curve.
+
+#### The answer, 26 November 2026 (D108)
+
+**Q4 asked for an experiment, and the ruling is that this project does not have one and could
+not have built one on the banks it has.** Closing it as "answered negatively by T1-C" would be
+wrong, and the reason is the sharper finding: **T1-C's design cannot rank arms at all.**
+
+**1. T1-C did not answer Q4 and could not have.** Its verdict is real — no validity claim and
+no efficiency claim on the stamped bank (D100), with the deployable operator-aware arms
+reaching the same-split matched control on all three limited-angle folds and **0 of 4**
+sparse-view. But D102 established why that is not Q4's answer: **each fold has exactly one
+deployment operator**, so every arm is a single threshold there and all of them lie on that
+fold's own area–coverage curve by construction. No arm *ranking* is available from this
+design, in either direction. A verdict about Tool 2's efficiency against Mondrian cannot come
+out of it.
+
+**2. Route (a), thin groups, is untested and was untestable here.** The intended advantage is
+that weighting borrows from neighbouring operators where a group's own calibration data is too
+thin for a stable threshold. On the stamped bank **every** group is thin in effective terms —
+design effects **47 to 186**, effective n **13 to 154 per operator** — and the measured T1-C
+failure was attributed to exactly that, a **within-operator** sample-size effect. So the
+donors are as thin as the recipients, and a thin-group advantage cannot be separated from the
+thin-group noise that is already the dominant term. **The experiment needs deliberately
+unequal group sizes**, with thin recipients and well-determined donors.
+
+**3. Route (b), continuous operator change, is now theoretically constrained.** This is the
+regime where Mondrian does not apply at all, so weighting is the only candidate — and it is
+also where TCC's **Theorem 3.1** (ICML 2026) binds: a label-free procedure required to be valid
+uniformly over every distribution with a fixed target marginal must return **near-vacuous**
+sets. Distance-weighted recalibration is label-free. The theorem does not say the method
+cannot work; it says **uniform** validity is unavailable without assuming a link between
+observable quantities and the unobservable label-conditional score law. So a Q4 experiment on
+this route has to **name the link it assumes** and give up uniform validity, rather than hope
+tuning will supply it.
+
+Our own measurement is consistent with the theorem's shape: on the stamped bank **the only arm
+valid at every fold is `max_quantile`, the trivially-safe one** — which is the near-vacuous
+outcome. State that as a consistency and not as a corollary; the two settings differ (per-region
+binary flagging under a known finite operator set, against label-free cross-space transfer),
+and Tool 2 never claimed uniform validity.
+
+#### What a design that could answer Q4 would need
+
+Three conditions, none of which the current grid meets:
+
+| | requirement | why the present banks fail it |
+|---|---|---|
+| i | **Several deployment operators per held-out fold** | one each, so every arm is one threshold and no ranking exists (D102) |
+| ii | **Deliberately unequal group sizes** — thin recipients, well-determined donors | every group is thin (design effect 47–186), so donor and recipient noise are the same term |
+| iii | **Off-grid deployment operators that no group covers**, with the assumed observable-to-score link stated in advance | the grid is a product of two knobs and every deployment operator is on it |
+
+**This project will not run it.** It is a new bank at minimum, the operator-aware layer is
+refuted on four independent fronts already (D89, D91, D100, D102), and a fifth test designed
+after four failures is not where the remaining time belongs. **Recorded as a specification so
+the next person does not have to rediscover the three conditions** — and so that "weighting was
+never given its fair test" is answerable with what a fair test would have required.
+
+**For the paper:** §6.3 reports the four refinements as measured negatives and should not claim
+Q4's experiment was run. The honest sentence is that **the comparison Q4 asks for needs a grid
+this study does not have**, stated beside the negatives rather than instead of them.
 
 ### Q5 — Scoop recheck — **repeated 26 November 2026 (D104, Phase 3 gate); still standing, next instance at submission**
 
@@ -4324,16 +4384,34 @@ T1-F.
 
 The limit read: *"No external validation of the label. The one published alternative (Tivnan
 2024) disagrees at κ ≈ 0 and mostly flags background."* **sFRC** (Kc, Zeng, Soni, Badano;
-arXiv 2603.04673 v2, May 2026; three authors FDA/CDRH) performs Fourier Ring Correlation over
-patches scanned across output and reference, produces localised hallucination maps, and covers
-**CT sparse-view and subsampled MRI** — both of this project's modalities, both of its
-undersampling regimes, at the granularity the region grid uses.
+arXiv 2603.04673 v2, May 2026; **all four authors at the U.S. FDA**, CDRH, the work produced
+in the course of their official duties) performs Fourier Ring Correlation over patches scanned
+across output and reference, produces localised hallucination maps, and covers **CT
+sparse-view and subsampled MRI** — both of this project's modalities, both of its
+undersampling regimes, at the granularity the region grid uses. **It also positions itself
+explicitly against Tivnan's Hallucination Index**, the one alternative this project already
+cites, on the grounds that a distribution- or full-image metric *"may fail to capture locally
+confined hallucinations"*.
 
 **Ruling: the limit now reads "a matching alternative exists and has not been run."** That is
-narrower and less comfortable than the old wording, which is the reason to change it. Two
-facts travel with it: sFRC **requires a reference**, so it validates the *label* and does not
-compete with the *score*; and its parameters need expert-annotated features or
-imaging-theory maps, so it carries an annotation cost.
+narrower and less comfortable than the old wording, which is the reason to change it. Three
+facts travel with it, the third added from the PDF (D108): sFRC **requires a reference**, and
+the reference is itself a *fully-sampled analytic reconstruction* (FBP or iFFT), so it
+validates the *label* and does not compete with the *score*; its parameters need a tuning set
+with **annotated hallucinations**, so it carries a real annotation cost; and **the
+imaging-theory route to that threshold would make the check circular**, because it tunes on
+the same null-space reasoning our own criterion rests on. **If it is run, the threshold must
+come from expert annotation**, or the result is a consistency check and not external
+validation.
+
+**One genuine related-work find, from reading sFRC's own related work (D108).** It cites
+**Bhadra et al.** for *"a formal linear operator theory-based mathematical model to deduce
+hallucination maps"* built on the **SVD of the forward operator's system matrix** — which is
+the nearest published thing to this project's null-space decomposition, and we had not cited
+it. sFRC's objection to it is that *"developers may not have access to the system matrix"*.
+**That objection does not apply here:** a known linear/affine forward operator is a stated
+scope condition of this work, which is precisely the regime Bhadra et al. need and sFRC
+declines to assume. Add it to related work, and say why the objection does not bind.
 
 > **Cross-track contract, recorded and NOT requested.** Running sFRC against `err_free` on the
 > LIDC bank would be the project's first external validation of its label. It is a Track 2
@@ -4342,19 +4420,28 @@ imaging-theory maps, so it carries an annotation cost.
 
 #### 4. The one finding that helps
 
-**TCC** (Doula, arXiv 2609.10737, Sep 2026) is the closest mechanism match that exists — a
-conformal procedure that transports a calibration set across a shift — and it is **not prior
-art**: classification, input/sensor shift (CIFAR-100-C, SAR→RGB), the forward operator never
-changed, and by its own statement *"the guarantees remain marginal rather than conditional or
-group-specific"*, which is precisely what Tool 1 provides.
+**TCC** (Doula, **ICML 2026**, PMLR 306; arXiv 2609.10737) is the closest mechanism match that
+exists — a conformal procedure that transports a calibration set across a shift — and it is
+**not prior art**: classification, input/sensor shift (CIFAR-100-C, SAR→RGB), the forward
+operator never changed, and its guarantees marginal by its own statement.
 
-What it gives us is better than the absence of a competitor. **It proves that label-free,
-uniformly valid correction is impossible without assumptions linking observable target
-behaviour to the label-conditional score distribution.** Tool 2 is a label-free correction.
-Its measured failure on the stamped bank therefore has independent theoretical company, which
-is the difference between a tuning failure and a scope boundary. **Cite it in the limitations,
-not the related work.** Its weighted arm also reports **effective sample size** and fails below
-ESS 50%, converging on a diagnostic §15.2 already lists.
+What it gives us is better than the absence of a competitor. **Theorem 3.1 shows that a
+label-free procedure required to be valid uniformly over all distributions with a fixed target
+marginal must produce near-vacuous prediction sets**, so anything nontrivial has to assume a
+link between observable quantities and the unobservable label-conditional score distribution.
+Tool 2 is a label-free correction. Its measured failure on the stamped bank therefore has
+independent theoretical company, which is the difference between a tuning failure and a scope
+boundary. **Cite it in the limitations, not the related work.** Its weighted arm also reports
+**effective sample size**, the diagnostic §15.2 already lists.
+
+> **CORRECTED 26 Nov (D108), from the PDF.** Two statements above were taken from an abstract
+> rendering and were wrong: this is a **published ICML paper**, not a preprint, and **there is
+> no "fails below ESS 50%" threshold anywhere in it** — ESS% is a qualitative weight-stability
+> signal. What the paper does report over **328 configurations** is that transport-only
+> calibration under-covers by more than 1pp in **11 cases (3.4%)** and TCC-KS restores validity
+> in **all 11**, at 1.82× set inflation. Theorem 3.1's scope is also narrower than the first
+> paraphrase implied — see the Phase 3 gate's §Q5 for the statement and for the two gaps in
+> the analogy to Tool 2.
 
 #### 5. The risk the Phase 2 gate named has materialised, wider than stated
 
@@ -4712,4 +4799,368 @@ is the measurement.
 | `ACKNOWLEDGEMENTS.md`, `CITATION.cff` | **new** |
 | `pyproject.toml` | `authors` added |
 | README | figures, a pipeline diagram, and links to all four attribution files |
+| New run requested | **None**, of either partner |
+
+---
+
+### D108 — Both new citations read from their PDFs, which corrected three recorded facts; a published relative of our own decomposition surfaced; and Q4 is answered by specifying the experiment rather than by running it (26 Nov)
+
+**No bank pass.** Two PDFs fetched and read, and one open question ruled on. The Q6 re-run
+that was also on the list **cannot be done here** — see §4.
+
+#### 1. TCC, read in full: a published ICML paper, and two of my records were wrong
+
+| recorded | actual |
+|---|---|
+| "arXiv 2609.10737, Sep 2026" | **ICML 2026**, Proceedings of the 43rd ICML, Seoul; **PMLR 306**. A published paper, not a preprint |
+| "its weighted arm fails below **ESS 50%**" | **No such threshold exists in the paper.** `ESS% = 100·(Σw)²/(N·Σw²)` is a qualitative weight-stability signal; the guidance is "TCC-KS when validity is paramount, weighted-TCC when ESS is sufficiently high" |
+| *"the guarantees remain marginal rather than conditional or group-specific"* | a summary's paraphrase. The paper's own sentence: *"As in standard conformal prediction, our guarantees are marginal; group- or stratified-coverage objectives can be incorporated with standard techniques, while stronger conditional guarantees remain complementary."* |
+
+**Both errors came from the same place** — an alphaXiv rendering read in place of the paper —
+and both were written into a decision entry, a gate, and the memory before anyone checked. The
+fabricated ESS threshold is the worse of the two, because it is the kind of specific number
+that reads as having been verified.
+
+**What the paper actually reports**, now quotable: over **328 configurations**, transport-only
+calibration under-covers by more than 1 percentage point in **11 cases (3.4%)**; TCC-KS
+restores valid coverage in **all 11**, at a mean **1.82×** set-size inflation.
+
+**Theorem 3.1 in full**, since we lean on it. For set-valued classification with `|Y| ≥ 2`:
+any procedure given labelled *transported* calibration data and unlabelled target inputs,
+**required to satisfy marginal coverage uniformly over every distribution with a fixed target
+marginal**, must satisfy `sup_P E[|Γ(X)|] ≥ (1−α)|Y|` — near-vacuous sets. The authors'
+implication: anything nontrivial *"must assume some relationship between observable quantities
+… and the unobservable true-label score distribution."*
+
+**Our result has the theorem's shape, and that is a consistency, not a corollary.** On the
+stamped bank the only arm valid at every fold is `max_quantile`, the trivially-safe one — the
+near-vacuous outcome. **Two gaps belong in the sentence every time it is written:** our setting
+is per-region binary flagging under a *known finite* operator set rather than label-free
+cross-space transfer, and the theorem binds procedures required to be valid *uniformly over
+all P*, which Tool 2 never claimed.
+
+#### 2. sFRC, read in full: a federal publication, and the circularity trap in using it
+
+All four authors are at the **U.S. FDA**, Center for Devices and Radiological Health, and the
+paper records that it was produced by federal employees in the course of their official
+duties. That makes it a regulatory-body publication rather than a regulatory-adjacent one.
+
+Three operational facts the abstract did not give:
+
+- **The reference is itself a reconstruction** — *"obtained using a fully sampled acquisition
+  - restored using analytical methods (like Filtered Backprojection (FBP) or inverse Fast
+  Fourier Transform (iFFT))"*.
+- **Algorithm 1 requires a tuning set with annotated hallucinations**: patch size, an FRC
+  threshold `Y` set from the imaging system's resolving power (~0.5 CT, ~0.75 MR), and a
+  hallucination threshold `x_h` from ROIs *"confirmed by experts to be hallucinated or by
+  imaging-theory-based limiting conditions"*.
+- **It positions itself explicitly against Tivnan's Hallucination Index**, the one alternative
+  this project already cites, on the grounds that a full-image metric misses locally confined
+  hallucinations.
+
+**The trap, and it is the one this project keeps walking into.** `x_h` may be set from
+imaging-theory hallucination maps — which here would mean tuning the "external" check on the
+**same null-space reasoning our own criterion is built from**. That is §6.4's circularity in
+different clothes. **Ruling: if sFRC is run, `x_h` comes from expert annotation, or the
+result is reported as a consistency check and not as external validation.**
+
+#### 3. One genuine related-work find, from sFRC's own related work
+
+sFRC cites **Bhadra et al.** for *"a formal linear operator theory-based mathematical model to
+deduce hallucination maps"* built on the **SVD of the forward operator's system matrix**. That
+is the **nearest published relative of this project's null-space decomposition**, and we had
+not cited it — through three scoop rechecks.
+
+sFRC's objection to it is that *"developers may not have access to the system matrix"*. **That
+objection does not bind here:** a known linear/affine forward operator is a stated scope
+condition of this work. So Bhadra et al. is the regime we are in, and sFRC is the method for
+the regime we explicitly excluded. Both belong in related work, with that distinction stated.
+
+**Why three sweeps missed it:** every search was for *conformal* × operator shift. Bhadra et
+al. is not conformal, so no query reached it, and it took reading a competitor's related-work
+section to surface. **Add a non-conformal arm to Q5's next sweep** — hallucination maps from
+operator theory, regardless of whether they carry a coverage guarantee.
+
+#### 4. The Q6 re-run is not available here
+
+Q6's empirical half was to be re-run on a reportable bank, and the entry calls it one command.
+**It is one command on a bank this machine does not have.** `banks/` holds a manifest and the
+local `runs/` are phantom and demo banks; every stamped bank is on Track 2's disk. So Q6 is a
+**bank-pass request, not local work**, and nothing is requested before 3 December. Listing it
+as cheap was my error and is corrected here rather than quietly dropped.
+
+#### 5. Q4 answered — by specifying the experiment, not by running it
+
+Full ruling at Q4. In short: **T1-C did not answer Q4 and could not have**, because each fold
+has one deployment operator, so every arm is a single threshold there and no efficiency
+ranking exists in the design (D102). Route (a), thin groups, is untestable on banks where
+*every* group is thin (design effects 47–186, effective n 13–154), so donor and recipient
+noise are the same term. Route (b), continuous operator change, is where Theorem 3.1 binds
+hardest.
+
+A design that could answer it needs three things the present grid lacks: **several deployment
+operators per fold**, **deliberately unequal group sizes**, and **off-grid deployment
+operators with the assumed observable-to-score link named in advance**. **This project will
+not run it** — the operator-aware layer is refuted on four independent fronts already, and a
+fifth test designed after four failures is not where the remaining time belongs. Recorded as a
+specification so that *"weighting was never given a fair test"* has an answer: here is what a
+fair test would have required, and here is why it was out of reach.
+
+#### 6. Status
+
+| item | state |
+|---|---|
+| TCC | **confirmed from PDF.** ICML 2026; ESS-50% claim **withdrawn**; Theorem 3.1 stated in full with its two analogy gaps |
+| sFRC | **confirmed from PDF.** FDA publication; reference is an analytic reconstruction; `x_h` must come from expert annotation or the check is circular |
+| Bhadra et al. | **new related work**, and a gap in the scoop method: add a non-conformal arm to Q5 |
+| Q4 | **ANSWERED** — experiment specified, not run |
+| Q6 | **not local** — a bank-pass request, deferred past 3 Dec |
+| New run requested | **None**, of either partner |
+
+---
+
+### D109 — The README led with the project's worst number and buried the fix below it; the framing is corrected, and Bhadra et al. is written into the preprint's related work (26 Nov)
+
+**No bank pass, no new measurement.** Two documentation changes, both arising from the same
+complaint: a reader arriving cold could not tell whose assumption had failed.
+
+#### 1. The complaint, which was about framing and not about the results
+
+The README opened with *"They do not"* and the first figure was the certificate's worst cell —
+26.9% caught where 90% is promised. Read cold, that parses as **this project's method is
+broken**, which is the wrong reading: the assumption that fails is one a growing conformal-
+reconstruction literature makes, and this project is the thing that measured it. Finding 2 —
+the fix, nominal at 9 of 9 — sat below the fold, behind the worst number in the repository.
+
+**The results were not the problem and were not changed.** D106's rewrite made the README
+legible to a stranger; it did not make the contribution legible, and those are different
+jobs.
+
+#### 2. What changed
+
+| change | detail |
+|---|---|
+| **Opening** | names the failing assumption as the field's, not ours, and lists the three positives (first quantification, the fix, the evaluation caution) with the four-refinement boundary as a fourth item |
+| **Lead figure** | `coverage-failure` is promoted to the top, because it is the only figure that carries **both** the hazard and the fix in one frame. The certificate figure stays under finding 1, where it belongs as the motivating number |
+| **Finding 2** | no longer repeats the figure; it back-references the top of the page and keeps only the sparse-view-120 detail that finding 3 needs |
+
+**The caption was wrong twice before it was right.** The first draft described a nominal
+**band** and the group-conditional arm as **squares**. Reading the SVG: the nominal 0.90 is a
+single 2px vertical rule, the naive transfers are 72 blue circles, and the group-conditional
+arm is a 3px orange tick per row. *A caption asserted from memory of a figure is as
+unreliable as a number asserted from a summary of a paper* — the same failure as D108's
+ESS-50%, in a different medium. Both marks were checked against the file before the caption
+was rewritten.
+
+#### 3. Bhadra et al. into §2, closing D108's one open writing item
+
+D108 ruled that sFRC and Bhadra et al. *"both belong in related work, with that distinction
+stated"*, and the preprint's *Before submission* entry said **"§2 should say so"**. §2 itself
+had not been touched. It now splits the hallucination-detection strand **three ways**:
+
+- **spread-based** — posterior dispersion, hallucination indices; §6.4 is the caution about how
+  this strand is evaluated;
+- **reference-based** — sFRC, whose reference is a fully sampled analytic reconstruction; named
+  as the closest published external criterion and recorded as unrun;
+- **operator-theoretic** — Bhadra et al., hallucination maps from the **SVD of the forward
+  operator's system matrix**, and no reference image required.
+
+**The sentence that matters** is the one that separates us from the third: *what we share is
+the decomposition; what differs is the calibration layer on top of it.* That has a direct
+consequence for how §6.3 reads — **the four refuted refinements are failures of the
+calibration layer, not evidence against the null-space decomposition**, which is a distinction
+the section did not previously make and a reviewer would otherwise be entitled to collapse.
+
+sFRC's reason for setting the operator-theoretic route aside — developers may lack the system
+matrix — is recorded together with why it does not bind: a known operator is a stated
+condition at §3.1, so this work sits inside the regime Bhadra et al. assume.
+
+**Still open:** full bibliographic entries for all three citations. Not a blocker; §2's prose
+is written, the keys are not.
+
+---
+
+### D110 — Bhadra et al. read in full: it is the source of §3.2's definition, not a relative of it, and D31's August instruction to cite at that point had never been carried out (26 Nov)
+
+**No bank pass.** One paper read end to end from its PDF. This entry **corrects D108's
+assessment** of the same paper and **closes an instruction open since August**.
+
+#### 1. What D108 got wrong, and what the log already knew
+
+D108 called Bhadra et al. *"the nearest published relative of this project's null-space
+decomposition."* **It is not a relative. It is the source.** Confirmed equation by equation:
+
+| in the paper | in this project |
+|---|---|
+| **Definition II.1** — `θ_meas = P_meas θ = H_P⁺Hθ`, `θ_null = P_null θ = [I − H_P⁺H]θ` (Eqs. 11–12) | §3.2's `P_R = A⁺A`, `P_N = I − P_R` |
+| **Eq. 13** — at `P = R` the generalized null space reduces to the true null space `{θ : Hθ = 0}` | the full-rank case, which is the one we use |
+| **Definition III.2** — null-space hallucination map `1(θ̂_null) ⊙ (θ̂_null − θ_null)` (Eq. 21) | §3.2's *"hallucination is structure in `P_N x̂` that is not in `P_N x`"* |
+
+**And the project already knew the shape of this.** D30/D31 (August) ruled that
+*"null-space/range decomposition of the forward operator"* is published under a fixed
+operator, that **novelty rests on operator shift alone**, and that the manuscript must *"cite
+CHEM at the point the decomposition is introduced rather than after a reviewer finds it."*
+
+**That instruction was never executed.** Before today §3.2 introduced the decomposition with
+no citation of any kind, and **CHEM appeared zero times in the preprint.** This is the
+D103 pattern again, one level worse: there, a frozen declaration's stated reason was wrong
+while the declaration stood; here a correct ruling was recorded and then not applied to the
+artefact it governed. *A framing constraint in the log is not in the paper until it is in the
+paper.*
+
+What is genuinely new from the read is the **identity** of the right citation. D31 names CHEM
+and gestures at *"the fundamental-limits line before it"* without naming it. CHEM is the
+conformal application; **Bhadra et al. 2021 is where the definition comes from.**
+
+#### 2. The finding that helps, and it is not small
+
+From the paper's own discussion of what remains open:
+
+> *"Depending on the sampling pattern involved in the data acquisition process, different
+> system matrices **H** will have different null space characteristics. This, in turn, may
+> lead to different properties in the corresponding hallucination maps that would allow a
+> comparison of reconstruction methods under a variety of data acquisition strategies."*
+
+**Varying the acquisition is named as future work by the authors who defined the framework.**
+That is a far stronger related-work position than "nearest relative": the gap this project
+occupies is one the originating paper flagged and did not fill. Quoted in §2.
+
+#### 3. What the paper does not do, which is what preserves the contribution
+
+Checked against the full text, not an abstract. Bhadra et al. have **no calibration, no
+conformal prediction, no coverage statement, no guaranteed miss rate, no ROC or AUC, and no
+baseline detector.** Their comparison axis is *reconstruction method* (U-Net, PLS-TV, DIP) and
+their shift is *object distribution* (in- versus out-of-distribution objects), not operator.
+Metrics are median SSIM over hallucination-map support (their Table I) and qualitative map
+comparison. The study is **simulated single-coil MRI** at acceleration 3, 320×320.
+
+Decisively, **their map requires the true object**: *"for the computation of the hallucination
+map in the generalized null space, one must have full knowledge of the generalized null
+component of the true object."* It is an instrument for analysing reconstruction methods, not
+a detector that can be deployed. **The score here needs no truth at deployment and the
+calibration supplies the guarantee.** That is the difference the paper turns on, and §3.2 now
+says it in those words.
+
+#### 4. One limitation this created, now stated
+
+Their projectors use a **truncated** pseudoinverse, stopping at singular values invertible
+within a stability tolerance. We use `A⁺A` untruncated. **So do they, in their own
+experiments** — so this is not a departure from their practice, and the entry does not inflate
+it into one. But for sparse-view and limited-angle CT the trailing singular values are small,
+so part of what we treat as pinned by the measurements is only weakly determined, and
+`s_free` is a mildly optimistic account of what the prior had to invent. Added as **§7.5**;
+sensitivity to the truncation level is unmeasured and the direction of any bias is not
+established.
+
+The paper also concedes the system-matrix objection sFRC raises against it, and routes around
+it (Wilson–Barrett iterative projections, randomised SVD, Kuo et al.). So **sFRC's reason for
+setting the operator-theoretic line aside is weaker than D108 recorded**, independently of the
+fact that it does not bind here.
+
+#### 5. Changes made
+
+| file | change |
+|---|---|
+| `T1.7_preprint_draft.md` §3.2 | opens by attributing the decomposition and the definition; adds the truncation note, the truth-requirement, and the statement that the contribution is the calibration layer and the operator axis |
+| §2 | Bhadra recast from parallel strand to source; the future-work quote added; **CHEM added** as the closest prior work, executing D31 |
+| §6.4 | separates T1-E's caution from the published "error maps are insufficient" claim — theirs is which map to compute, ours is how a detector on it is validated; they evaluate no detector |
+| §7 | new item 5 (truncation); list renumbered 1–12, which also fixed a pre-existing restart at item 7 |
+| *Before submission* | full citation recorded; **D30's CHEM sourcing caveat reopened** — abstract-level only, method section unverified; bibliography keys listed as unwritten |
+| `ACKNOWLEDGEMENTS.md` | Bhadra entry rewritten as the definitional source; CHEM added |
+
+#### 6. Status
+
+| item | state |
+|---|---|
+| Bhadra et al. | **read in full from PDF.** Source of §3.2; cited in §2, §3.2, §6.4, §7 |
+| D31's instruction | **executed**, 3 months late |
+| CHEM | **cited at last**, but still **unverified beyond its abstract** — the one open sourcing risk before submission |
+| Novelty claim | unchanged in substance, now correctly bounded: the operator axis and the calibration layer |
+| New run requested | **None**, of either partner |
+
+---
+
+### D111 — The supplementary material, read after D110, narrows two of D110's own statements and supplies one objection the paper has to pre-empt (26 Nov)
+
+**No bank pass.** D110 was written from the main text. The full PDF including supplementary
+material was then read. **Two claims in D110 were too broad and are corrected here**; nothing
+in the ruling changes.
+
+#### 1. The decomposition is older than Bhadra et al.
+
+D110 said Bhadra et al. is *"the source of §3.2's definition."* Precisely: they are the source
+of the **hallucination definition**. The **measurement/null split itself** they take from
+**Wilson and Barrett, "Decomposition of images and objects into measurement and null
+components," Optics Express 2(6):254–260, 1998**, and from Barrett and Myers, *Foundations of
+Image Science* — their refs [46] and [20]. D31's August phrase *"the fundamental-limits line
+before it"* was pointing at exactly this, unnamed; it now has a name.
+
+**Corrected in §3.2, §2 and the Before-submission entry.** The practical difference is small
+and the honest difference is not: *"we adopt their definition"* is right, *"they invented the
+decomposition"* would have been wrong in a way a reviewer in this subfield would catch.
+
+#### 2. Only one of their two maps requires the truth
+
+D110 said flatly that *"their map requires the true object."* They define **two**:
+
+| map | formula | needs truth? |
+|---|---|---|
+| **null-space** (Def. III.2) | `1(θ̂_null) ⊙ (θ̂_null − θ_null)` | **yes** — and Algorithm 1 takes `θ` as an input |
+| **measurement-space** (Def. III.1) | `θ̂_meas − θ̂_tp` | **no** — *"requires no knowledge of the true object"* |
+
+The null-space map is the one this project's criterion corresponds to, so **the deployability
+argument survives intact** — but it has to be stated about that map rather than about their
+work in general. The measurement-space map measures the prior's deviation from the stably
+recoverable solution, which is not hallucination in our sense. §3.2 now says this in the form
+above.
+
+A second refinement to the same sentence: the certificate does not need *no* ground truth, it
+needs none **on the case under test**. The calibration set needs labels. §3.2 said "not access
+to the truth"; it now says where the truth is required.
+
+#### 3. The objection this pre-empts, which is the useful part
+
+Their supplementary §S.III analyses an **assumed** system matrix `H` against the **true** one
+`H̃`: with `g = H̃θ + n`, `θ̂_tp ≈ H_P⁺H̃θ + H_P⁺n` while `θ_meas ≡ H_P⁺Hθ`, so once
+`‖H − H̃‖²` or `‖n‖²` is non-trivial the measurement-space hallucination map and the
+measurement-component error map carry different information.
+
+**That is the nearest thing in the prior art to this paper's subject, and it is not the same
+thing.** It is operator **mis-specification within a single acquisition**; ours is operator
+**change between two acquisitions, both known and correctly specified**, breaking
+exchangeability between a calibration set and a deployment set. Theirs is a property of one
+reconstruction; ours is a property of a calibration procedure. Had this gone unaddressed, *"the
+2021 paper already handled operator error"* is a review comment with surface plausibility.
+Addressed in §3.2 and expanded into **§7.10**, which now states that mis-specification is
+excluded by assumption and that its interaction with operator shift is unmeasured.
+
+#### 4. What re-reading confirmed rather than changed
+
+Everything else in D110 held against the full text: Definitions II.1/III.2 and Eq. 13 as
+quoted; their own experiments untruncated (*"the true pseudoinverse was considered without any
+truncation"*); **no calibration, conformal prediction, coverage, miss rate, ROC, AUC or
+baseline detector anywhere**, main text or supplementary; axes are reconstruction method
+(U-Net, PLS-TV, DIP) and object distribution (IND/OOD), never the operator; metrics are median
+SSIM over hallucination-map support and centroid scatter; and the future-work sentence naming
+**data acquisition strategies** is verbatim as quoted in §2.
+
+**Provenance note:** the PDF is arXiv:2012.00646v3, 27 Sep 2021, and **carries no journal
+line**. The IEEE TMI volume, pages and DOI in the Before-submission entry come from indexing
+pages, not from this document, and are still to be checked against IEEE Xplore.
+
+#### 5. The lesson, which is the same one twice in two days
+
+D108: read the paper, not the rendering. D110: read the paper, not its description in another
+paper. **D111: read the supplementary too.** The pattern across all three is that each
+successive source was *closer to the original* and each one changed a recorded fact. The
+supplementary held the one objection a reviewer is most likely to raise, and nothing in the
+main text would have surfaced it.
+
+| item | state |
+|---|---|
+| D110 §1 "source of the definition" | **narrowed** — hallucination definition theirs, decomposition Wilson & Barrett 1998 |
+| D110 §3 "their map requires the true object" | **narrowed** — true of the null-space map, false of the measurement-space map |
+| Deployability argument | **unchanged**, now stated about the correct map |
+| `H` vs `H̃` mis-specification | **newly distinguished** from operator shift; §7.10 |
+| Novelty claim | unchanged: the operator axis and the calibration layer |
 | New run requested | **None**, of either partner |
