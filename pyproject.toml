@@ -8,6 +8,11 @@ version = "0.1.0"
 description = "Operator-shift-robust conformal hallucination flagging for generative-prior image reconstruction"
 readme = "README.md"
 license = { text = "Apache-2.0" }
+authors = [
+    { name = "Angshuman Chakravertty" },
+    { name = "Kuchuru Sai Krishna Reddy" },
+    { name = "Md Rayyan" },
+]
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.26",

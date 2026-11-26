@@ -1,0 +1,46 @@
+# Author name order was taken from this repository's commit metadata. CFF needs each name
+# split into given and family parts, and that split is a guess for names where the
+# convention is not written down — each author should correct their own entry.
+cff-version: 1.2.0
+title: >-
+  CALIBER: operator-shift-robust conformal hallucination flagging for
+  generative-prior image reconstruction
+message: >-
+  If you use this software or its results, please cite it using the metadata
+  from this file.
+type: software
+authors:
+  - given-names: Angshuman
+    family-names: Chakravertty
+  - given-names: Sai Krishna Reddy
+    family-names: Kuchuru
+  - given-names: Rayyan
+    family-names: Md
+repository-code: "https://github.com/Angshuman1211/CALIBER"
+abstract: >-
+  Conformal reliability certificates for image reconstruction assume the
+  acquisition operator is fixed between calibration and deployment. This
+  repository measures what happens when it is not. On sparse-view and
+  limited-angle CT with a chest-CT diffusion prior, a transferred conformal
+  threshold falls below its nominal 0.90 coverage at 36 of 72 ordered operator
+  pairs, and in the worst pair catches 26.9 percent of hallucinated regions
+  where it promises 90 percent. Group-conditional calibration restores nominal
+  coverage at all nine operators. Four refinements that condition on how far
+  the operator moved, rather than on which operator it is, were specified in
+  advance and are each unsupported. A separate result concerns evaluation
+  practice: where the generative prior does not match the anatomy, the field's
+  standard protocol for validating an uncertainty map is outscored by a
+  detector that reads no posterior information at all.
+keywords:
+  - conformal prediction
+  - distribution-free uncertainty quantification
+  - inverse problems
+  - image reconstruction
+  - hallucination detection
+  - diffusion models
+  - magnetic resonance imaging
+  - computed tomography
+  - distribution shift
+license: Apache-2.0
+version: 0.1.0
+date-released: "2026-11-26"
