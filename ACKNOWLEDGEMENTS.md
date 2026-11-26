@@ -89,14 +89,32 @@ of **Tibshirani, Barber, Candès and Ramdas** is the standard route for covariat
 the reason operator shift needs a different argument is that it changes the measurement
 process rather than the covariate distribution.
 
-Two independently published results shaped what this work claims:
+Several independently published works set the bounds of what this one claims. The last two are
+load-bearing: they define the object being measured and they occupy the nearest ground, which
+is why the contribution here is stated as the operator axis and the calibration layer rather
+than as the criterion.
 
-- **Doula**, *Conformal Calibration Transfer* (arXiv:2609.10737), whose impossibility result
-  for label-free, uniformly valid correction is cited in our limitations as support for a
-  negative result of ours rather than as competing work.
-- **Kc, Zeng, Soni and Badano**, *sFRC for assessing hallucinations in medical image
-  restoration* (arXiv:2603.04673), which is the external criterion we name as available and
-  have not yet run — an open item, stated rather than quietly omitted.
+- **Achref Doula**, *Conformal Calibration Transfer*, ICML 2026 (PMLR 306), whose
+  impossibility theorem for label-free, uniformly valid correction is cited in our limitations
+  as support for a negative result of ours rather than as competing work.
+- **Prabhat Kc, Rongping Zeng, Nirmal Soni and Aldo Badano**, *sFRC for assessing
+  hallucinations in medical image restoration* (arXiv:2603.04673), produced at the U.S. FDA's
+  Center for Devices and Radiological Health. It is the external criterion we name as
+  available and have not yet run — an open item, stated rather than quietly omitted.
+- **Sayantan Bhadra, Varun A. Kelkar, Frank J. Brooks and Mark A. Anastasio**, *On
+  hallucinations in tomographic image reconstruction*, IEEE Transactions on Medical Imaging,
+  2021. **The definition of hallucination this project uses is theirs** — the null-space
+  hallucination map, and the formalisation of invention as the prior's error in the unmeasured
+  subspace. This repository supplies the calibration layer and the operator-shift axis; the
+  object being calibrated was defined here first. Their discussion names varying the
+  acquisition strategy as future work, which is the opening this project took.
+- **D. W. Wilson and H. H. Barrett**, *Decomposition of images and objects into measurement
+  and null components*, Optics Express, 1998, together with **H. H. Barrett and K. J. Myers**,
+  *Foundations of Image Science* — the measurement/null split itself, which predates its
+  application to hallucination and which all of the above is built on.
+- **CHEM**, for the conformal treatment of that same null-space map under a fixed operator —
+  the closest published work to this one, and the reason the claim here is narrowed to
+  operator shift.
 
 ## Software
 
