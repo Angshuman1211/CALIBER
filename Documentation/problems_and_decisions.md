@@ -4615,3 +4615,101 @@ refuted, and the evaluation caution. Public, and reversible.
 | Tests | **1,244 passing, 7 skipped** |
 | Track 1 remaining | **the Phase 4 gate, at submission**, carrying Q5's next instance. Nothing else |
 | New run requested | **None**, of either partner |
+
+---
+
+### D107 — Three result figures generated from the delivered CSVs, the Apache appendix filled in, and the attribution record split into a legal file and a prose one (26 Nov)
+
+**No bank pass.** The figures are drawn from `ordered_pairs.csv` and `matched_control.csv` as
+delivered, plus T2.11 §3a's and T2.10 §6a's published tables. Every value in them was checked
+against the documented figure before it was plotted.
+
+#### 1. The figures, and the one check that matters
+
+`Documentation/figures/`, six SVG files — three figures × light and dark, embedded with `<picture>` so
+the right one is served on either GitHub theme. No raster, no build step, no dependency: the
+generator writes SVG markup directly, because `matplotlib` does not import under this
+project's Python (a NumPy 2.x ABI mismatch, unrelated to anything here).
+
+| figure | form | what it carries |
+|---|---|---|
+| **The failure and the fix** | strip plot, 9 deployment operators × 8 calibration sources | all 72 ordered pairs against nominal, with the group-conditional arm on the same axis |
+| **The certificate reading** | single bar against a target marker | 26.9% caught where 90% is promised |
+| **The evaluation caution** | diverging bars, zero baseline | posterior spread minus the scale-only null, four banks, ordered by `cos θ` |
+
+**The check:** recomputing the strip plot's inputs from the CSV reproduces the documented
+figures exactly — **36 of 72** below nominal, **22** below 0.80, worst **0.377** at
+limited-angle 90° → sparse-view 120. A figure that disagreed with the prose would have meant
+one of them was wrong; this one agrees.
+
+> **Caught before it shipped:** the figures were first written to `docs/figures/`, and
+> `.gitignore` line 114 ignores `docs/` wholesale ("course/planning docs kept locally"). They
+> would never have been committed, and every `<img>` in a **public** README would have 404'd.
+> `git check-ignore` is the check; it is worth running on any new directory a committed
+> document links into.
+
+**One thing the figure shows that the prose had not.** Ordering rows by the physical
+acquisition axis makes sparse-view 120's anomaly visible at a glance — **all eight** of its
+transfers fail, more than any other operator including the most aggressive — which is a
+picture of exactly why the gap is not ordered by operator distance. The caption says so and
+points at finding 3 rather than leaving the reader to notice.
+
+#### 2. What was deliberately *not* drawn
+
+**The four refinements are left as a table.** They are a false-safe rate, an out-of-sample MAE
+difference, a validity count and a rank correlation; putting them on one axis would be a
+dual-axis chart in all but name. A table is the honest form for heterogeneous quantities.
+
+**No trend line on the four-bank figure**, and the caption says no trend is fitted. Four
+banks, with modality, substrate, prior and region count all moving together — the figure
+displays a 2 × 2 with a measured mediator, and a reader who draws a line through four points
+is doing what D102 was logged for.
+
+Palette and marks follow a published data-visualisation method rather than taste; both the
+light and dark palettes were run through its colour-blindness and contrast validator and pass
+every check on both surfaces. Each figure carries `<title>` and `<desc>` for screen readers,
+and each has a visible caption in the README.
+
+#### 3. The licence was carrying the Apache template
+
+`LICENSE` still ended with the appendix's `Copyright [yyyy] [name of copyright owner]`. That
+block *is* a template and is often shipped verbatim, but Apache's own instruction is to
+replace the bracketed fields, and a reader seeing brackets reads "unfinished". Filled in with
+the year and the three authors, taken from the repository's own commit metadata. `NOTICE` had
+no copyright line of its own and now does; `pyproject.toml` had no `authors` field and now
+does.
+
+**`NOTICE` was otherwise already complete and correct** — the adapted file, the four datasets
+with their licences and required citations, and the statement that no weights and no data are
+distributed. It did not need rewriting, only a copyright line and a pointer.
+
+#### 4. Two attribution documents, because they do different jobs
+
+- **`NOTICE`** is the legal record: the licences, the required citations, the adapted source
+  file. It governs where the two disagree, and it says so.
+- **`ACKNOWLEDGEMENTS.md`** credits the same work in prose and adds what carries no licence
+  obligation — the solvers, the conformal-prediction literature the backbone rests on, the
+  software stack, and the two independently published papers that shaped what this work
+  claims (TCC's impossibility result, which supports one of our negatives, and sFRC, which is
+  the external criterion we name as available and have not run).
+- **`CITATION.cff`** gives GitHub's "Cite this repository" button real metadata. The
+  given/family split for two of the three names is a guess from commit metadata, and the file
+  says so in a comment rather than silently asserting it — misattributing a real person's name
+  is not the kind of placeholder to leave quiet.
+
+The acknowledgements close on the thing worth saying out loud: this project trains nothing and
+collects nothing, so the machinery is almost entirely other people's, and its own contribution
+is the measurement.
+
+#### 5. Status
+
+| item | state |
+|---|---|
+| Figures | **3 × light/dark SVG** in `Documentation/figures/`, embedded with `<picture>`, palettes validated |
+| Figure data | recomputed from the delivered CSVs; reproduces 36 of 72, 22 below 0.80, worst 0.377 |
+| `LICENSE` | Apache appendix filled with year and authors |
+| `NOTICE` | copyright line added; otherwise unchanged and already correct |
+| `ACKNOWLEDGEMENTS.md`, `CITATION.cff` | **new** |
+| `pyproject.toml` | `authors` added |
+| README | figures, a pipeline diagram, and links to all four attribution files |
+| New run requested | **None**, of either partner |

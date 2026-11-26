@@ -1,7 +1,13 @@
 CALIBER
 Operator-shift-robust conformal hallucination flagging for generative-prior image reconstruction.
 
+Copyright 2026 Angshuman Chakravertty, Kuchuru Sai Krishna Reddy, and Md Rayyan.
+
 Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This NOTICE file is the legal attribution record required by the datasets' and the adapted
+code's own licences. ACKNOWLEDGEMENTS.md credits the same work in prose, along with the
+methods and software this project builds on; where the two differ, this file governs.
 
 This repository includes code adapted from other projects:
 

@@ -668,7 +668,7 @@ The second (analytical) paper now has T3.6 and T3.7 to build on.
 
 | Document | Holds |
 |---|---|
-| `problems_and_decisions.md` | Track 1's log, **D1–D106**, open questions, cross-track contracts |
+| `problems_and_decisions.md` | Track 1's log, **D1–D107**, open questions, cross-track contracts |
 | `decision_log.md` | Cross-track decisions, **D-001–D-072** |
 | `T2_problems_and_decisions.md` | Track 2's problem log, **P-01–P-45**, plus the index of every cross-track decision |
 | `T1.1`–`T1.7` | Track 1's per-task records; `T1.7_preprint_draft.md` is the narrowed paper |

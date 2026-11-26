@@ -34,12 +34,30 @@ catch 90% of hallucinated regions **catches 26.9%** — a 63-point shortfall. On
 brain MRI with a brain-MRI prior, transfer from a 1-D mask to 2-D variable-density masks covers
 **0.000 to 0.159**.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="Documentation/figures/certificate-dark.svg">
+  <img alt="The worst transfer cell catches 26.9 percent of hallucinated regions where the certificate promises 90 percent." src="Documentation/figures/certificate-light.svg" width="100%">
+</picture>
+
+<sub>Limited-angle 90° calibration deployed at sparse-view 120. This is the quantity a
+deployment certificate is actually read for, and it is the paper's motivating number.</sub>
+
 **2. Conditioning on the operator restores it.** Group-conditional (Mondrian) calibration —
 one threshold per operator, exact under exchangeability within each group — reaches nominal
 coverage at **all nine CT operators**, 0.892 to 0.905 as the mean over 13 patient splits, and
 0.80 to 0.91 on MRI. The cost is real and reported: flagged area and region-level false
 discovery rate both rise. This is the textbook estimator applied to a new partition; the
 contribution is the demonstration and the measurement, not the estimator.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="Documentation/figures/coverage-failure-dark.svg">
+  <img alt="Coverage of a transferred conformal threshold across 72 ordered operator pairs: naive transfer falls below nominal at 36 of them, while group-conditional calibration sits at 0.892 to 0.905 at all nine operators." src="Documentation/figures/coverage-failure-light.svg" width="100%">
+</picture>
+
+<sub>Each row is a deployment operator; each dot is a threshold calibrated at one of the
+eight others. Sparse-view 120 is out of order with respect to the acquisition axis — all
+eight of its transfers fail — which is one reason the coverage gap turns out not to be
+ordered by operator distance (finding 3).</sub>
 
 **3. Conditioning on *how far* the operator moved does not work.** This is the part that was
 expected to be the main contribution, and it is a measured negative. Four refinements were
@@ -69,6 +87,15 @@ the magnitude of what the prior invented — the protocol is **outscored by that
 operators on two banks whose prior does not match the anatomy.** Where the prior does match,
 the posterior wins, but it contributes 0.04 to 0.12 AUROC over the null rather than the 0.92
 to 0.94 the protocol reports.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="Documentation/figures/evaluation-caution-dark.svg">
+  <img alt="Posterior spread minus a scale-only null on four score banks: the null wins on both natural-image-prior banks and loses on both matched medical-prior banks." src="Documentation/figures/evaluation-caution-light.svg" width="100%">
+</picture>
+
+<sub>The scale-only null reads no draws and no variance — only the magnitude of what the
+prior invented. Four banks is four points, so no trend is fitted; the claim is that the sign
+follows the prior rather than the modality, with `cos θ` as the measured mediator.</sub>
 
 The mechanism is an exact identity. With `s` the reconstruction's hidden-component magnitude,
 `c` the truth's, and `θ` their alignment, `err² = s² + c² − 2sc·cos θ`. At `cos θ ≈ 0` the
@@ -146,6 +173,28 @@ cached as a **score bank**. Every calibration experiment, coverage curve and num
 then runs on the cache with no GPU, which decouples the statistical and analytical work from
 reconstruction time entirely.
 
+```mermaid
+flowchart LR
+  subgraph GPU["computed once, on GPU"]
+    A["ground-truth<br/>volume"] --> B["acquisition<br/>operator A"]
+    B --> C["pretrained<br/>generative prior"]
+    C --> D["reconstruction"]
+    A --> E
+    D --> E["range / null-space<br/>split, per region"]
+    E --> F[("score bank<br/>cached, self-describing")]
+  end
+  subgraph CPU["everything after, on CPU"]
+    F --> G["conformal<br/>calibration"]
+    F --> H["coverage &<br/>flag area"]
+    F --> I["coverage-gap<br/>bound"]
+    G --> J["per-region<br/>hallucination flags"]
+  end
+```
+
+Every operator in the grid is applied to the *same* acquisition, so the patient budget is
+shared across operators rather than divided among them, and a coverage difference between two
+operators is a within-patient paired contrast.
+
 ```
 src/caliber/
   operators/    the known acquisition operator A, its range/null-space split,
@@ -205,6 +254,11 @@ negative result is only readable if the reasoning behind it is inspectable. Four
 | [`T1.7_preprint_draft.md`](Documentation/T1.7_preprint_draft.md) | the paper: the failure, the fix, the measured boundary, and the evaluation caution |
 | [`reproducing.md`](Documentation/reproducing.md) | from a clean clone to every reported number |
 | [`problems_and_decisions.md`](Documentation/problems_and_decisions.md) | the decision log — every methodological choice, why it was made, and the ones that were later withdrawn on measurement |
+
+Attribution and reuse: [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md) for the datasets, priors,
+solvers and methods this work is built on, [`NOTICE`](NOTICE) for the licence obligations that
+travel with them, [`CITATION.cff`](CITATION.cff) to cite the repository, and
+[`LICENSE`](LICENSE) (Apache-2.0). No data and no model weights are distributed here.
 
 The remaining files are per-task records, named for the task that produced them, and are best
 reached from the four above rather than read in order.
