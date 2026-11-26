@@ -95,3 +95,106 @@ def test_the_control_columns_are_ones_a_bank_has_and_need_no_draws(protocol):
 
     assert set(protocol.CONTROLS) == {"s_free", "s_range"}
     assert set(protocol.CONTROLS) <= set(COLUMNS)
+
+
+# -- T1-E: the circularity section's own arithmetic (D105) ---------------------
+#
+# The section's reading rests on two things that are algebra, not measurement, and on a
+# 2x2 of margins. All three are recomputed here so the prose cannot drift from them.
+
+#: T2.11 section 3a, medians over the nine operators, q90 label. cos theta from T2.10
+#: section 6a (face +0.073 / BraTS +0.596 on M4Raw) and T2-C (+0.882 on the full LIDC bank).
+#: (prior_class, cos_theta, spread_auroc, s_free_auroc, s_range_auroc)
+_T1E_BANKS = {
+    "fastmri_face": ("face", 0.073, 0.932, 0.978, 0.427),
+    "ct_face": ("face", 0.074, 0.994, 0.997, 0.371),
+    "m4raw_brats": ("medical", 0.596, 0.937, 0.895, 0.847),
+    "ct_lidc": ("medical", 0.882, 0.920, 0.801, 0.759),
+}
+
+
+def test_the_criterion_reduces_to_the_score_exactly_at_zero_alignment():
+    """The identity is why circularity is structural rather than a bad label choice."""
+    rng = np.random.default_rng(11)
+    s = rng.uniform(0.1, 3.0, 500)
+    c = rng.uniform(0.1, 3.0, 500)
+    cos_t = rng.uniform(-1.0, 1.0, 500)
+
+    err = np.sqrt(np.maximum(s**2 + c**2 - 2.0 * s * c * cos_t, 0.0))
+    assert np.all(np.isfinite(err))
+
+    # At cos theta = 0 and only there, the criterion is hypot(score, content).
+    err0 = np.sqrt(s**2 + c**2 - 2.0 * s * c * 0.0)
+    assert np.allclose(err0, np.hypot(s, c), atol=1e-12)
+    far = np.abs(cos_t) > 0.5
+    assert np.all(np.abs(err[far] - np.hypot(s[far], c[far])) > 1e-6), (
+        "away from zero the identity must NOT hold, or the test proves nothing")
+
+
+def test_the_identity_predicts_which_null_wins_and_both_face_banks_agree():
+    """At cos theta ~ 0 the error IS the null-space magnitude, so brightness carries
+    nothing. Measured: s_free near-perfect, s_range below chance. Both face banks."""
+    for name, (cls, cos_t, _spread, s_free, s_range) in _T1E_BANKS.items():
+        if cls != "face":
+            continue
+        assert cos_t < 0.10, name
+        assert s_free > 0.97, name
+        assert s_range < 0.50, (
+            "%s: the measured component must be below chance where the identity holds" % name)
+
+
+def test_the_margin_sign_is_set_by_the_prior_and_not_the_modality():
+    """Two modalities per prior class, and the sign follows the class both times."""
+    signs = {}
+    for name, (cls, _cos, spread, s_free, _sr) in _T1E_BANKS.items():
+        signs.setdefault(cls, []).append(round(s_free - spread, 4))
+
+    assert len(signs["face"]) == 2 and len(signs["medical"]) == 2
+    assert all(m > 0 for m in signs["face"]), signs["face"]
+    assert all(m < 0 for m in signs["medical"]), signs["medical"]
+    assert max(signs["face"]) == pytest.approx(0.046, abs=5e-4)
+    assert min(signs["medical"]) == pytest.approx(-0.119, abs=5e-4)
+
+
+def test_the_posterior_is_credited_with_the_margin_and_not_the_level():
+    """Quoting 0.937 or 0.920 credits the posterior with what a scale already delivers."""
+    for name in ("m4raw_brats", "ct_lidc"):
+        _cls, _cos, spread, s_free, s_range = _T1E_BANKS[name]
+        best_null = max(s_free, s_range)
+        contribution = spread - best_null
+        assert 0.0 < contribution < 0.13, name
+        assert contribution < spread / 4.0, (
+            "%s: the level is at least four times the contribution, so the level is not "
+            "the result" % name)
+    m4 = _T1E_BANKS["m4raw_brats"]
+    lidc = _T1E_BANKS["ct_lidc"]
+    assert m4[2] - max(m4[3], m4[4]) == pytest.approx(0.042, abs=5e-4)
+    assert lidc[2] - max(lidc[3], lidc[4]) == pytest.approx(0.119, abs=5e-4)
+
+
+def test_no_correlation_across_the_four_banks_is_claimed():
+    """Four banks, every covariate moving together: the section says so and must keep
+    saying so. This is D102's lesson applied before the statistic is computed."""
+    doc = (Path(__file__).resolve().parents[1] / "Documentation"
+           / "T1.7_manuscript_method_and_analysis.md").read_text(encoding="utf-8")
+    assert "No correlation is computed across the four banks, deliberately" in doc
+    assert "almost no resolution" in doc
+    assert len(_T1E_BANKS) == 4, "if a fifth bank lands, revisit the refusal rather than "\
+        "the wording"
+
+
+def test_the_full_image_spread_limit_is_stated_on_the_stamped_row():
+    """The literature's own quantity has not been run on the bank that carries claims."""
+    doc = (Path(__file__).resolve().parents[1] / "Documentation"
+           / "T1.7_manuscript_method_and_analysis.md").read_text(encoding="utf-8")
+    assert "has not been run\n   on the stamped bank" in doc
+    assert "0.008 AUROC" in doc, "the substitution's validation must travel with the limit"
+    assert "single largest limit on the headline row" in doc
+
+
+def test_weakening_the_circularity_did_not_deliver_detection():
+    """The section must not read as rescuing the score. Two failures, not one."""
+    doc = (Path(__file__).resolve().parents[1] / "Documentation"
+           / "T1.7_manuscript_method_and_analysis.md").read_text(encoding="utf-8")
+    assert "1 of 8** operators on\n  M4Raw and **0 of 9** on CT" in doc
+    assert "two separate failures" in doc

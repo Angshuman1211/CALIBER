@@ -2316,7 +2316,23 @@ D3 makes Mondrian the guaranteed backbone and D4 makes operator-distance weighte
 
 The answer exists and is defensible — weighting buys what Mondrian structurally cannot: (a) **thin groups**, where per-regime calibration data is too scarce for a stable threshold, exactly the high-acceleration regimes D10 warns about; and (b) **continuous operator change**, where there is no finite group to calibrate within. But neither case is currently an explicit line in the blueprint's experimental protocol (§16), which means the paper's headline method has no experiment that demonstrates its advantage over its own baseline. T1.4 must name that experiment: sweep calibration-set size per regime down to where Mondrian's thresholds become noisy and weighting wins, and include off-grid deployment operators that no group covers. Report both, not just the coverage curve.
 
-### Q5 — Scoop recheck — **done August 2026 (D30); standing, repeat at write-up**
+### Q5 — Scoop recheck — **repeated 26 November 2026 (D104, Phase 3 gate); still standing, next instance at submission**
+
+**November 2026 repeat.** Four searches. **The targeted gap is still open** — nothing
+calibrates a conformal procedure at one acquisition operator, deploys at another and restores
+coverage. Two items change what the paper must do, both written up in the Phase 3 gate's §Q5:
+**TCC** (arXiv 2609.10737, Sep 2026), the closest mechanism match, which is not prior art
+(classification, input/sensor shift, operator never changed, guarantees *marginal* by its own
+statement) but whose **impossibility result for label-free valid correction supports Tool 2's
+measured failure**; and **sFRC** (arXiv 2603.04673, May 2026), a second published alternative
+label covering **CT sparse-view and subsampled MRI at patch granularity**, which makes the
+label's external-validation limit read *"a matching alternative exists and has not been run"*
+rather than *"none exists"*. The groups named below remain the ones to watch; Schniter/Ahmad's
+2511.13533 is confirmed to evaluate MRI to R=8 under exchangeability and still has not taken
+the step.
+
+**Original August 2026 entry follows.**
+
 The two "verified empty" cells (operator-shift-robust conformal coverage; flow-matching × conformal) were verified as of **mid-2026**, and the research documents explicitly flag that absence of evidence is not proof, naming VOILA (Fridovich-Keil), Schniter/Ahmad and Sulam as the groups to monitor monthly across cs.CV, eess.IV and stat.ME. D11 already mandates an early preprint for priority. The sweep has not been repeated since the research was written. Repeat it before further design work, and again at write-up.
 
 ### Q6 — Does `s_free` fire on detailed anatomy rather than on hallucination? [**ANSWERED on a development bank — D43**; standing until a reportable bank exists; owned by T1.1/T1.4]
@@ -2379,10 +2395,10 @@ _Not started. Owns Q4._ Carries four inherited instructions: operator grids spre
 See `T1.5_cross_track_integration.md`. _Week 1 sign-off delivered_ — D19–D24 close `Documentation/week1_kickoff.md` §G. Standing work: the shared interfaces (score bank, operator registry) and adjudication continue through the term.
 
 ### T1.6 — Analysis and course correction
-See `T1.6_analysis_and_course_correction.md`. **Phase 1 gate delivered** — `T1.6_analysis_and_course_correction.md`. Verdict: Phase 1 complete but for reproduced baselines (T2.6), blocked on solver integration (T2.2); feasibility demonstrated; no scope reduction warranted. Scoop recheck done (D30); novelty framing tightened (D31). Standing from here: owns Q5 and each subsequent phase gate.
+See `T1.6_analysis_and_course_correction.md`. **Three of four gates delivered.** *Phase 1 (Aug 2026)* — complete but for reproduced baselines (T2.6), blocked on solver integration (T2.2); feasibility demonstrated; no scope reduction; scoop recheck done (D30) and novelty framing tightened (D31). *Phase 2 (Oct 2026)* — central claim demonstrated in both modalities, secondary claim not and not possible from this prior; coverage claims survive the label's defects and detection claims do not. *Phase 3 (Nov 2026, D104)* — **all artefacts delivered and the phase's own result is negative:** the operator-aware layer is refuted or unsupported on the only bank that carries claims while the backbone is stamped at 9 of 9; a measured scope boundary rather than a generalisation, so §23's publication sequence is re-scoped and the narrowed cut is promoted to *the* method paper. Q5 repeated. *Phase 4's gate is due at submission* and carries Q5's next instance. Standing from here: owns Q5 and each remaining gate.
 
 ### T1.7 — Technical authoring
-_Not started._
+See `T1.7_manuscript_method_and_analysis.md` and `T1.7_preprint_draft.md`. **The narrowed preprint cut is drafted and self-contained** — every number is one Track 2 measured, each table labelled as development output under D-016. D77 puts Tools 2 and 3 and all detection claims out of this cut. **The Phase 3 gate promotes it from "the lesser version" to the method paper** (D104): the gap-versus-distance strand it leaves out has no stamped support, so the paper the blueprint planned cannot be written and this one can. **T1-E delivered 26 Nov (D105)** as §3.6 of the manuscript document — the circularity section and the evaluation caution, contribution (iv) in D-070's order, and the one Track 1 contribution that stands without the score being good. Three stale sections of the same document were corrected with it (§3.5 carried the clause D102 refuted; §4 listed two closed threats; §5's five remaining items are all delivered). Remaining: **T1-F**, the final cut, after the 28 November exam.
 
 ---
 
@@ -4256,4 +4272,346 @@ rule by itself has now failed three times.
 | `PROJECT_STATUS.md` | every section now read against D85–D102; four sections survived unchanged |
 | Amendment | **21**, fingerprint `979a8dab4176` → `65e39284b403` |
 | Tests | **1,237 passing, 7 skipped**; 7 added, all recomputing from the stored table |
+| New run requested | **None**, of either partner |
+
+---
+
+### D104 — Phase 3 gate: the phase delivered every artefact and returned a negative, so §23's publication sequence is re-scoped and the narrowed cut becomes the paper (26 Nov)
+
+**No bank pass.** The gate is in `T1.6_analysis_and_course_correction.md`; this entry records
+the three things in it that are decisions rather than assessment. Q5's current instance is
+closed by it and **Q5 stays standing**, next at submission.
+
+#### 1. The verdict, and why it is not a scope reduction
+
+Every Phase 3 artefact exists — second-modality bank (twice, including the stamped one),
+weighted recalibration, gap curves in both modalities, ill-posedness scaling past interim —
+and Phase 4's two analytical items arrived early as well. **The phase's own result is
+negative:** on the only bank that carries claims, all four operator-aware refinements are
+unsupported, while the backbone under them is stamped at 9 of 9 operators. So Phase 3
+produced a **measured scope boundary** rather than a generalisation.
+
+No scope reduction is warranted, for the same reason as at the Phase 1 gate: the blueprint's
+risk register makes the appendix domain and stretch results cuttable first and neither is on
+the critical path. What changes is the *claim*, not the scope.
+
+**The clause-by-clause verdict on the central claim is now three different answers:** the
+guarantee fails and is restored — **holds, stamped**; in both modalities — **holds in the weak
+form only**, and the strong form is measured and fails; the gap is bounded by a computable
+operator distance — **the bound holds at 72 of 72 and the distance's ordering role does
+not.**
+
+**Track 3 and Track 1 reached that last negative independently, from opposite ends.** T3.6
+row 5: within a family the distance does not order the *score-law* shift (ρ −0.16 to +0.18 on
+66 of 72 pairs). D102: on the cross-family *threshold gap* a scalar read off the operator name
+beats it (+0.8524 against −0.5046, the distance backwards). Two tracks, two response
+variables, one answer — which is what makes "refuted" the right word and not "unfinished".
+
+#### 2. Ruling: the narrowed cut is promoted to the method paper
+
+§23 plans preprint (core) → primary paper (method + cross-modality + **gap-versus-distance**)
+→ separate analytical paper. **The primary paper as specified cannot be written**, because its
+third component has no support on a stamped bank. Ruling: the method paper is *the
+group-conditional backbone across two modalities, with a measured scope boundary on
+operator-aware refinement, and the bound as its theory.* `T1.7_preprint_draft.md` under D77 is
+already that paper and is promoted rather than treated as a reduced version. The **analytical
+paper is unaffected** — Theorem 1 is the one strand that landed as planned.
+
+This is the decision the gate exists to make, and it is better made now than discovered during
+T1-F.
+
+#### 3. Ruling: a standing scope limit changes wording, because a second alternative label exists
+
+The limit read: *"No external validation of the label. The one published alternative (Tivnan
+2024) disagrees at κ ≈ 0 and mostly flags background."* **sFRC** (Kc, Zeng, Soni, Badano;
+arXiv 2603.04673 v2, May 2026; three authors FDA/CDRH) performs Fourier Ring Correlation over
+patches scanned across output and reference, produces localised hallucination maps, and covers
+**CT sparse-view and subsampled MRI** — both of this project's modalities, both of its
+undersampling regimes, at the granularity the region grid uses.
+
+**Ruling: the limit now reads "a matching alternative exists and has not been run."** That is
+narrower and less comfortable than the old wording, which is the reason to change it. Two
+facts travel with it: sFRC **requires a reference**, so it validates the *label* and does not
+compete with the *score*; and its parameters need expert-annotated features or
+imaging-theory maps, so it carries an annotation cost.
+
+> **Cross-track contract, recorded and NOT requested.** Running sFRC against `err_free` on the
+> LIDC bank would be the project's first external validation of its label. It is a Track 2
+> Phase 4 option. Nothing is requested of either partner before 3 December; this is here so
+> the Phase 4 gate inherits it costed instead of rediscovering it.
+
+#### 4. The one finding that helps
+
+**TCC** (Doula, arXiv 2609.10737, Sep 2026) is the closest mechanism match that exists — a
+conformal procedure that transports a calibration set across a shift — and it is **not prior
+art**: classification, input/sensor shift (CIFAR-100-C, SAR→RGB), the forward operator never
+changed, and by its own statement *"the guarantees remain marginal rather than conditional or
+group-specific"*, which is precisely what Tool 1 provides.
+
+What it gives us is better than the absence of a competitor. **It proves that label-free,
+uniformly valid correction is impossible without assumptions linking observable target
+behaviour to the label-conditional score distribution.** Tool 2 is a label-free correction.
+Its measured failure on the stamped bank therefore has independent theoretical company, which
+is the difference between a tuning failure and a scope boundary. **Cite it in the limitations,
+not the related work.** Its weighted arm also reports **effective sample size** and fails below
+ESS 50%, converging on a diagnostic §15.2 already lists.
+
+#### 5. The risk the Phase 2 gate named has materialised, wider than stated
+
+Phase 2 wrote that the project might finish with no supportable claim that its own score beats
+a dispersion baseline, and named the DPS ablation as the one experiment that could change it.
+The ablation ran and did not. **And the risk was understated — it named detection, and the
+coverage axis went the same way:** safety rule refuted (D89), gap prediction 0 of 4 cells and
+then refuted on its own response variable (D91, D102), weighted recalibration with no validity
+and no efficiency claim (D100), distance ordering withdrawn (D102).
+
+**The risk that replaces it, recorded because a gate is where it belongs:** the one stamped
+claim is Tool 1, which is Mondrian calibration on a new partition — the contribution there is
+the demonstration and the measurement, not the estimator. So **Track 1 is at risk of finishing
+with no positive result of its own**, holding instead the negatives, the pre-registration
+machinery and the scope boundaries. That is a presentation problem, not a measurement one, and
+the answer is to write the boundary *as the result*: a pre-registered operator-shift benchmark
+on a stamped medical-prior bank on which four plausible refinements are each measured and each
+fails, with an impossibility result explaining why one of them must.
+
+#### 6. Status
+
+| item | state |
+|---|---|
+| Phase 3 gate | **Delivered**, `T1.6_analysis_and_course_correction.md` |
+| Q5 | repeated; **gap still open**; two new required citations; **stays standing**, next at submission |
+| §23 sequence | **re-scoped.** Narrowed cut promoted to the method paper; analytical paper unaffected |
+| Label external-validation limit | **reworded**: a matching alternative exists and has not been run |
+| Phase 4 entry | **met, and partly overshot** — T3.6/T3.7 written, ablations done, plan executing since 18 Nov |
+| Track 1 remaining | **T1-E** (local), **T1-F** (after 28 Nov), Phase 4 gate |
+| New run requested | **None**, of either partner |
+
+---
+
+### D105 — T1-E delivered: the circularity is a property of the prior, not of the decomposition, and the field's validation protocol is blind in exactly the regime it is most used in (26 Nov)
+
+**No bank pass and no new measurement.** Every number is Track 2's, from T2.11 §3 (T2-D) and
+T2.10 §6a, plus T2-C's `cos θ` on the full LIDC bank. The section is
+`T1.7_manuscript_method_and_analysis.md` **§3.6**, and it is contribution **(iv)** in D-070's
+order — the evaluation caution. Seven tests in `tests/test_protocol_replication.py`.
+
+#### 1. What the section establishes
+
+The exact identity `err_free² = s_free² + free_content² − 2·s_free·free_content·cos θ` means
+that **at `cos θ = 0` the criterion is `hypot(s_free, free_content)`** — the label is a
+function of the score. That is not a defect of this label; it follows from the decomposition
+plus a measured property of the bank. So the question was always *how far from zero `cos θ`
+is*, and the answer turns out to depend on the prior and not on the modality.
+
+| bank | prior | `cos θ` | spread AUROC | scale-only AUROC | margin |
+|---|---|---|---|---|---|
+| fastMRI knee | face | +0.073 | 0.932 | **0.978** | +0.046 to the control |
+| TotalSegmentator CT | face | +0.074 | 0.994 | **0.997** | +0.003 to the control |
+| M4Raw brain | BraTS | +0.596 | **0.937** | 0.895 | −0.042 to the spread |
+| TotalSegmentator CT | **LIDC (stamped)** | **+0.882** | **0.920** | 0.801 | −0.119 to the spread |
+
+**Two modalities per prior class, and the sign of the margin follows the class both times.**
+Under a mismatched prior the scale-only null — `‖P_N x̂‖`, carrying no posterior information
+whatsoever — beats the posterior spread at **9 of 9** operators on both face banks with
+intervals clear of zero, and on fastMRI that is against the literature's own full-image
+spread. Under a matched prior the spread is ahead (7 of 9 on M4Raw; the control matches at
+**0 of 9** on the stamped bank).
+
+#### 2. The reading that matters for the paper: the margin, not the level
+
+The null still reaches **0.895** and **0.801** AUROC with no posterior information. So what
+the posterior contributes is **0.042** and **0.119**, not the 0.937 and 0.920 a paper would
+quote. A reported AUROC near 1 on this protocol is consistent with a map that carries no
+uncertainty at all, and nothing in the protocol lets a reader tell the two cases apart.
+
+**The actionable fix is three extra columns:** run a scale-only null in the same pass, report
+the margin over it rather than the level, and report `cos θ` or an equivalent alignment
+measure so the regime is visible.
+
+#### 3. Two checks that the identity is the mechanism rather than a story told afterwards
+
+Both were available from the algebra before the numbers were read, and both hold.
+
+- The identity says that at `cos θ ≈ 0` the error **is** the null-space magnitude, so the
+  measured component should carry nothing. Measured: `s_free` at 0.978 and 0.997 while
+  `s_range` (brightness) is **below chance** at 0.427 and 0.371.
+- On M4Raw the control's deficit is largest at the two R2 one-dimensional masks (−0.165 at
+  `random1d` R2, −0.105 at `equispaced1d` R2) — the operators with the **least null space for
+  a scale to live in**.
+
+#### 4. The statistic deliberately not computed
+
+A rank correlation between `cos θ` and the margin across the four banks is the obvious next
+move and it would be worthless: four banks, with modality, substrate, prior, region count and
+test-patient count all moving together. **A rank statistic on four objects has almost no
+resolution** — D102 reported one that turned out to be its own null's attainable maximum on
+six pairs drawn from four operators. The claim is written as a 2×2 with a measured mediator,
+and a test asserts the refusal stays in the text and flags it for revisiting if a fifth bank
+lands.
+
+#### 5. What it is not, stated in the section
+
+- **Not a detection result, and weakening the circularity did not produce one.** The identity
+  does weaken on a matched prior (Spearman 0.991 → 0.486 on CT, 0.97 → 0.65 on MRI), which is
+  what makes the *label* interpretable there. The *score* still fails: under the direction
+  label it beats the anatomy control at **1 of 8** operators on M4Raw and **0 of 9** on CT.
+  **Circularity and detection are two separate failures and fixing the first did not fix the
+  second.** A test pins that sentence, because this is the section most likely to be misread
+  as a rescue.
+- **Not a claim that the posterior spread is useless.** On a matched prior it wins. The claim
+  is about what the protocol *demonstrates*.
+
+#### 6. The limits, and the one that binds
+
+1. **The literature's own quantity — the full-image pixelwise spread — has not been run on the
+   stamped bank.** Only fastMRI and M4Raw have regenerated draws; the other rows substitute
+   `s_disagree`, the same spread measured in the null space. The substitution is validated
+   where both exist: on M4Raw they agree within **0.008 AUROC**. This is the largest limit on
+   the headline row and it is stated there.
+2. **Two of four rows are face-prior banks that carry no claims.** The argument for the caution
+   surviving that: it is indexed on `cos θ`, a *measured property*, not on the bank's identity,
+   and it concerns an evaluation protocol's discriminative power rather than coverage or
+   detection — the two claims a stamp gates. Recorded **as an argument**, with the fallback
+   beside it: the two medical rows alone support "the protocol separates when the prior is
+   matched", and the stamped row alone is the strongest single cell.
+3. **The two CT rows are not a fully controlled prior contrast** — same substrate, same 51
+   subjects, same nine operators, but 117,504 against 183,600 regions. Flagged, not explained.
+4. **15 test patients** on M4Raw, and **one solver family** (DDNM) carries every row.
+5. **The stamped bank's per-operator table is not published.** The "0 of 9 matched" count is
+   Track 2's, from the T2.11 hand-off, and is attributed as such. Its per-operator differences
+   and intervals are the one piece of data the section still wants. **Not requested** —
+   nothing is asked of either partner before 3 December — and the section reads correctly
+   without them.
+
+#### 7. Three stale sections of the same document, found while writing into it
+
+- **§3.5** stated the cross-domain claim as *"with the ordering by distance demonstrated where
+  the distance is a genuine scalar"* — the clause D102 refuted, the same wording
+  `PROJECT_STATUS.md` §4c carried. Struck, with both tracks' numbers.
+- **§4**, threats to validity, had *"the prior is not a medical prior"* (closed by D79/D80/D82)
+  and *"no external validation of the criterion"* (sFRC exists, D104) as live threats, and
+  recorded the DPS ablation as the open question it no longer is.
+- **§5**, what remains before submission, listed five items **all of which have been
+  delivered**. What they returned is now the paper's content.
+
+#### 8. Status
+
+| item | state |
+|---|---|
+| T1-E | **DELIVERED.** `T1.7_manuscript_method_and_analysis.md` §3.6 |
+| Pre-registration | satisfied: `CIRCULARITY_CONTROL`, `CIRCULARITY_CONTROL_CONCURRENT`, both frozen before any number was read, and Track 2 ran the control in the same pass |
+| Tests | 7 added, **1,244 passing, 7 skipped** — the identity and all four margins recomputed, not asserted |
+| Track 1 remaining | **T1-F** (after 28 Nov) and the Phase 4 gate. Nothing else |
+| New run requested | **None**, of either partner |
+
+---
+
+### D106 — T1-F cut: every headline number moves to a bank that carries claims, the abstract's distance claim is withdrawn, and the public README is rewritten for a reader who is not on this project (26 Nov)
+
+**No bank pass, no new measurement.** Every number is one Track 2 or Track 3 already
+reported. What changed is **which bank the paper quotes** and **which direction its
+operator-aware section points**.
+
+#### 1. The thing that had to be fixed first
+
+The preprint's **abstract** read: *"the coverage gap is **ordered by a signed operator
+distance computable from the two forward operators alone** … rank correlation +0.976 on CT."*
+
+That is 8 pairs of 13-split means on the **face-prior bank, which carries no claims**, and the
+ordering is **refuted** on the stamped bank (D101, D102). It was the paper's third headline
+claim, in its abstract, in a **public** repository. Withdrawn, with a line in §6.3 saying it
+should not be cited *including from our own preprints* — because it has been written down in
+this repository since D77 and anyone who read the draft read that sentence.
+
+The same sweep moved every other magnitude: the abstract's CT figures (0.890→0.693,
+0.902–0.923) and MRI figures (0.884–0.901) were all face-prior. The stamped numbers are
+**stronger**, which is the part worth noticing — a mismatched prior *understates* the problem.
+
+| was (face-prior) | now (stamped) |
+|---|---|
+| CT naive 0.890 → 0.693 as views thin | **36 of 72 ordered pairs below nominal, 22 below 0.80, worst 0.377** — and the certificate reading: the worst cell **catches 26.9% where it promises 90%** |
+| CT group-conditional 0.902–0.923 | **0.892–0.905 at all nine, as the mean over 13 patient splits**, within 0.008 of nominal, per-draw sd **0.051** reported beside it |
+| MRI naive, 10–13 of 13 splits | **0.000 to 0.159**, below nominal on 13 of 13 |
+| MRI group-conditional 0.884–0.901 | **0.80–0.91** |
+
+#### 2. §6.3 inverted: from the headline positive to the headline negative
+
+It was *"The gap is ordered by operator distance on CT, and only weakly on MRI."* It is now
+*"Operator identity is usable; operator distance, on this evidence, is not"* — a table of four
+refinements, each with the baseline it was required to beat, each failing, plus Track 3's
+independent verdict from the score-law side.
+
+**Written to be readable as evidence rather than as absence**, which is the whole difficulty
+with a paper whose three main findings are negative. Three things do that work: every
+refinement was frozen in a configuration recorded in the repository *before* the evaluation
+bank finished running, with a fingerprint; the baselines were named in advance; and the
+published impossibility result for label-free valid correction is cited in §7 as support,
+which turns "our weighting did not work" into "this class of correction may not be fixable by
+tuning".
+
+It also states its own boundary: the grid varies views and arc as a product, so no subset
+isolates the geometric distance from both trivial scalars, and on the one subset where both
+are constant the distance is a **rank duplicate** of the arc (ρ = +1.0000). The grid that would
+separate them is specified and **not built**, and the paper says what it would have to show.
+
+#### 3. The rest of the cut
+
+- **§6.4** gains T1-E's four-bank table and becomes the paper's one standalone contribution —
+  it does not depend on our score being good. Carries its own largest limitation in place: the
+  literature's full-image spread has **not** been run on the stamped bank.
+- **§6.5** goes from *"The result does not depend on the component weighting"* to **"Weight
+  sensitivity is unmeasured on any bank that may be quoted."**
+- **§0** rewritten: Tool 3 is no longer excluded because "T3.6 does not exist" — it exists and
+  the bound holds **72 of 72** — but because §23 gives it its own paper, which D104 leaves
+  intact. A third title option is offered: *What operator shift breaks in conformal
+  reconstruction certificates, and what it does not break.*
+- **§7** limitations replaced: the two closed gates removed, and five live ones added
+  including the per-draw spread, the single grid, and the unrun alternative criterion.
+- **Before submission** now says **no blockers remain** — what is left is writing.
+- A **revision log** sits at the top of the document. A paper draft has to read clean, so the
+  body is rewritten rather than struck through, and the log carries the audit trail instead.
+
+#### 4. The README, which is public and was not written for a stranger
+
+`gh repo view` reports the repository as **PUBLIC**, under `Angshuman1211/CALIBER` — the
+`Ganglet/CALIBER` remote redirects to it. The memory note describing it as private was wrong.
+So the README is an outward-facing artefact, and it was carrying withdrawn claims where anyone
+could read them.
+
+Rewritten end to end. What was wrong with it, beyond staleness:
+
+- It opened by announcing itself as *"the shared repository for all three tracks"* and then
+  explained the track split, the blueprint's section numbers, and the two independent
+  numbering axes. **A stranger does not have a stake in who owns which task.**
+- It carried a **thirty-row documentation table** listing every per-week record with its owner,
+  one row of which ran to a paragraph of embedded results.
+- Three per-track task tables, a four-phase timeline table, and a numbering warning about `D12`
+  versus `D-012`.
+- Stale or withdrawn content on display: `D1…D82` for a log at D105, **1,001 tests** for a
+  suite at 1,244, *"the first CT bank"*, *"Development banks only: the prior is a face model"*
+  (closed by D79/D80/D82), ρ = +0.976 with no bank named, Tool 2 *"valid but no better than
+  the conservative fallback"*, and Phase 4 as *"Not started"* while it was executing.
+
+The replacement leads with the question, states the five findings with the negatives among
+them, puts the scope limits **before** the quick start rather than after, and reduces the
+documentation section to **four entry points** with a note that the log is authoritative where
+documents disagree. The three workstreams are mentioned once, at the end, as development
+organisation.
+
+#### 5. Repository description set
+
+Set via `gh repo edit` (322 characters): the failure, the fix at 9 of 9, four refinements each
+refuted, and the evaluation caution. Public, and reversible.
+
+#### 6. Status
+
+| item | state |
+|---|---|
+| T1-F | **DELIVERED.** `T1.7_preprint_draft.md`, revision log at the top |
+| Withdrawn abstract claim | removed, with an explicit do-not-cite line in §6.3 |
+| Every headline number | on a bank that carries the claim being made |
+| README | rewritten for a reader outside the project; no documentation table |
+| Repository description | set |
+| Tests | **1,244 passing, 7 skipped** |
+| Track 1 remaining | **the Phase 4 gate, at submission**, carrying Q5's next instance. Nothing else |
 | New run requested | **None**, of either partner |
