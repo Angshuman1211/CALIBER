@@ -1,8 +1,34 @@
 # CALIBER
 
 **Do distribution-free reliability certificates for image reconstruction survive a change of
-acquisition operator?** They do not, and this repository measures how badly, what fixes it,
-and where the obvious extensions of that fix stop working.
+acquisition operator?** A growing literature applies conformal prediction to image
+reconstruction and needs them to. **They do not** — and the failure is silent, because the
+certificate goes on reporting the reliability it no longer delivers.
+
+What fails here is an assumption the field makes, not a method this project proposes. Three
+things follow from measuring it:
+
+1. **The first quantification** of how far conformal coverage falls when the acquisition
+   operator changes between calibration and deployment.
+2. **A calibration fix** that restores nominal coverage at every operator tested, with its
+   cost reported.
+3. **A caution about how this field validates uncertainty maps** — which holds independently
+   of whether anything else here works.
+
+The fourth result is a boundary: four plausible ways to extend the fix, each specified in
+advance and each unsupported by the measurement. They are reported as negatives, with
+intervals, in the same detail as the positives.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="Documentation/figures/coverage-failure-dark.svg">
+  <img alt="Coverage of a transferred conformal threshold across 72 ordered operator pairs: naive transfer falls below nominal at 36 of them, while group-conditional calibration sits at 0.892 to 0.905 at all nine operators." src="Documentation/figures/coverage-failure-light.svg" width="100%">
+</picture>
+
+<sub>The hazard and the fix in one frame. Each row is a deployment operator and coverage runs
+left to right, so everything left of the 0.90 line is a certificate not being honoured. Blue
+dots are thresholds transferred in from each of the eight other operators — 36 of 72 land
+short, 22 of them below 0.80. The orange tick on each row is the same method calibrated at
+that operator instead: nominal at all nine.</sub>
 
 ---
 
@@ -13,6 +39,13 @@ the measurements do not determine. Sometimes it invents structure that is not th
 that does not exist, an edge that is not an edge — and because the invention lives in the
 forward operator's null space, **no data-consistency check can see it.** The reconstruction
 agrees with the measurements perfectly and is still wrong.
+
+That framing is not ours. Splitting an image estimate into measurement and null components
+goes back to Wilson and Barrett (1998); defining hallucination as structure in the null
+component that is not in the object's is Bhadra et al.'s (*On hallucinations in tomographic
+image reconstruction*, IEEE TMI 2021). This work adopts both. **What is new here is what
+happens to a calibrated flag built on them when the operator changes** — an axis Bhadra et al.
+name as future work and do not take up.
 
 Conformal prediction offers a way to flag such regions with a guaranteed miss rate and no
 distributional assumptions, and a growing literature applies it to reconstruction. That
@@ -49,15 +82,10 @@ coverage at **all nine CT operators**, 0.892 to 0.905 as the mean over 13 patien
 discovery rate both rise. This is the textbook estimator applied to a new partition; the
 contribution is the demonstration and the measurement, not the estimator.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="Documentation/figures/coverage-failure-dark.svg">
-  <img alt="Coverage of a transferred conformal threshold across 72 ordered operator pairs: naive transfer falls below nominal at 36 of them, while group-conditional calibration sits at 0.892 to 0.905 at all nine operators." src="Documentation/figures/coverage-failure-light.svg" width="100%">
-</picture>
-
-<sub>Each row is a deployment operator; each dot is a threshold calibrated at one of the
-eight others. Sparse-view 120 is out of order with respect to the acquisition axis — all
-eight of its transfers fail — which is one reason the coverage gap turns out not to be
-ordered by operator distance (finding 3).</sub>
+<sub>This is the figure at the top of the page. One detail in it matters for what follows:
+sparse-view 120 is out of order with respect to the acquisition axis — all eight of its
+transfers fail — which is one reason the coverage gap turns out not to be ordered by operator
+distance (finding 3).</sub>
 
 **3. Conditioning on *how far* the operator moved does not work.** This is the part that was
 expected to be the main contribution, and it is a measured negative. Four refinements were
