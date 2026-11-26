@@ -1,6 +1,6 @@
 # CALIBER — Project Status, Results, Problems and Gaps
 
-**Date:** 17 November 2026 · **Week 11** · **Phase 3 of 4**  · *reviewed through D103, 26 November*
+**Date:** 17 November 2026 · **Week 11** · **Phase 3 of 4**  · *reviewed through D106, 26 November — Phase 3's gate is closed, so the project is in Phase 4, and **T1-F is cut**: the only Track 1 item left is the Phase 4 gate at submission*
 **UPDATED 24-26 November 2026 (Week 12) through D102. Every section has now been read
 against D85-D102.** The body below is still the 17 November prose; the eighteen decisions
 that landed after it (D85-D102, the LIDC bank's build and stamp, and negative results on all
@@ -414,7 +414,9 @@ normalisation differs from LIDC's per-volume min-max.
 ### Track 1 — Methodology, Calibration and Scientific Direction
 
 **All seven tasks delivered.** ~~Log runs to **D81**.~~ ~~**Log runs to D101.**~~ **Log runs
-to D103** (26 Nov). Three of the
+to D104** (26 Nov), and the **Phase 3 gate is delivered** — three of four gates done, Q5
+repeated, §23's publication sequence re-scoped so the narrowed cut is *the* method paper
+(D104). Three of the
 four Phase 4 measurement tasks have since returned **negatives on the coverage-stamped
 bank** — T1-A refuted (D89), T1-B reportable on 0 of 4 cells and then ~~blocked~~
 **refuted on its own response variable in its own designated cell (D91, D100, and D102:
@@ -426,7 +428,7 @@ group-conditional fix hold there. See D101 for the split.
 |---|---|
 | T1.1 score design | Complete. Weights equal by default (D54); D76 measures what that costs |
 | T1.2 shift-robust calibration | Three tools + fallback [7]. ~~Tool 2 positive on sparse CT (§3c)~~ **that positive is on the face-prior bank; on LIDC there is no validity or efficiency claim (D100)**; [7] degenerates to `nearest` |
-| T1.3 operator distance | Delivered, amended for direction (D47). CT ρ = +0.976 |
+| T1.3 operator distance | Delivered, amended for direction (D47). ~~CT ρ = +0.976~~ — **that is 8 pairs on the face-prior bank and the ordering is REFUTED on the stamped one** (D101, D102): arc ratio +0.8524 against the distance's −0.5046 cross-family, the distance backwards. The measure is delivered; its *ordering role* is not supported |
 | T1.4 experimental design | Delivered — paired estimand, grids, ablation matrix, stratified reporting, curve-collapse test, coverage-axis comparison |
 | T1.5 cross-track integration | Standing; the adjudication channel is most of the work now |
 | T1.6 analysis | Phase 1 and Phase 2 gates delivered. **Phase 3 gate not written** |
@@ -452,8 +454,20 @@ becomes a real question.
 
 ### Track 3 — Analytical Foundations and Numerical Verification
 
-**T3.1–T3.5 delivered. T3.6 and T3.7 do not exist.** This is the project's largest structural
-gap: two of twenty-one tasks, and the entire third front.
+~~**T3.1–T3.5 delivered. T3.6 and T3.7 do not exist.** This is the project's largest structural
+gap: two of twenty-one tasks, and the entire third front.~~
+
+> **OBSOLETE — all seven Track 3 tasks are delivered (26 Nov, D103).** This was the **fourth**
+> place in this one file claiming two documents that exist do not; the other three were §1,
+> §7c and Appendix B. **T3.6** is run on the stamped LIDC bank as well as four harness banks:
+> the matched bound holds at **72 of 72** ordered pairs with no separated interval and is close
+> to attained where under-coverage is real (tightness median 0.72). **T3.7** states and proves
+> Theorem 1, Proposition 2, Theorem 3, Corollary 4 and Proposition 5. **The front that was the
+> largest structural gap is the one that delivered on time** — and its row 5 is negative:
+> within a family the operator distance does not order the score-law shift (ρ −0.16 to +0.18
+> on 66 of 72 pairs), which is the same verdict Track 1 reached from the threshold-gap side
+> (D102). One negative, two tracks, two response variables. The specification below is kept
+> because it is what T3.6 was built against.
 
 What is delivered is substantial: the formal review, the distance candidates, the L1 stability
 result (now stated on the **Kolmogorov** distance of the label-conditional law, tighter than
@@ -580,7 +594,13 @@ catch them:
 2. ~~Start T3.6~~ — **done**; T3.6 and T3.7 both exist.
 3. **Write the Phase 3 gate** (T1.6). Still not written, and it is now the oldest open
    Track 1 deliverable.
-4. **T1-E, the circularity section**, with the scale-only null control. Local, no bank pass.
+4. ~~**T1-E, the circularity section**, with the scale-only null control. Local, no bank
+   pass.~~ **DONE 26 Nov (D105)** — `T1.7_manuscript_method_and_analysis.md` §3.6. The
+   scale-only null beats the posterior spread at **9 of 9** operators on both face-prior
+   banks and loses on both medical-prior ones, so **the sign is set by the prior and not the
+   modality**; the posterior's contribution is the **margin** (0.042, 0.119), not the level
+   (0.937, 0.920). This is the one Track 1 contribution that stands without CALIBER's score
+   being good.
 5. **Final preprint cut (T1-F).** It now *has* a reportable table — the one in §3a's LIDC
    block — but see the warning below before drafting a word of it.
 6. **Finish the DPS medical-prior bank** — completes D68 on the medical prior. *Status not
@@ -642,13 +662,13 @@ The second (analytical) paper now has T3.6 and T3.7 to build on.
 | `cos θ`, face → medical prior | +0.07 → **+0.60** (MRI) · +0.98 (CT smoke) |
 | Identity Spearman, face → medical | 0.97 → 0.65 (MRI) · 0.99 → 0.49 (CT) |
 | Weight sensitivity | restoration established at 9 of 11 weightings — **face-prior fastMRI bank, unmeasured on any stamped bank** (§4d) |
-| Tests | **1,237 passing, 7 skipped** (26 Nov) · 9 (site) |
+| Tests | **1,244 passing, 7 skipped** (26 Nov) · 9 (site) |
 
 ## Appendix B — where things are written
 
 | Document | Holds |
 |---|---|
-| `problems_and_decisions.md` | Track 1's log, **D1–D103**, open questions, cross-track contracts |
+| `problems_and_decisions.md` | Track 1's log, **D1–D106**, open questions, cross-track contracts |
 | `decision_log.md` | Cross-track decisions, **D-001–D-072** |
 | `T2_problems_and_decisions.md` | Track 2's problem log, **P-01–P-45**, plus the index of every cross-track decision |
 | `T1.1`–`T1.7` | Track 1's per-task records; `T1.7_preprint_draft.md` is the narrowed paper |
