@@ -592,8 +592,11 @@ catch them:
 1. ~~Run the full CT bank on the LIDC prior~~ — **done 19 Nov**, and it carries the coverage
    stamp. This is the bank every reportable CT number now comes from.
 2. ~~Start T3.6~~ — **done**; T3.6 and T3.7 both exist.
-3. **Write the Phase 3 gate** (T1.6). Still not written, and it is now the oldest open
-   Track 1 deliverable.
+3. ~~**Write the Phase 3 gate** (T1.6). Still not written, and it is now the oldest open
+   Track 1 deliverable.~~ **DONE 26 Nov (D104)** — every Phase 3 artefact delivered and the
+   phase's own result negative, so §23's publication sequence is re-scoped and the narrowed
+   cut is promoted to *the* method paper. Q5 repeated: gap still open, two new required
+   citations.
 4. ~~**T1-E, the circularity section**, with the scale-only null control. Local, no bank
    pass.~~ **DONE 26 Nov (D105)** — `T1.7_manuscript_method_and_analysis.md` §3.6. The
    scale-only null beats the posterior spread at **9 of 9** operators on both face-prior
@@ -601,11 +604,16 @@ catch them:
    modality**; the posterior's contribution is the **margin** (0.042, 0.119), not the level
    (0.937, 0.920). This is the one Track 1 contribution that stands without CALIBER's score
    being good.
-5. **Final preprint cut (T1-F).** It now *has* a reportable table — the one in §3a's LIDC
-   block — but see the warning below before drafting a word of it.
+5. ~~**Final preprint cut (T1-F).**~~ **DONE 26 Nov (D106).** Every headline number moved to
+   a bank that carries the claim; the abstract's ρ = +0.976 distance claim **withdrawn**;
+   §6.3 inverted into the four-refinement negative. **No blockers remain before submission.**
 6. **Finish the DPS medical-prior bank** — completes D68 on the medical prior. *Status not
    re-checked in this sweep; confirm with Track 2 before relying on it.*
-7. Decide M4Raw's substrate status at leisure, since it is no longer blocking.
+7. ~~Decide M4Raw's substrate status at leisure, since it is no longer blocking.~~
+   **DECIDED by D82** — coverage yes, detection no.
+
+**What is actually left on Track 1: the Phase 4 gate, at submission**, carrying Q5's next
+instance. Everything else above is delivered.
 
 **Nothing on this list is blocked on a Track 2 run, and nothing is blocked on a new bank.**
 
@@ -668,7 +676,7 @@ The second (analytical) paper now has T3.6 and T3.7 to build on.
 
 | Document | Holds |
 |---|---|
-| `problems_and_decisions.md` | Track 1's log, **D1–D107**, open questions, cross-track contracts |
+| `problems_and_decisions.md` | Track 1's log, **D1–D111**, open questions, cross-track contracts |
 | `decision_log.md` | Cross-track decisions, **D-001–D-072** |
 | `T2_problems_and_decisions.md` | Track 2's problem log, **P-01–P-45**, plus the index of every cross-track decision |
 | `T1.1`–`T1.7` | Track 1's per-task records; `T1.7_preprint_draft.md` is the narrowed paper |
